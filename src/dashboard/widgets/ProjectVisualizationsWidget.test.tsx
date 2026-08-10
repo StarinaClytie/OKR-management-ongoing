@@ -1,0 +1,119 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { mockRepository } from '../../mocks/repository';
+import { AlignmentTreeWidget } from './AlignmentTreeWidget';
+import { ProgressTrendWidget } from './ProgressTrendWidget';
+import { ProjectVisualizationsWidget } from './ProjectVisualizationsWidget';
+
+const leaderData = mockRepository.getDashboardData('user-project-leader');
+
+describe('ProjectVisualizationsWidget', () => {
+  it.each(['对齐树', '甘特图', '进度趋势', '风险矩阵', '工作负载'])(
+    'switches visible content to %s without retaining the previous panel',
+    async (label) => {
+      const user = userEvent.setup();
+      render(<ProjectVisualizationsWidget data={leaderData} />);
+
+      await user.click(screen.getByRole('tab', { name: label }));
+
+      expect(screen.getByRole('tabpanel', { name: label })).toBeVisible();
+      expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    },
+  );
+
+  it('uses role-appropriate defaults', () => {
+    const { rerender } = render(
+      <ProjectVisualizationsWidget data={mockRepository.getDashboardData('user-employee')} />,
+    );
+    expect(screen.getByRole('tab', { name: '进度趋势' })).toHaveAttribute('aria-selected', 'true');
+
+    rerender(<ProjectVisualizationsWidget data={mockRepository.getDashboardData('user-hr')} />);
+    expect(screen.getByRole('tab', { name: '工作负载' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('moves and activates tabs with arrow, Home, and End keys', () => {
+    render(<ProjectVisualizationsWidget data={leaderData} />);
+    const alignmentTab = screen.getByRole('tab', { name: '对齐树' });
+    alignmentTab.focus();
+
+    fireEvent.keyDown(alignmentTab, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: '甘特图' })).toHaveFocus();
+    expect(screen.getByRole('tabpanel', { name: '甘特图' })).toBeVisible();
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: '甘特图' }), { key: 'End' });
+    expect(screen.getByRole('tab', { name: '工作负载' })).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: '工作负载' }), { key: 'Home' });
+    expect(screen.getByRole('tab', { name: '对齐树' })).toHaveFocus();
+  });
+
+  it('connects every selected tab to the rendered panel', async () => {
+    const user = userEvent.setup();
+    render(<ProjectVisualizationsWidget data={leaderData} />);
+    const ganttTab = screen.getByRole('tab', { name: '甘特图' });
+
+    await user.click(ganttTab);
+
+    expect(ganttTab).toHaveAttribute('aria-controls', screen.getByRole('tabpanel').id);
+  });
+
+  it('marks a project leader owned KR as mine', () => {
+    render(
+      <AlignmentTreeWidget
+        data={{ ...leaderData, currentUser: { ...leaderData.currentUser, name: '周明' } }}
+      />,
+    );
+
+    expect(screen.getByText('周明（我）')).toBeVisible();
+  });
+
+  it('never leaves denied labels in text, accessible names, or hidden panels', async () => {
+    const user = userEvent.setup();
+    const sensitiveLabel = '禁止泄漏的严格机密任务名称';
+    const restrictedData = {
+      ...leaderData,
+      keyResults: leaderData.keyResults.map((keyResult) =>
+        keyResult.id === 'kr-orion-onboarding'
+          ? { ...keyResult, title: sensitiveLabel, classification: 'restricted' as const }
+          : keyResult,
+      ),
+    };
+    const { container } = render(<ProjectVisualizationsWidget data={restrictedData} />);
+
+    expect(container).not.toHaveTextContent(sensitiveLabel);
+    expect(container.querySelector(`[aria-label*="${sensitiveLabel}"]`)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: '甘特图' }));
+    expect(container).not.toHaveTextContent(sensitiveLabel);
+    expect(container.querySelector(`[title*="${sensitiveLabel}"]`)).not.toBeInTheDocument();
+  });
+
+  it('renders twelve authorized weekly points with directly identified series', () => {
+    render(<ProgressTrendWidget data={leaderData} />);
+
+    expect(screen.getByText('12 个周度数据点')).toBeVisible();
+    expect(screen.getByText('实际进度（实线）')).toBeVisible();
+    expect(screen.getByText('计划进度（虚线）')).toBeVisible();
+    expect(screen.getByText('单位：完成度 %')).toBeVisible();
+  });
+
+  it('falls back to KPI comparison when fewer than eight authorized points remain', () => {
+    render(<ProgressTrendWidget data={{ ...leaderData, progressSnapshots: leaderData.progressSnapshots.slice(0, 7) }} />);
+
+    expect(screen.getByText('数据不足，暂不绘制趋势线')).toBeVisible();
+    expect(screen.getByLabelText('最新实际进度')).toHaveTextContent('46%');
+    expect(screen.queryByText('12 个周度数据点')).not.toBeInTheDocument();
+  });
+
+  it('shows HR workload fields without ever rendering report bodies', () => {
+    const hrData = mockRepository.getDashboardData('user-hr');
+    const secretReportBody = hrData.dailyReports[0].content;
+    render(<ProjectVisualizationsWidget data={hrData} />);
+
+    expect(screen.getByRole('tabpanel', { name: '工作负载' })).toBeVisible();
+    expect(screen.getAllByText('计划工时')[0]).toBeVisible();
+    expect(screen.getAllByText('已记录工时')[0]).toBeVisible();
+    expect(screen.getAllByText('可用容量')[0]).toBeVisible();
+    expect(screen.queryByText(secretReportBody)).not.toBeInTheDocument();
+  });
+});

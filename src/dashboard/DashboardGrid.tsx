@@ -7,24 +7,11 @@ import { HrSummaryWidget } from './widgets/HrSummaryWidget';
 import { MyKeyResultsWidget } from './widgets/MyKeyResultsWidget';
 import { ReportReviewWidget } from './widgets/ReportReviewWidget';
 import { TodayFocusWidget } from './widgets/TodayFocusWidget';
+import { ProjectVisualizationsWidget } from './widgets/ProjectVisualizationsWidget';
 
 export interface DashboardGridProps {
   data: DashboardData;
   widgetIds: readonly WidgetId[];
-}
-
-function ProjectVisualizationsPreview() {
-  return (
-    <section className="dashboard-widget dashboard-widget--wide" aria-labelledby="project-views-title">
-      <div className="dashboard-widget__header">
-        <div>
-          <p className="dashboard-widget__eyebrow">按需展开</p>
-          <h2 id="project-views-title">项目专业视图</h2>
-        </div>
-      </div>
-      <p className="dashboard-widget__muted">对齐、进度、风险和负载视图将在此集中切换，默认不占满首屏。</p>
-    </section>
-  );
 }
 
 function renderWidget(widgetId: WidgetId, data: DashboardData) {
@@ -42,7 +29,7 @@ function renderWidget(widgetId: WidgetId, data: DashboardData) {
     case 'admin-system':
       return <AdminSystemWidget />;
     case 'project-visualizations':
-      return <ProjectVisualizationsPreview />;
+      return <ProjectVisualizationsWidget data={data} />;
   }
 }
 

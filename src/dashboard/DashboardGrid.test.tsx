@@ -5,6 +5,21 @@ import { mockData, mockRepository } from '../mocks/repository';
 import { DashboardGrid } from './DashboardGrid';
 
 describe('DashboardGrid confidentiality boundaries', () => {
+  it('renders the interactive visualization surface instead of a preview', () => {
+    const data = mockRepository.getDashboardData('user-project-leader');
+
+    render(
+      <AuthProvider initialUserId="user-project-leader">
+        <MemoryRouter>
+          <DashboardGrid data={data} widgetIds={['project-visualizations']} />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(screen.getByRole('tablist', { name: '项目可视化视图' })).toBeVisible();
+    expect(screen.queryByText(/将在此集中切换/)).not.toBeInTheDocument();
+  });
+
   it('does not reveal a restricted KR before permission approval', () => {
     const source = mockRepository.getDashboardData('user-project-leader');
     const data = {

@@ -10,7 +10,11 @@ describe('role dashboard registry', () => {
       'report-review',
       'project-visualizations',
     ]);
-    expect(getDashboardConfig('employee').widgetIds).toEqual(['today-focus', 'my-key-results']);
+    expect(getDashboardConfig('employee').widgetIds).toEqual([
+      'today-focus',
+      'my-key-results',
+      'project-visualizations',
+    ]);
     expect(getDashboardConfig('hr').widgetIds).toEqual(['hr-summary', 'project-visualizations']);
   });
 

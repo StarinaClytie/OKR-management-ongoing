@@ -24,7 +24,7 @@ const dashboardRegistry: Record<Role, DashboardConfig> = {
     role: 'employee',
     title: '我的工作概览',
     description: '聚焦今日任务、本人 OKR 和下一步行动。',
-    widgetIds: ['today-focus', 'my-key-results'],
+    widgetIds: ['today-focus', 'my-key-results', 'project-visualizations'],
   },
   hr: {
     role: 'hr',
