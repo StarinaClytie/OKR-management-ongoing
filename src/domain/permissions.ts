@@ -1,4 +1,49 @@
-import type { Classification, DailyReport, DocumentRecord } from './types';
+import type {
+  Classification,
+  DailyReport,
+  DocumentRecord,
+  KeyResult,
+  Objective,
+  Project,
+  WeeklyReport,
+  WorkloadEntry,
+} from './types';
+
+export type Action =
+  | 'dashboard.view'
+  | 'okr.read_summary'
+  | 'okr.read_detail'
+  | 'okr.update'
+  | 'project.manage'
+  | 'daily_report.create'
+  | 'daily_report.read'
+  | 'daily_report.read_body'
+  | 'daily_report.edit'
+  | 'daily_report.review'
+  | 'worklog.read_hours'
+  | 'evidence.read'
+  | 'attachment.read'
+  | 'document.read_body'
+  | 'document.download'
+  | 'record.export'
+  | 'user.manage'
+  | 'permission.manage'
+  | 'audit.read';
+
+export type PermissionResource =
+  | Project
+  | Objective
+  | KeyResult
+  | DailyReport
+  | WeeklyReport
+  | DocumentRecord
+  | WorkloadEntry
+  | PermissionScope;
+
+export interface PermissionDecision {
+  allowed: boolean;
+  reason: string;
+}
 
 export type ResourceType =
   | 'project'

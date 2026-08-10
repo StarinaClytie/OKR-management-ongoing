@@ -6,7 +6,7 @@ export const projects: Project[] = [
     name: '星图增长计划',
     description: '提升核心用户激活与留存的跨职能项目。',
     leaderId: 'user-project-leader',
-    memberIds: ['user-project-leader', 'user-employee'],
+    memberIds: ['user-project-leader', 'user-employee', 'user-project-peer'],
     classification: 'internal',
     startDate: '2026-06-01',
     dueDate: '2026-08-31',

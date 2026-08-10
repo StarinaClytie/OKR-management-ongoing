@@ -39,7 +39,7 @@ export const users: User[] = [
     role: 'employee',
     title: '数据分析师',
     department: '数据部',
-    projectIds: ['project-nova'],
+    projectIds: ['project-nova', 'project-orion'],
   },
   {
     id: 'user-hr',
@@ -62,6 +62,7 @@ export const organizationRelations: OrganizationRelation[] = [
 export const projectMemberships: ProjectMembership[] = [
   { id: 'membership-orion-leader', projectId: 'project-orion', userId: 'user-project-leader', membershipRole: 'leader' },
   { id: 'membership-orion-employee', projectId: 'project-orion', userId: 'user-employee', membershipRole: 'member' },
+  { id: 'membership-orion-peer', projectId: 'project-orion', userId: 'user-project-peer', membershipRole: 'member' },
   { id: 'membership-nova-management', projectId: 'project-nova', userId: 'user-management', membershipRole: 'leader' },
   { id: 'membership-nova-peer', projectId: 'project-nova', userId: 'user-project-peer', membershipRole: 'member' },
   { id: 'membership-nova-hr', projectId: 'project-nova', userId: 'user-hr', membershipRole: 'member' },
