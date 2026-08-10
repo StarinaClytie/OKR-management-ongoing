@@ -59,6 +59,10 @@ a {
   border-right: 1px solid #e5e7eb;
 }
 
+.app-sidebar--mobile {
+  display: none;
+}
+
 .app-brand {
   display: flex;
   align-items: center;
@@ -122,10 +126,18 @@ a {
   border-bottom: 1px solid #e5e7eb;
 }
 
-.app-topbar__context {
+.quarter-selector {
   display: grid;
   gap: 1px;
   line-height: 1.2;
+}
+
+.quarter-selector select {
+  padding: 0;
+  color: #1f2937;
+  background: transparent;
+  border: 0;
+  font-weight: 700;
 }
 
 .app-topbar__eyebrow,
@@ -214,9 +226,14 @@ a {
 }
 
 @media (max-width: 767px) {
-  .app-sidebar {
+  .app-sidebar--desktop {
+    display: none;
+  }
+
+  .app-sidebar--mobile {
     position: fixed;
     z-index: 2;
+    display: flex;
     transform: translateX(-100%);
     transition: transform 160ms ease;
     box-shadow: 10px 0 30px rgba(15, 23, 42, 0.08);
@@ -246,7 +263,7 @@ a {
     display: inline-grid;
   }
 
-  .app-topbar__context {
+  .quarter-selector {
     margin-right: auto;
     margin-left: var(--space-2);
   }

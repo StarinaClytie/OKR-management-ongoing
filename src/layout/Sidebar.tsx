@@ -3,14 +3,23 @@ import { PermissionGate } from '../auth/PermissionGate';
 import { navigationItems } from '../navigation/navigation';
 
 export interface SidebarProps {
-  mobileOpen: boolean;
+  variant: 'desktop' | 'mobile';
+  mobileOpen?: boolean;
   onNavigate: () => void;
 }
 
-export function Sidebar({ mobileOpen, onNavigate }: SidebarProps) {
+export function Sidebar({ variant, mobileOpen = false, onNavigate }: SidebarProps) {
+  const isMobileDrawer = variant === 'mobile';
+  const dashboardPath = navigationItems[0].path;
+
   return (
-    <aside className={`app-sidebar${mobileOpen ? ' app-sidebar--open' : ''}`} aria-label="主导航">
-      <NavLink className="app-brand" to="/dashboard" onClick={onNavigate}>
+    <aside
+      className={`app-sidebar app-sidebar--${variant}${mobileOpen ? ' app-sidebar--open' : ''}`}
+      aria-label={isMobileDrawer ? '移动端主导航' : '主导航'}
+      aria-hidden={isMobileDrawer && !mobileOpen ? true : undefined}
+      inert={isMobileDrawer && !mobileOpen}
+    >
+      <NavLink className="app-brand" to={dashboardPath} onClick={onNavigate}>
         <span className="app-brand__mark" aria-hidden="true">N</span>
         <span>Northstar OKR</span>
       </NavLink>

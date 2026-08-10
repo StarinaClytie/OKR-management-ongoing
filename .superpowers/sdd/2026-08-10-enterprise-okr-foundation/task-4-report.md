@@ -38,3 +38,22 @@ The current permission model requires typed resource context. The seven business
 ## Commit
 
 `feat: add protected application navigation`
+
+## Fix Round 1
+
+### Changes
+
+- Replaced the fixed quarter text with an accessible `选择季度` control containing all four quarter options and local mock selection state.
+- Split desktop navigation from the mobile drawer. The closed mobile drawer now has both `aria-hidden="true"` and `inert`, while the desktop sidebar remains accessible.
+- Derived the sidebar brand href from the first `navigationItems` entry rather than a literal path.
+- Updated the app identity test to query the accessible brand link, avoiding an implementation-detail assertion against the inert mobile drawer's duplicate visual markup.
+
+### RED / GREEN evidence
+
+- RED: `npm run test:run -- src/layout/AppShell.test.tsx` failed because the quarter selector and rendered mobile drawer accessibility state were absent.
+- GREEN: `npm run test:run -- src/layout/AppShell.test.tsx src/layout/Sidebar.test.tsx src/app/routes.test.tsx src/app/App.test.tsx` passed (5 tests across 4 files).
+- Full verification: `npm run test:run` passed (7 files, 41 tests); `npm run typecheck`, `npm run build`, and `git diff --check` also passed.
+
+### Fix-round concern
+
+The quarter selector is deliberately local, non-persistent demo state. Future dashboard filtering should consume a shared period state only when the product requirements call for cross-page persistence.
