@@ -46,3 +46,36 @@ Final verification completed with `npm run test:run`, `npm run typecheck`, and `
 ## Concerns
 
 No known implementation defects. An independent reviewer was dispatched but did not return before the bounded wait elapsed; the final self-review and full verification above were completed locally.
+
+## Review fix round 1/5
+
+### Status
+
+Completed: system administration remains separate from Management, while business-content access now stays fail-closed for confidential and restricted independent files.
+
+### RED evidence
+
+`npm run test:run -- src/auth/permissionService.test.ts` produced four expected failures before the fix:
+
+- Admin system actions were allowed with no resource metadata.
+- Management could read a confidential attachment without an explicit share.
+- `record.export` accepted a workload because compatibility was defined as “not a report body”.
+- A project-member Admin could read a confidential attachment through project membership.
+
+The explicit-share regression was also mutation-checked: temporarily withholding the confidential-share allow branch caused the Management attachment grant, Admin attachment grant, and Admin document grant tests to fail.
+
+### Changes
+
+- Added typed `SystemPermissionScope` metadata and require it for dashboard, user-management, permission-management, and audit actions.
+- Moved system-action allowance after resource normalization and exact action/scope compatibility validation.
+- Removed Management and project-member Admin exceptions for confidential documents and attachments; active, resource-specific shares remain the only non-owner path.
+- Replaced the broad `record.export` negative exception with an explicit exportable resource-type allow-list.
+- Added regression tests for Management and project-member Admin confidentiality, matching document/attachment shares, resource-less system actions, typed Admin system scope, non-Admin denial, and workload export denial.
+
+### GREEN and verification evidence
+
+`npm run test:run -- src/auth` passed: 2 files and 22 tests. `npm run test:run` passed: 4 files and 37 tests. `npm run typecheck` completed with exit code 0, and `git diff --check` reported no whitespace errors.
+
+### Concerns
+
+No known defects from this fix round. Owner access to confidential independent files remains intentionally allowed; the tightened rules apply to Management and project-member Admin access without an explicit share. A follow-up independent reviewer was dispatched but did not respond within the bounded wait; it was stopped after local self-review and fresh full verification.

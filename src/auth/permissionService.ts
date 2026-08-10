@@ -82,7 +82,19 @@ interface ResourceContext {
   ownerId?: string;
   projectId?: string;
   classification?: Classification;
+  systemAction?: Action;
 }
+
+const exportableResourceTypes = new Set<ResourceType>([
+  'project',
+  'objective',
+  'key_result',
+  'daily_report',
+  'weekly_report',
+  'evidence',
+  'document',
+  'attachment',
+]);
 
 const shareableReadActions = new Set<Action>([
   'okr.read_summary',
@@ -112,6 +124,7 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
       ownerId: 'ownerId' in resource ? resource.ownerId : undefined,
       projectId: 'projectId' in resource ? resource.projectId : undefined,
       classification: resource.classification,
+      systemAction: 'systemAction' in resource ? resource.systemAction : undefined,
     };
   }
 
@@ -189,6 +202,8 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
 }
 
 function isResourceCompatibleWithAction(action: Action, context: ResourceContext): boolean {
+  if (systemActions.has(action)) return context.type === 'system' && context.systemAction === action;
+
   if (action.startsWith('okr.')) {
     return context.type === 'project' || context.type === 'objective' || context.type === 'key_result';
   }
@@ -199,7 +214,7 @@ function isResourceCompatibleWithAction(action: Action, context: ResourceContext
   if (action === 'evidence.read') return context.type === 'evidence';
   if (action === 'attachment.read') return context.type === 'attachment';
   if (action === 'document.read_body' || action === 'document.download') return context.type === 'document';
-  if (action === 'record.export') return context.type !== 'daily_report_body';
+  if (action === 'record.export') return exportableResourceTypes.has(context.type);
 
   return false;
 }
@@ -261,12 +276,13 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
   const capabilities = roleActions[user.role];
   if (!capabilities?.has(action)) return deny();
 
-  if (systemActions.has(action)) return allow('角色具备系统权限');
   if (!resource) return deny('缺少资源上下文');
 
   const context = getResourceContext(resource, action);
   if (!context) return deny('资源上下文不完整');
   if (!isResourceCompatibleWithAction(action, context)) return deny('操作与资源类型不匹配');
+
+  if (systemActions.has(action)) return allow('角色具备系统权限');
 
   if (action === 'worklog.read_hours') {
     if (user.role === 'hr') {
@@ -314,11 +330,7 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
   const confidentialIndependentFile = isIndependentFile(context) && context.classification === 'confidential';
   if (confidentialIndependentFile) {
     if (context.ownerId === user.id) return allow('可访问本人文件');
-    if (user.role === 'management') return allow('管理层密级范围允许');
-    if (user.role === 'administrator' && hasProjectRole(user.id, context.projectId)) {
-      return allow('管理员同时具备项目成员身份');
-    }
-    return deny('附件或文档密级不允许访问');
+    return deny('机密附件或文档需要明确授权');
   }
 
   if (context.ownerId === user.id) return allow('可访问本人资源');

@@ -1,7 +1,9 @@
 import { keyResults, objectives } from '../mocks/okr';
 import { dailyReports } from '../mocks/reports';
 import { attachments, documents } from '../mocks/security';
+import { mockData } from '../mocks/repository';
 import { users } from '../mocks/users';
+import type { ActiveShare, SystemPermissionScope } from '../domain/permissions';
 import { can } from './permissionService';
 
 const admin = users.find((user) => user.id === 'user-administrator')!;
@@ -21,6 +23,34 @@ const confidentialAttachment = attachments.find(
   (attachment) => attachment.id === 'attachment-confidential-orion-evidence',
 )!;
 const restrictedAttachment = attachments.find((attachment) => attachment.id === 'attachment-restricted-nova-access')!;
+const managementPermissionScope: SystemPermissionScope = {
+  resourceId: 'system-permission-center',
+  resourceType: 'system',
+  classification: 'internal',
+  systemAction: 'permission.manage',
+};
+
+function addActiveShare(share: ActiveShare): () => void {
+  mockData.activeShares.push(share);
+  return () => {
+    const index = mockData.activeShares.indexOf(share);
+    if (index >= 0) mockData.activeShares.splice(index, 1);
+  };
+}
+
+function addAdminProjectMembership(projectId = 'project-orion'): () => void {
+  const membership = {
+    id: `membership-${projectId}-administrator-test`,
+    projectId,
+    userId: admin.id,
+    membershipRole: 'member' as const,
+  };
+  mockData.projectMemberships.push(membership);
+  return () => {
+    const index = mockData.projectMemberships.indexOf(membership);
+    if (index >= 0) mockData.projectMemberships.splice(index, 1);
+  };
+}
 
 describe('can — capability, ownership, and field-level access', () => {
   it('denies anonymous users and incomplete resource context', () => {
@@ -28,8 +58,13 @@ describe('can — capability, ownership, and field-level access', () => {
     expect(can(projectLeader, 'okr.update').allowed).toBe(false);
   });
 
-  it('allows administrator system privileges without implying confidential body access', () => {
-    expect(can(admin, 'permission.manage').allowed).toBe(true);
+  it('requires typed system metadata for administrator system privileges', () => {
+    expect(can(admin, 'permission.manage').allowed).toBe(false);
+    expect(can(admin, 'user.manage').allowed).toBe(false);
+    expect(can(admin, 'audit.read').allowed).toBe(false);
+    expect(can(admin, 'dashboard.view').allowed).toBe(false);
+    expect(can(admin, 'permission.manage', managementPermissionScope).allowed).toBe(true);
+    expect(can(projectLeader, 'permission.manage', managementPermissionScope).allowed).toBe(false);
     expect(can(admin, 'document.read_body', confidentialDocument).allowed).toBe(false);
   });
 
@@ -57,6 +92,28 @@ describe('can — classification and relationship transparency', () => {
   it('allows management to read every employee report body but not a restricted attachment without a grant', () => {
     expect(can(management, 'daily_report.read_body', memberReport).allowed).toBe(true);
     expect(can(management, 'attachment.read', restrictedAttachment).allowed).toBe(false);
+  });
+
+  it('denies management confidential attachment access without an explicit share', () => {
+    expect(can(management, 'attachment.read', confidentialAttachment).allowed).toBe(false);
+  });
+
+  it('allows management confidential attachment access with a matching explicit share', () => {
+    const removeShare = addActiveShare({
+      id: 'share-confidential-orion-attachment-to-management-test',
+      resourceId: confidentialAttachment.id,
+      resourceType: 'attachment',
+      grantedByUserId: confidentialAttachment.ownerId,
+      grantedToUserId: management.id,
+      createdAt: '2026-08-10T10:00:00Z',
+      active: true,
+    });
+
+    try {
+      expect(can(management, 'attachment.read', confidentialAttachment).allowed).toBe(true);
+    } finally {
+      removeShare();
+    }
   });
 
   it('allows direct and indirect managers full subordinate detail', () => {
@@ -90,9 +147,82 @@ describe('can — classification and relationship transparency', () => {
     expect(can(management, 'record.export', restrictedAttachment).allowed).toBe(false);
   });
 
+  it('exports only explicitly compatible business resources', () => {
+    const workload = mockData.workloads[0]!;
+
+    expect(can(management, 'record.export', workload).allowed).toBe(false);
+    expect(can(management, 'record.export', memberReport).allowed).toBe(true);
+  });
+
   it('allows organization-public OKR summaries without a project relationship', () => {
     const publicObjective = { ...leaderObjective, classification: 'public' as const };
 
     expect(can(admin, 'okr.read_summary', publicObjective).allowed).toBe(true);
+  });
+
+  it('allows a project-member admin ordinary project detail but requires grants for confidential resources', () => {
+    const removeMembership = addAdminProjectMembership();
+    const removeNovaMembership = addAdminProjectMembership('project-nova');
+
+    try {
+      expect(can(admin, 'daily_report.read_body', leaderReport).allowed).toBe(true);
+      expect(can(admin, 'attachment.read', confidentialAttachment).allowed).toBe(false);
+      expect(can(admin, 'attachment.read', restrictedAttachment).allowed).toBe(false);
+      expect(can(admin, 'document.read_body', confidentialDocument).allowed).toBe(false);
+    } finally {
+      removeNovaMembership();
+      removeMembership();
+    }
+  });
+
+  it('allows a project-member admin confidential attachment access only with a matching explicit share', () => {
+    const removeMembership = addAdminProjectMembership();
+    const removeShare = addActiveShare({
+      id: 'share-confidential-orion-attachment-to-admin-test',
+      resourceId: confidentialAttachment.id,
+      resourceType: 'attachment',
+      grantedByUserId: confidentialAttachment.ownerId,
+      grantedToUserId: admin.id,
+      createdAt: '2026-08-10T10:00:00Z',
+      active: true,
+    });
+
+    try {
+      expect(can(admin, 'attachment.read', confidentialAttachment).allowed).toBe(true);
+    } finally {
+      removeShare();
+      removeMembership();
+    }
+  });
+
+  it('allows a project-member admin confidential documents and restricted attachments only with matching explicit shares', () => {
+    const removeNovaMembership = addAdminProjectMembership('project-nova');
+    const removeDocumentShare = addActiveShare({
+      id: 'share-confidential-nova-document-to-admin-test',
+      resourceId: confidentialDocument.id,
+      resourceType: 'document',
+      grantedByUserId: confidentialDocument.ownerId,
+      grantedToUserId: admin.id,
+      createdAt: '2026-08-10T10:00:00Z',
+      active: true,
+    });
+    const removeAttachmentShare = addActiveShare({
+      id: 'share-restricted-nova-attachment-to-admin-test',
+      resourceId: restrictedAttachment.id,
+      resourceType: 'attachment',
+      grantedByUserId: restrictedAttachment.ownerId,
+      grantedToUserId: admin.id,
+      createdAt: '2026-08-10T10:00:00Z',
+      active: true,
+    });
+
+    try {
+      expect(can(admin, 'document.read_body', confidentialDocument).allowed).toBe(true);
+      expect(can(admin, 'attachment.read', restrictedAttachment).allowed).toBe(true);
+    } finally {
+      removeAttachmentShare();
+      removeDocumentShare();
+      removeNovaMembership();
+    }
   });
 });

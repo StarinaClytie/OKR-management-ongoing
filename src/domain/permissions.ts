@@ -38,7 +38,8 @@ export type PermissionResource =
   | WeeklyReport
   | DocumentRecord
   | WorkloadEntry
-  | PermissionScope;
+  | PermissionScope
+  | SystemPermissionScope;
 
 export interface PermissionDecision {
   allowed: boolean;
@@ -55,7 +56,8 @@ export type ResourceType =
   | 'weekly_report'
   | 'document'
   | 'attachment'
-  | 'workload';
+  | 'workload'
+  | 'system';
 
 export interface AccessControlledResource {
   resourceId: string;
@@ -67,6 +69,13 @@ export interface PermissionScope extends AccessControlledResource {
   ownerId: string;
   projectId?: string;
   parentResourceId?: string;
+}
+
+export type SystemAction = Extract<Action, 'dashboard.view' | 'user.manage' | 'permission.manage' | 'audit.read'>;
+
+export interface SystemPermissionScope extends AccessControlledResource {
+  resourceType: 'system';
+  systemAction: SystemAction;
 }
 
 export interface ActiveShare {
