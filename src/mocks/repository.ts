@@ -110,7 +110,6 @@ export function validateRepositoryIntegrity(data: MockData): string[] {
   }
 
   const reportRecords = [...data.dailyReports, ...data.weeklyReports];
-  const reportById = new Map(reportRecords.map((report) => [report.id, report]));
 
   for (const report of reportRecords) {
     const reportType = 'date' in report ? 'Daily report' : 'Weekly report';
@@ -164,7 +163,9 @@ export function validateRepositoryIntegrity(data: MockData): string[] {
 
   for (const share of data.activeShares.filter((candidate) => candidate.active)) {
     if (share.resourceType === 'daily_report' || share.resourceType === 'weekly_report') {
-      const report = reportById.get(share.resourceId);
+      const report = share.resourceType === 'daily_report'
+        ? dailyReportsById.get(share.resourceId)
+        : weeklyReportsById.get(share.resourceId);
       if (!report) {
         errors.push(`Active share ${share.id} references unknown ${share.resourceType.replace('_', ' ')} ${share.resourceId}`);
         continue;

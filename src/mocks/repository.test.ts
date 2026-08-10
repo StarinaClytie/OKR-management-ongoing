@@ -206,4 +206,74 @@ describe('mockRepository', () => {
       ]),
     );
   });
+
+  it('accepts a valid weekly-report share with a matching collaboration relation', () => {
+    expect(
+      validateRepositoryIntegrity({
+        ...mockData,
+        collaborationRelations: [
+          {
+            ...collaborationRelations[0],
+            sharedResourceIds: ['daily-report-peer-2026-08-07', 'weekly-report-nova-2026-08-07'],
+          },
+        ],
+        activeShares: [
+          ...activeShares,
+          {
+            id: 'share-nova-weekly-to-employee',
+            resourceId: 'weekly-report-nova-2026-08-07',
+            resourceType: 'weekly_report',
+            grantedByUserId: 'user-project-peer',
+            grantedToUserId: 'user-employee',
+            createdAt: '2026-08-08T11:00:00Z',
+            active: true,
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('reports an unknown weekly-report share ID', () => {
+    const errors = validateRepositoryIntegrity({
+      ...mockData,
+      activeShares: [
+        {
+          id: 'share-missing-weekly-report',
+          resourceId: 'missing-weekly-report',
+          resourceType: 'weekly_report',
+          grantedByUserId: 'user-project-peer',
+          grantedToUserId: 'user-employee',
+          createdAt: '2026-08-08T11:00:00Z',
+          active: true,
+        },
+      ],
+    });
+
+    expect(errors).toContain('Active share share-missing-weekly-report references unknown weekly report missing-weekly-report');
+  });
+
+  it('rejects a daily-report share that points to an existing weekly report', () => {
+    const errors = validateRepositoryIntegrity({
+      ...mockData,
+      collaborationRelations: [
+        {
+          ...collaborationRelations[0],
+          sharedResourceIds: ['weekly-report-nova-2026-08-07'],
+        },
+      ],
+      activeShares: [
+        {
+          id: 'share-weekly-as-daily',
+          resourceId: 'weekly-report-nova-2026-08-07',
+          resourceType: 'daily_report',
+          grantedByUserId: 'user-project-peer',
+          grantedToUserId: 'user-employee',
+          createdAt: '2026-08-08T11:00:00Z',
+          active: true,
+        },
+      ],
+    });
+
+    expect(errors).toContain('Active share share-weekly-as-daily references unknown daily report weekly-report-nova-2026-08-07');
+  });
 });
