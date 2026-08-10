@@ -15,6 +15,11 @@
 - Roles are `administrator`, `management`, `project_leader`, `employee`, and `hr`.
 - Administrator may manage users, roles, permissions, settings, and audit metadata but cannot read confidential business content by default.
 - Permission decisions combine role capability, resource scope, confidentiality level, and action.
+- OKR summary, daily-report body, evidence, and attachment access are separate permissions.
+- Executives can read all organization OKR details and reports, while attachments still obey classification.
+- Managers can read all direct and indirect subordinate details; subordinates see only managers' OKR summaries.
+- Same-project peers can read one another's OKR details and reports, while confidential attachments require independent authorization.
+- Cross-project collaborators see report bodies or attachments only through an explicit collaboration relation or active share.
 - Project leaders may own KRs, update their own KRs, and author their own daily reports while reviewing project-member reports.
 - All five project views ship: alignment tree, Gantt chart, progress trend, risk matrix, and workload.
 - Default screens stay simple: one clear primary action, role-appropriate defaults, and advanced views disclosed through tabs.
@@ -216,6 +221,19 @@ export type Classification = 'public' | 'internal' | 'confidential' | 'restricte
 export type ReportStatus = 'draft' | 'submitted' | 'returned' | 'confirmed';
 export type ProgressStatus = 'on_track' | 'at_risk' | 'off_track' | 'complete';
 
+export interface OrganizationRelation {
+  managerId: string;
+  subordinateId: string;
+  depth: number;
+}
+
+export interface CollaborationRelation {
+  viewerId: string;
+  subjectUserId: string;
+  projectId?: string;
+  sharedResourceIds: string[];
+}
+
 export interface KeyResult {
   id: string;
   objectiveId: string;
@@ -233,7 +251,7 @@ Define each remaining interface with stable string IDs and ISO date strings. `Da
 
 - [ ] **Step 4: Create coherent cross-file mock data**
 
-Create one user per role, two projects, objectives and KRs with mixed ownership, twelve weekly progress snapshots, milestones, four risks, workloads, daily reports, weekly reports, confidential documents, an administrator without project membership, and HR-safe work-hour records.
+Create one user per role, two projects, objectives and KRs with mixed ownership, twelve weekly progress snapshots, milestones, four risks, workloads, daily reports, weekly reports, confidential documents, an administrator without project membership, and HR-safe work-hour records. Add direct and indirect manager relations, same-project peer relations, one explicit cross-project collaboration, one actively shared report, and attachments across all four classifications.
 
 Implement:
 
@@ -308,34 +326,65 @@ Run: `npm run test:run -- src/auth/permissionService.test.ts`
 
 Expected: FAIL because `can` and action definitions do not exist.
 
-- [ ] **Step 3: Implement capability, scope, and classification evaluation**
+- [ ] **Step 3: Add failing transparency tests before implementing relationship rules**
+
+```ts
+it('allows management to read every employee report body but not a restricted attachment without a grant', () => {
+  expect(can(management, 'daily_report.read_body', employeeReport).allowed).toBe(true);
+  expect(can(management, 'attachment.read', restrictedAttachment).allowed).toBe(false);
+});
+
+it('allows managers full subordinate detail and subordinates only manager summaries', () => {
+  expect(can(projectLeader, 'daily_report.read_body', employeeReport).allowed).toBe(true);
+  expect(can(employee, 'okr.read_summary', leaderObjective).allowed).toBe(true);
+  expect(can(employee, 'daily_report.read_body', leaderReport).allowed).toBe(false);
+});
+
+it('allows same-project peers to read reports but independently checks attachment classification', () => {
+  expect(can(projectPeer, 'daily_report.read_body', employeeReport).allowed).toBe(true);
+  expect(can(projectPeer, 'attachment.read', confidentialAttachment).allowed).toBe(false);
+});
+
+it('requires an explicit relation or share for cross-project report detail', () => {
+  expect(can(unrelatedEmployee, 'daily_report.read_body', employeeReport).allowed).toBe(false);
+  expect(can(explicitCollaborator, 'daily_report.read_body', sharedReport).allowed).toBe(true);
+});
+```
+
+Run: `npm run test:run -- src/auth/permissionService.test.ts`
+
+Expected: FAIL because relationship-aware transparency rules are not implemented.
+
+- [ ] **Step 4: Implement capability, scope, classification, and relationship evaluation**
 
 ```ts
 export type Action =
-  | 'dashboard.view' | 'okr.read' | 'okr.update' | 'project.manage'
+  | 'dashboard.view' | 'okr.read_summary' | 'okr.read_detail' | 'okr.update' | 'project.manage'
   | 'daily_report.create' | 'daily_report.read' | 'daily_report.read_body'
   | 'daily_report.edit' | 'daily_report.review' | 'worklog.read_hours'
-  | 'document.read_body' | 'document.download' | 'record.export'
+  | 'evidence.read' | 'attachment.read' | 'document.read_body' | 'document.download' | 'record.export'
   | 'user.manage' | 'permission.manage' | 'audit.read';
 
 export interface PermissionDecision { allowed: boolean; reason: string; }
 
 export function can(user: User | undefined, action: Action, resource?: PermissionResource): PermissionDecision {
   if (!user) return { allowed: false, reason: '需要登录' };
-  // role capability -> scope -> classification -> ownership/grant
+  // role capability -> scope -> classification -> relationship -> ownership/grant
   return { allowed: false, reason: '没有访问权限' };
 }
 ```
 
 Use explicit role-action maps. Never default missing actions or missing resource context to allowed. Add special rules for administrator confidentiality, project-leader self-authorship, member-report review, and HR field-level hours access.
 
-- [ ] **Step 4: Verify permission rules pass**
+Apply relationship-aware transparency rules in this order: explicit restricted classification denial, explicit grant/share, executive scope, direct/indirect manager scope, same-project scope, upward summary-only scope, explicit cross-project collaboration, organization-public summary, default denial. Attachment access must always execute its own classification check.
+
+- [ ] **Step 5: Verify permission rules pass**
 
 Run: `npm run test:run -- src/auth/permissionService.test.ts`
 
 Expected: all role, scope, confidentiality, self-ownership, review, and export cases pass.
 
-- [ ] **Step 5: Write and implement component guard tests**
+- [ ] **Step 6: Write and implement component guard tests**
 
 ```tsx
 render(<PermissionGate action="document.read_body" resource={confidentialDocument} fallback={<span>受限内容</span>}><span>机密正文</span></PermissionGate>);
@@ -345,13 +394,13 @@ expect(screen.queryByText('机密正文')).not.toBeInTheDocument();
 
 Implement `AuthProvider` with five selectable mock users, `PermissionGate` with a non-leaking fallback, and `ProtectedRoute` that redirects to `/access-denied`.
 
-- [ ] **Step 6: Run guard and type tests**
+- [ ] **Step 7: Run guard and type tests**
 
 Run: `npm run test:run -- src/auth && npm run typecheck`
 
 Expected: permission and guard suites pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 Run: `git add src/auth src/domain/permissions.ts && git commit -m "feat: add role and confidentiality permissions"`
 
