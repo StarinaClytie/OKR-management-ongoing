@@ -77,8 +77,10 @@ export interface DailyReport {
   keyResultIds: string[];
   date: string;
   content: string;
+  classification: Classification;
   hours: number;
   evidence: string[];
+  evidenceClassification: Classification;
   attachmentIds: string[];
   status: ReportStatus;
 }
@@ -91,6 +93,7 @@ export interface WeeklyReport {
   keyResultIds: string[];
   weekEnding: string;
   summary: string;
+  classification: Classification;
   nextWeekPlan: string;
   hours: number;
   attachmentIds: string[];
@@ -104,6 +107,7 @@ export interface DocumentRecord {
   ownerId: string;
   projectId?: string;
   relatedResourceId?: string;
+  relatedResourceType?: 'daily_report' | 'weekly_report' | 'objective';
   kind: 'attachment' | 'document';
   uploadedAt: string;
 }
