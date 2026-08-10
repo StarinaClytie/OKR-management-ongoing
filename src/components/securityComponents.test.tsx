@@ -36,6 +36,41 @@ describe('security-aware shared components', () => {
     expect(screen.getByText('你没有导出该记录的权限')).toBeVisible();
   });
 
+  it('prevents an unauthorized custom export control from handling pointer or keyboard activation', async () => {
+    const user = userEvent.setup();
+    let activationCount = 0;
+
+    function CustomExportControl({ onActivate }: { onActivate: () => void }) {
+      return (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onActivate}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onActivate();
+          }}
+        >
+          导出自定义记录
+        </div>
+      );
+    }
+
+    render(
+      <AuthProvider initialUserId="user-employee">
+        <ExportGuard resource={projects[1]}>
+          <CustomExportControl onActivate={() => { activationCount += 1; }} />
+        </ExportGuard>
+      </AuthProvider>,
+    );
+
+    const exportControl = screen.getByRole('button', { name: '导出自定义记录' });
+    await user.click(exportControl);
+    exportControl.focus();
+    await user.keyboard('{Enter}');
+
+    expect(activationCount).toBe(0);
+  });
+
   it('describes progress with an accessible percentage', () => {
     render(<ProgressRing value={72} />);
 
