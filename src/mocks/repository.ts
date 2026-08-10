@@ -78,6 +78,7 @@ export function validateRepositoryIntegrity(data: MockData): string[] {
   const dailyReportsById = new Map(data.dailyReports.map((report) => [report.id, report]));
   const weeklyReportsById = new Map(data.weeklyReports.map((report) => [report.id, report]));
   const attachmentsById = new Map(data.attachments.map((attachment) => [attachment.id, attachment]));
+  const documentsById = new Map(data.documents.filter((document) => document.kind === 'document').map((document) => [document.id, document]));
 
   for (const project of data.projects) {
     if (!userIds.has(project.leaderId)) {
@@ -162,25 +163,41 @@ export function validateRepositoryIntegrity(data: MockData): string[] {
   }
 
   for (const share of data.activeShares.filter((candidate) => candidate.active)) {
-    const report = reportById.get(share.resourceId);
-    if (!report) {
-      errors.push(`Active share ${share.id} references unknown report ${share.resourceId}`);
+    if (share.resourceType === 'daily_report' || share.resourceType === 'weekly_report') {
+      const report = reportById.get(share.resourceId);
+      if (!report) {
+        errors.push(`Active share ${share.id} references unknown ${share.resourceType.replace('_', ' ')} ${share.resourceId}`);
+        continue;
+      }
+      if (report.authorId !== share.grantedByUserId) {
+        errors.push(`Active share ${share.id} must be granted by report author ${report.authorId}`);
+      }
+      const relation = data.collaborationRelations.find(
+        (candidate) =>
+          candidate.viewerId === share.grantedToUserId &&
+          candidate.subjectUserId === share.grantedByUserId &&
+          candidate.projectId === report.projectId &&
+          candidate.sharedResourceIds.includes(share.resourceId),
+      );
+      if (!relation) {
+        errors.push(
+          `Active share ${share.id} lacks a matching collaboration relation from ${share.grantedByUserId} to ${share.grantedToUserId}`,
+        );
+      }
       continue;
     }
-    if (report.authorId !== share.grantedByUserId) {
-      errors.push(`Active share ${share.id} must be granted by report author ${report.authorId}`);
+
+    const resource = share.resourceType === 'document' ? documentsById.get(share.resourceId) : attachmentsById.get(share.resourceId);
+    const resourceLabel = share.resourceType === 'document' ? 'document' : 'attachment';
+    if (!resource) {
+      errors.push(`Active share ${share.id} references unknown ${resourceLabel} ${share.resourceId}`);
+      continue;
     }
-    const relation = data.collaborationRelations.find(
-      (candidate) =>
-        candidate.viewerId === share.grantedToUserId &&
-        candidate.subjectUserId === share.grantedByUserId &&
-        candidate.projectId === report.projectId &&
-        candidate.sharedResourceIds.includes(share.resourceId),
-    );
-    if (!relation) {
-      errors.push(
-        `Active share ${share.id} lacks a matching collaboration relation from ${share.grantedByUserId} to ${share.grantedToUserId}`,
-      );
+    if (resource.ownerId !== share.grantedByUserId) {
+      errors.push(`Active share ${share.id} must be granted by ${resourceLabel} owner ${resource.ownerId}`);
+    }
+    if (resource.projectId && !projectIds.has(resource.projectId)) {
+      errors.push(`Active share ${share.id} references ${resourceLabel} ${resource.id} in unknown project ${resource.projectId}`);
     }
   }
 

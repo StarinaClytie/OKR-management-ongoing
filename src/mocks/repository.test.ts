@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ActiveShare } from '../domain/permissions';
 import { getAttachmentPermissionScope, getDailyReportPermissionScopes } from '../domain/permissions';
 import { keyResults, objectives, projects } from './okr';
 import { dailyReports } from './reports';
@@ -134,6 +135,75 @@ describe('mockRepository', () => {
 
     expect(errors).toContain(
       'Active share share-nova-report-to-orion lacks a matching collaboration relation from user-project-peer to user-employee',
+    );
+  });
+
+  it('accepts valid daily-report, document, and attachment shares', () => {
+    const validShares: ActiveShare[] = [
+      ...activeShares,
+      {
+        id: 'share-nova-document-to-employee',
+        resourceId: 'document-nova-metric-contract',
+        resourceType: 'document',
+        grantedByUserId: 'user-management',
+        grantedToUserId: 'user-employee',
+        createdAt: '2026-08-08T09:00:00Z',
+        active: true,
+      },
+      {
+        id: 'share-nova-attachment-to-employee',
+        resourceId: 'attachment-confidential-nova-quality',
+        resourceType: 'attachment',
+        grantedByUserId: 'user-project-peer',
+        grantedToUserId: 'user-employee',
+        createdAt: '2026-08-08T09:30:00Z',
+        active: true,
+      },
+    ];
+
+    expect(validateRepositoryIntegrity({ ...mockData, activeShares: validShares })).toEqual([]);
+  });
+
+  it('reports unknown IDs for every supported active-share resource type', () => {
+    const errors = validateRepositoryIntegrity({
+      ...mockData,
+      activeShares: [
+        {
+          id: 'share-missing-report',
+          resourceId: 'missing-report',
+          resourceType: 'daily_report',
+          grantedByUserId: 'user-project-peer',
+          grantedToUserId: 'user-employee',
+          createdAt: '2026-08-08T10:00:00Z',
+          active: true,
+        },
+        {
+          id: 'share-missing-document',
+          resourceId: 'missing-document',
+          resourceType: 'document',
+          grantedByUserId: 'user-management',
+          grantedToUserId: 'user-employee',
+          createdAt: '2026-08-08T10:00:00Z',
+          active: true,
+        },
+        {
+          id: 'share-missing-attachment',
+          resourceId: 'missing-attachment',
+          resourceType: 'attachment',
+          grantedByUserId: 'user-project-peer',
+          grantedToUserId: 'user-employee',
+          createdAt: '2026-08-08T10:00:00Z',
+          active: true,
+        },
+      ],
+    });
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'Active share share-missing-report references unknown daily report missing-report',
+        'Active share share-missing-document references unknown document missing-document',
+        'Active share share-missing-attachment references unknown attachment missing-attachment',
+      ]),
     );
   });
 });
