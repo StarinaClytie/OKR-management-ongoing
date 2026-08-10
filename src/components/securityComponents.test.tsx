@@ -59,6 +59,24 @@ describe('security-aware shared components', () => {
     expect(activationCount).toBe(3);
   });
 
+  it('gives each denied export control a unique description relationship', () => {
+    render(
+      <AuthProvider initialUserId="user-employee">
+        <ExportGuard resource={projects[1]} label="导出项目" onExport={() => undefined} />
+        <ExportGuard resource={projects[1]} label="导出日报" onExport={() => undefined} />
+      </AuthProvider>,
+    );
+
+    const projectDescriptionId = screen.getByRole('button', { name: '导出项目' }).getAttribute('aria-describedby');
+    const reportDescriptionId = screen.getByRole('button', { name: '导出日报' }).getAttribute('aria-describedby');
+
+    expect(projectDescriptionId).toBeTruthy();
+    expect(reportDescriptionId).toBeTruthy();
+    expect(projectDescriptionId).not.toBe(reportDescriptionId);
+    expect(document.getElementById(projectDescriptionId!)).toHaveTextContent('原因：没有访问权限');
+    expect(document.getElementById(reportDescriptionId!)).toHaveTextContent('原因：没有访问权限');
+  });
+
   it('describes progress with an accessible percentage', () => {
     render(<ProgressRing value={72} />);
 
