@@ -1,14 +1,17 @@
 import { PermissionGate } from '../../auth/PermissionGate';
+import { can } from '../../auth/permissionService';
 import { MetricCard } from '../../components/MetricCard';
 import type { DashboardData } from '../../mocks/repository';
-import { users } from '../../mocks/users';
 
 export interface HrSummaryWidgetProps {
   data: DashboardData;
 }
 
 export function HrSummaryWidget({ data }: HrSummaryWidgetProps) {
-  const overloadedCount = data.workloads.filter((workload) => workload.loggedHours > workload.capacityHours).length;
+  const authorizedWorkloads = data.workloads.filter(
+    (workload) => can(data.currentUser, 'worklog.read_hours', workload).allowed,
+  );
+  const overloadedCount = authorizedWorkloads.filter((workload) => workload.loggedHours > workload.capacityHours).length;
   const submissionRate = 100;
 
   return (
@@ -22,11 +25,11 @@ export function HrSummaryWidget({ data }: HrSummaryWidgetProps) {
       <div className="dashboard-metrics">
         <MetricCard label="日报提交率" value={`${submissionRate}%`} detail="本周授权范围" />
         <MetricCard label="超负载人员" value={overloadedCount} detail="记录工时高于容量" />
-        <MetricCard label="授权工时记录" value={data.workloads.length} detail="仅显示投入字段" />
+        <MetricCard label="授权工时记录" value={authorizedWorkloads.length} detail="仅显示投入字段" />
       </div>
       <div className="workload-summary" aria-label="授权工时列表">
-        {data.workloads.map((workload) => {
-          const user = users.find((candidate) => candidate.id === workload.userId);
+        {authorizedWorkloads.map((workload) => {
+          const user = data.users.find((candidate) => candidate.id === workload.userId);
           const overloaded = workload.loggedHours > workload.capacityHours;
 
           return (

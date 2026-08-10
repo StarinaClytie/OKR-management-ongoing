@@ -3,6 +3,7 @@ import type {
   DailyReport,
   DocumentRecord,
   KeyResult,
+  Milestone,
   Objective,
   Project,
   WeeklyReport,
@@ -14,6 +15,7 @@ export type Action =
   | 'okr.read_summary'
   | 'okr.read_detail'
   | 'okr.update'
+  | 'milestone.read'
   | 'project.manage'
   | 'daily_report.create'
   | 'daily_report.read'
@@ -34,6 +36,7 @@ export type PermissionResource =
   | Project
   | Objective
   | KeyResult
+  | Milestone
   | DailyReport
   | WeeklyReport
   | DocumentRecord
@@ -57,6 +60,7 @@ export type ResourceType =
   | 'document'
   | 'attachment'
   | 'workload'
+  | 'milestone'
   | 'system';
 
 export interface AccessControlledResource {

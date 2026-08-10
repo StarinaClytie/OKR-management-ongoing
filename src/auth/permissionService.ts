@@ -25,6 +25,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.read_summary',
     'okr.read_detail',
     'okr.update',
+    'milestone.read',
     'project.manage',
     'daily_report.create',
     'daily_report.read',
@@ -43,6 +44,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.read_summary',
     'okr.read_detail',
     'okr.update',
+    'milestone.read',
     'project.manage',
     'daily_report.create',
     'daily_report.read',
@@ -61,6 +63,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.read_summary',
     'okr.read_detail',
     'okr.update',
+    'milestone.read',
     'daily_report.create',
     'daily_report.read',
     'daily_report.read_body',
@@ -167,6 +170,17 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
     };
   }
 
+  if ('dependencyIds' in resource) {
+    const objective = mockData.objectives.find((candidate) => candidate.id === resource.objectiveId);
+    return {
+      id: resource.id,
+      type: 'milestone',
+      ownerId: objective?.ownerId,
+      projectId: resource.projectId,
+      classification: resource.classification,
+    };
+  }
+
   if ('objectiveId' in resource && 'ownerId' in resource) {
     const objective = mockData.objectives.find((candidate) => candidate.id === resource.objectiveId);
     return {
@@ -207,6 +221,8 @@ function isResourceCompatibleWithAction(action: Action, context: ResourceContext
   if (action.startsWith('okr.')) {
     return context.type === 'project' || context.type === 'objective' || context.type === 'key_result';
   }
+
+  if (action === 'milestone.read') return context.type === 'milestone';
 
   if (action === 'project.manage') return context.type === 'project';
   if (action.startsWith('daily_report.')) return context.type === 'daily_report';
@@ -305,6 +321,11 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
     return deny('严格机密资源需要明确授权');
   }
   if (explicitlyShared) return allow('资源已明确共享');
+
+  if (action === 'milestone.read') {
+    if (user.role === 'management') return allow('管理层组织范围');
+    return hasProjectRole(user.id, context.projectId) ? allow('所属项目里程碑') : deny();
+  }
 
   if (action === 'okr.update') {
     return context.ownerId === user.id ? allow('可更新本人负责的 OKR') : deny();

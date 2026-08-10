@@ -20,6 +20,13 @@ describe('mockRepository', () => {
     expect(data.progressSnapshots).toHaveLength(12);
   });
 
+  it('includes daily reports in dashboard data instead of requiring global fixture reads', () => {
+    const data = mockRepository.getDashboardData('user-project-leader');
+
+    expect(data).toHaveProperty('dailyReports');
+    expect(data).toHaveProperty('users');
+  });
+
   it('keeps direct and indirect manager relations available to later permission checks', () => {
     expect(organizationRelations).toEqual(
       expect.arrayContaining([

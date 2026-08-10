@@ -22,6 +22,8 @@ import { organizationRelations, projectMemberships, users } from './users';
 
 export interface DashboardData {
   currentUser: User;
+  users: User[];
+  dailyReports: DailyReport[];
   projects: Project[];
   objectives: Objective[];
   keyResults: KeyResult[];
@@ -219,6 +221,8 @@ export const mockRepository = {
 
     return {
       currentUser,
+      users,
+      dailyReports,
       projects,
       objectives,
       keyResults,

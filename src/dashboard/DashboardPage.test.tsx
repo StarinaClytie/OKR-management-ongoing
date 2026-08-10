@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthContext';
 import { DashboardPage } from './DashboardPage';
+import { AdminSystemWidget } from './widgets/AdminSystemWidget';
 
 function renderDashboardAs(userId: string) {
   return render(
@@ -59,5 +60,17 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('成员日报待审核')).not.toBeInTheDocument();
     expect(screen.queryByText('完成引导文案的用户访谈整理，并提交实验配置。')).not.toBeInTheDocument();
     expect(screen.queryByText('新星数据平台')).not.toBeInTheDocument();
+  });
+
+  it('does not expose system metadata when the admin widget is reused for an unauthorized role', () => {
+    render(
+      <AuthProvider initialUserId="user-employee">
+        <AdminSystemWidget />
+      </AuthProvider>,
+    );
+
+    expect(screen.queryByRole('heading', { name: '用户与角色状态' })).not.toBeInTheDocument();
+    expect(screen.queryByText('系统配置状态')).not.toBeInTheDocument();
+    expect(screen.queryByText('系统治理视图不包含项目正文、成员日报或业务附件。')).not.toBeInTheDocument();
   });
 });

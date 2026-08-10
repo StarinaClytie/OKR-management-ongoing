@@ -14,9 +14,6 @@ export function TodayFocusWidget({ data }: TodayFocusWidgetProps) {
   const nextMilestone = data.milestones
     .filter((milestone) => currentProjectIds.has(milestone.projectId))
     .sort((left, right) => left.dueDate.localeCompare(right.dueDate))[0];
-  const milestoneObjective = nextMilestone
-    ? data.objectives.find((objective) => objective.id === nextMilestone.objectiveId)
-    : undefined;
 
   return (
     <section className="dashboard-widget dashboard-widget--focus" aria-labelledby="today-focus-title">
@@ -29,11 +26,11 @@ export function TodayFocusWidget({ data }: TodayFocusWidgetProps) {
           填写今日日报
         </button>
       </div>
-      {nextMilestone && milestoneObjective ? (
+      {nextMilestone ? (
         <PermissionGate
-          action="okr.read_detail"
-          resource={milestoneObjective}
-          fallback={<RestrictedContent classification={milestoneObjective.classification} />}
+          action="milestone.read"
+          resource={nextMilestone}
+          fallback={<RestrictedContent classification={nextMilestone.classification} />}
         >
           <div className="focus-item">
             <div>
