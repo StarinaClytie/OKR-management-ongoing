@@ -20,55 +20,43 @@ describe('security-aware shared components', () => {
 
   it('blocks export when export permission is missing', async () => {
     const user = userEvent.setup();
+    let exportCount = 0;
 
     render(
       <AuthProvider initialUserId="user-employee">
-        <ExportGuard resource={projects[1]}>
-          <button type="button">导出</button>
-        </ExportGuard>
+        <ExportGuard resource={projects[1]} label="导出" onExport={() => { exportCount += 1; }} />
       </AuthProvider>,
     );
 
     const exportButton = screen.getByRole('button', { name: '导出' });
     await user.click(exportButton);
+    exportButton.focus();
+    await user.keyboard('{Enter}');
+    await user.keyboard(' ');
 
     expect(exportButton).toBeDisabled();
+    expect(exportCount).toBe(0);
     expect(screen.getByText('你没有导出该记录的权限')).toBeVisible();
   });
 
-  it('prevents an unauthorized custom export control from handling pointer or keyboard activation', async () => {
+  it('allows an authorized user to export with pointer, Enter, and Space activation', async () => {
     const user = userEvent.setup();
     let activationCount = 0;
 
-    function CustomExportControl({ onActivate }: { onActivate: () => void }) {
-      return (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={onActivate}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') onActivate();
-          }}
-        >
-          导出自定义记录
-        </div>
-      );
-    }
-
     render(
-      <AuthProvider initialUserId="user-employee">
-        <ExportGuard resource={projects[1]}>
-          <CustomExportControl onActivate={() => { activationCount += 1; }} />
-        </ExportGuard>
+      <AuthProvider initialUserId="user-management">
+        <ExportGuard resource={projects[1]} label="导出项目" onExport={() => { activationCount += 1; }} />
       </AuthProvider>,
     );
 
-    const exportControl = screen.getByRole('button', { name: '导出自定义记录' });
+    const exportControl = screen.getByRole('button', { name: '导出项目' });
     await user.click(exportControl);
     exportControl.focus();
     await user.keyboard('{Enter}');
+    await user.keyboard(' ');
 
-    expect(activationCount).toBe(0);
+    expect(exportControl).toBeEnabled();
+    expect(activationCount).toBe(3);
   });
 
   it('describes progress with an accessible percentage', () => {
