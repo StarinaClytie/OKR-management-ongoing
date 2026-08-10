@@ -1,0 +1,22 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color: var(--color-text);
+  background: var(--color-canvas);
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
