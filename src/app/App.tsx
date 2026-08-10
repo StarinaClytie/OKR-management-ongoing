@@ -1,7 +1,13 @@
+import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from '../auth/AuthContext';
+import { AppRoutes } from './routes';
+
 export function App() {
   return (
-    <main>
-      <h1>Northstar OKR</h1>
-    </main>
+    <AuthProvider>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
