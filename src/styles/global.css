@@ -638,6 +638,10 @@ select {
 }
 
 .daily-objective-field__examples ul { margin: var(--space-2) 0 0; padding-left: 20px; }
+.daily-objective-field__examples dl { display: grid; gap: var(--space-2); margin: 0; }
+.daily-objective-field__examples dl div { display: grid; grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.5fr); gap: var(--space-2); }
+.daily-objective-field__examples dt { color: #334155; font-weight: 700; }
+.daily-objective-field__examples dd { margin: 0; }
 .daily-objective-field__progress,
 .daily-evidence__header,
 .daily-form-actions { display: flex; align-items: end; justify-content: space-between; gap: var(--space-3); }
@@ -645,6 +649,7 @@ select {
 .daily-kr-editor { display: grid; gap: var(--space-3); margin: 0; padding: var(--space-4); border: 1px solid #cbd5e1; border-radius: var(--radius-sm); }
 .daily-kr-editor legend { padding: 0 5px; color: #0f172a; font-weight: 800; }
 .daily-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.daily-form-grid--single { grid-template-columns: minmax(0, 1fr); }
 .daily-form-grid--type-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .daily-wide-field { grid-column: 1 / -1; }
 .daily-evidence__header { align-items: center; }

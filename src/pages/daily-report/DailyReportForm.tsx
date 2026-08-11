@@ -52,7 +52,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
   const averageReference = useMemo(() => getKrAverageReference(draft.keyResults), [draft.keyResults]);
   const objectiveProgressValidation = validateProgress(draft.objectiveProgress);
   const objectiveProgressError = showSubmitErrors || draft.objectiveProgress !== undefined ? objectiveProgressValidation : null;
-  const activeKr = draft.keyResults.find((keyResult) => keyResult.id === activeKrId) ?? draft.keyResults[0]!;
+  const activeKr = draft.keyResults.find((keyResult) => keyResult.id === activeKrId);
 
   const updateKeyResult = (id: string, patch: Partial<DailyKeyResultDraft>) => {
     setDraft((current) => ({ ...current, keyResults: current.keyResults.map((keyResult) => keyResult.id === id ? { ...keyResult, ...patch } : keyResult) }));
@@ -91,15 +91,16 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
   };
 
   const changeLinkedObjective = (linkedObjectiveId: string | undefined) => {
+    const compatibleKeyResultIds = new Set(
+      keyResults.filter((keyResult) => keyResult.objectiveId === linkedObjectiveId).map((keyResult) => keyResult.id),
+    );
     setDraft((current) => ({
       ...current,
       linkedObjectiveId,
-      keyResults: current.keyResults.map((keyResult, index) => index === 0 ? { ...keyResult, linkedKeyResultId: undefined } : keyResult),
+      keyResults: current.keyResults.map((keyResult) => keyResult.linkedKeyResultId && !compatibleKeyResultIds.has(keyResult.linkedKeyResultId)
+        ? { ...keyResult, linkedKeyResultId: undefined }
+        : keyResult),
     }));
-  };
-
-  const changeLinkedKeyResult = (linkedKeyResultId: string | undefined) => {
-    setDraft((current) => ({ ...current, keyResults: current.keyResults.map((keyResult, index) => index === 0 ? { ...keyResult, linkedKeyResultId } : keyResult) }));
   };
 
   const hasInvalidProgress = validateProgress(draft.objectiveProgress) !== null
@@ -148,18 +149,18 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
               canMoveUp={index > 0}
               canMoveDown={index < draft.keyResults.length - 1}
               canRemove={draft.keyResults.length > 1}
+              linkedObjectiveId={draft.linkedObjectiveId}
+              availableKeyResults={draft.linkedObjectiveId ? keyResults.filter((candidate) => candidate.objectiveId === draft.linkedObjectiveId) : []}
+              onLinkedKeyResultChange={(linkedKeyResultId) => updateKeyResult(keyResult.id, { linkedKeyResultId })}
               help={narrow && activeKrId === keyResult.id ? <DailyKrHelp type={keyResult.type} className="daily-entry-help--mobile" /> : undefined}
             />
           ))}
         </section>
         <DailyReportEvidence
           objectives={objectives}
-          keyResults={keyResults}
           linkedObjectiveId={draft.linkedObjectiveId}
-          linkedKeyResultId={draft.keyResults[0]?.linkedKeyResultId}
           evidence={draft.evidence}
           onLinkedObjectiveChange={changeLinkedObjective}
-          onLinkedKeyResultChange={changeLinkedKeyResult}
           onEvidenceChange={(evidence) => setDraft((current) => ({ ...current, evidence }))}
         />
         <div className="daily-form-actions">
@@ -169,7 +170,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
         </div>
         {status && <p className="page-notice" role="status">{status}</p>}
       </div>
-      {!narrow && <aside className="daily-entry-help-shell" aria-label="填写帮助"><DailyKrHelp type={activeKr.type} /></aside>}
+      {!narrow && activeKr && <aside className="daily-entry-help-shell" aria-label="填写帮助"><DailyKrHelp type={activeKr.type} /></aside>}
     </form>
   );
 }

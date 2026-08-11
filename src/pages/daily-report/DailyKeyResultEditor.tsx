@@ -1,4 +1,5 @@
 import type { DailyKeyResultDraft, DailyKrType } from '../../domain/dailyEntry';
+import type { KeyResult } from '../../domain/types';
 import type { ReactNode } from 'react';
 
 interface DailyKeyResultEditorProps {
@@ -16,6 +17,9 @@ interface DailyKeyResultEditorProps {
   canMoveDown: boolean;
   canRemove: boolean;
   help?: ReactNode;
+  linkedObjectiveId?: string;
+  availableKeyResults: readonly KeyResult[];
+  onLinkedKeyResultChange: (value: string | undefined) => void;
 }
 
 const typeLabels: Record<DailyKrType, string> = {
@@ -54,6 +58,9 @@ export function DailyKeyResultEditor({
   canMoveDown,
   canRemove,
   help,
+  linkedObjectiveId,
+  availableKeyResults,
+  onLinkedKeyResultChange,
 }: DailyKeyResultEditorProps) {
   const number = index + 1;
   const prefix = `KR${number}`;
@@ -179,6 +186,18 @@ export function DailyKeyResultEditor({
       <label htmlFor={`daily-kr-${keyResult.id}-note`} className="daily-wide-field">
         {prefix} 工作说明
         <textarea id={`daily-kr-${keyResult.id}-note`} rows={2} value={keyResult.workNote} onChange={(event) => onChange({ workNote: event.target.value })} />
+      </label>
+      <label htmlFor={`daily-kr-${keyResult.id}-linked-key-result`} className="daily-wide-field">
+        {prefix} 关联已有 KR（可选）
+        <select
+          id={`daily-kr-${keyResult.id}-linked-key-result`}
+          value={keyResult.linkedKeyResultId ?? ''}
+          disabled={!linkedObjectiveId}
+          onChange={(event) => onLinkedKeyResultChange(event.target.value || undefined)}
+        >
+          <option value="">不关联</option>
+          {availableKeyResults.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}
+        </select>
       </label>
       {help}
     </fieldset>

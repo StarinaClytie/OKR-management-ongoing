@@ -1,6 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { can } from '../../auth/permissionService';
 import type { KeyResult, Objective } from '../../domain/types';
+import { keyResults as mockKeyResults, objectives as mockObjectives } from '../../mocks/okr';
+import { users } from '../../mocks/users';
 import { DailyReportForm } from './DailyReportForm';
 
 const objectives: Objective[] = [{
@@ -26,14 +29,24 @@ const keyResults: KeyResult[] = [{
   startDate: '2026-08-01',
   dueDate: '2026-08-31',
   classification: 'internal',
+}, {
+  id: 'kr-orion-second',
+  objectiveId: 'objective-orion',
+  title: '完成第二轮评审材料',
+  ownerId: 'user-employee',
+  progress: 10,
+  status: 'on_track',
+  startDate: '2026-08-01',
+  dueDate: '2026-08-31',
+  classification: 'internal',
 }];
 
 function renderForm(options: { objectives?: Objective[]; keyResults?: KeyResult[] } = {}) {
   const onSubmit = vi.fn();
   const onCancel = vi.fn();
   const user = userEvent.setup();
-  render(<DailyReportForm objectives={options.objectives ?? objectives} keyResults={options.keyResults ?? keyResults} onCancel={onCancel} onSubmit={onSubmit} />);
-  return { user, onSubmit, onCancel };
+  const view = render(<DailyReportForm objectives={options.objectives ?? objectives} keyResults={options.keyResults ?? keyResults} onCancel={onCancel} onSubmit={onSubmit} />);
+  return { user, onSubmit, onCancel, ...view };
 }
 
 async function enterQuantityKr(user: ReturnType<typeof userEvent.setup>, values: { target: string; actual: string; progress: string }) {
@@ -50,17 +63,26 @@ describe('DailyReportForm', () => {
     const { user } = renderForm();
 
     expect(screen.getByText('建议使用动词＋结果描述今天最重要的目标')).toBeVisible();
-    expect(screen.queryByText('副词＋动词＋名词')).not.toBeInTheDocument();
+    expect(screen.queryByText('动词＋名词')).not.toBeInTheDocument();
 
     const toggle = screen.getByRole('button', { name: '查看更多 O 写法' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await user.click(toggle);
 
+    expect(screen.getByText('动词＋名词')).toBeVisible();
+    expect(screen.getByText('优化销售流程')).toBeVisible();
+    expect(screen.getByText('动词＋形容词＋名词')).toBeVisible();
+    expect(screen.getByText('打造旗舰产品')).toBeVisible();
     expect(screen.getByText('副词＋动词＋名词')).toBeVisible();
-    expect(screen.getByText('动词＋对象＋结果')).toBeVisible();
-    expect(screen.getByText('完成＋交付物＋用途')).toBeVisible();
-    expect(screen.getByText('解决＋问题＋影响')).toBeVisible();
-    expect(screen.getByText(/O 描述目标方向，不替代员工填写完成度/)).toBeVisible();
+    expect(screen.getByText('大幅提升品牌影响力')).toBeVisible();
+    expect(screen.getByText('What＋Why')).toBeVisible();
+    expect(screen.getByText('完成原型验证，为产品评审提供依据')).toBeVisible();
+    expect(screen.getByText(/定性描述/)).toBeVisible();
+    expect(screen.getByText(/明确动词开头/)).toBeVisible();
+    expect(screen.getByText(/责任范围可控/)).toBeVisible();
+    expect(screen.getByText(/当前周期内可完成/)).toBeVisible();
+    expect(screen.getByText(/不超过 20 个字/)).toBeVisible();
+    expect(screen.getByText(/避免“协助、参与、支持”/)).toBeVisible();
     expect(screen.getByRole('button', { name: '收起 O 写法' })).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -212,7 +234,7 @@ describe('DailyReportForm', () => {
 
     expect(screen.getByText('完成度需填写 0%～100%')).toBeVisible();
     expect(screen.getByLabelText('关联已有 O')).toBeVisible();
-    expect(screen.getByLabelText('关联已有 KR（可选）')).toBeVisible();
+    expect(screen.getByLabelText('KR1 关联已有 KR（可选）')).toBeVisible();
     expect(screen.getByRole('button', { name: '添加成果附件或链接' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /AI/ })).not.toBeInTheDocument();
 
@@ -220,12 +242,78 @@ describe('DailyReportForm', () => {
     expect(screen.getByLabelText('成果 1 密级')).toBeVisible();
   });
 
-  it('renders only the OKR options supplied by the permission-filtered parent boundary', () => {
-    renderForm({ objectives, keyResults });
+  it('renders only the OKR options supplied by the permission-filtered parent boundary', async () => {
+    const employee = users.find((user) => user.id === 'user-employee')!;
+    const allowedObjective = mockObjectives.find((objective) => objective.id === 'objective-orion-activation')!;
+    const allowedKeyResult = mockKeyResults.find((keyResult) => keyResult.id === 'kr-orion-onboarding')!;
+    const rawObjectives: Objective[] = [
+      allowedObjective,
+      { ...allowedObjective, id: 'objective-restricted-test', title: '受限经营目标', classification: 'restricted' },
+    ];
+    const rawKeyResults: KeyResult[] = [
+      allowedKeyResult,
+      { ...allowedKeyResult, id: 'kr-restricted-test', title: '受限经营 KR', classification: 'restricted' },
+    ];
+    const filteredObjectives = rawObjectives.filter((objective) => can(employee, 'okr.read_summary', objective).allowed);
+    const filteredKeyResults = rawKeyResults.filter((keyResult) => can(employee, 'okr.read_detail', keyResult).allowed);
+    const { container, user } = renderForm({ objectives: filteredObjectives, keyResults: filteredKeyResults });
 
-    expect(screen.getByRole('option', { name: '提升新用户激活体验' })).toBeInTheDocument();
-    expect(screen.queryByText('受限经营目标')).not.toBeInTheDocument();
-    expect(screen.queryByText('受限经营 KR')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: allowedObjective.title })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('关联已有 O'), allowedObjective.id);
+    expect(screen.getByRole('option', { name: allowedKeyResult.title })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '受限经营目标' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '受限经营 KR' })).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('受限经营目标');
+    expect(container.innerHTML).not.toContain('受限经营 KR');
+  });
+
+  it('keeps each KR link with that KR through sorting and clears incompatible links when O changes', async () => {
+    const secondObjective: Objective = { ...objectives[0]!, id: 'objective-second', title: '第二个可关联目标' };
+    const secondObjectiveKr: KeyResult = { ...keyResults[0]!, id: 'kr-second-objective', objectiveId: secondObjective.id, title: '第二个目标的 KR' };
+    const { user, onSubmit } = renderForm({ objectives: [...objectives, secondObjective], keyResults: [...keyResults, secondObjectiveKr] });
+
+    await user.selectOptions(screen.getByLabelText('关联已有 O'), 'objective-orion');
+    await user.selectOptions(screen.getByLabelText('KR1 关联已有 KR（可选）'), 'kr-orion');
+    await user.type(screen.getByLabelText('KR1 完成度'), '10');
+    await user.click(screen.getByRole('button', { name: '添加 KR' }));
+    await user.selectOptions(screen.getByLabelText('KR2 关联已有 KR（可选）'), 'kr-orion-second');
+    await user.type(screen.getByLabelText('KR2 完成度'), '20');
+    await user.click(screen.getByRole('button', { name: '上移 KR2' }));
+
+    expect(screen.getByLabelText('KR1 关联已有 KR（可选）')).toHaveValue('kr-orion-second');
+    expect(screen.getByLabelText('KR2 关联已有 KR（可选）')).toHaveValue('kr-orion');
+
+    await user.type(screen.getByLabelText('当日 O 完成度'), '15');
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      keyResults: [
+        expect.objectContaining({ linkedKeyResultId: 'kr-orion-second', progress: 20 }),
+        expect.objectContaining({ linkedKeyResultId: 'kr-orion', progress: 10 }),
+      ],
+    }));
+
+    await user.click(screen.getByRole('button', { name: '删除 KR2' }));
+    expect(screen.getByLabelText('KR1 关联已有 KR（可选）')).toHaveValue('kr-orion-second');
+
+    await user.selectOptions(screen.getByLabelText('关联已有 O'), 'objective-second');
+    expect(screen.getByLabelText('KR1 关联已有 KR（可选）')).toHaveValue('');
+  });
+
+  it('connects O, KR, and subjective errors to valid descriptions', async () => {
+    const { user } = renderForm();
+    await user.selectOptions(screen.getByLabelText('KR1 度量类型'), 'subjective');
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    for (const field of [
+      screen.getByLabelText('当日 O 完成度'),
+      screen.getByLabelText('KR1 完成度'),
+      screen.getByLabelText('KR1 验收标准'),
+    ]) {
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      const descriptionId = field.getAttribute('aria-describedby');
+      expect(descriptionId).toBeTruthy();
+      expect(document.getElementById(descriptionId!)).toBeVisible();
+    }
   });
 
   it('submits only values the employee entered', async () => {

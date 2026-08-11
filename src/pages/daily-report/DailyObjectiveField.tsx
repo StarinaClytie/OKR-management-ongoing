@@ -44,14 +44,17 @@ export function DailyObjectiveField({
       </button>
       {examplesVisible && (
         <section id="daily-objective-examples" className="daily-objective-field__examples" aria-label="O 写法示例">
-          <p><strong>副词＋动词＋名词</strong>：高质量完成访谈数据整理</p>
-          <p><strong>动词＋对象＋结果</strong>：验证引导方案并形成评审结论</p>
-          <p><strong>完成＋交付物＋用途</strong>：完成实验复盘，为下轮决策提供依据</p>
-          <p><strong>解决＋问题＋影响</strong>：解决口径分歧，避免评审返工</p>
+          <dl>
+            <div><dt>动词＋名词</dt><dd>优化销售流程</dd></div>
+            <div><dt>动词＋形容词＋名词</dt><dd>打造旗舰产品</dd></div>
+            <div><dt>副词＋动词＋名词</dt><dd>大幅提升品牌影响力</dd></div>
+            <div><dt>What＋Why</dt><dd>完成原型验证，为产品评审提供依据</dd></div>
+          </dl>
           <ul>
-            <li>一个当日 O 聚焦今天最重要的结果。</li>
-            <li>O 描述目标方向，不替代员工填写完成度。</li>
-            <li>避免把多个不相关目标塞进同一句。</li>
+            <li>通常使用定性描述，并以明确动词开头。</li>
+            <li>责任范围可控，且在当前周期内可完成。</li>
+            <li>尽量不超过 20 个字。</li>
+            <li>避免“协助、参与、支持”等责任不明确的动词。</li>
           </ul>
         </section>
       )}

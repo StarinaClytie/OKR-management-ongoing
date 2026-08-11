@@ -1,14 +1,11 @@
 import type { DailyEvidenceDraft } from '../../domain/dailyEntry';
-import type { Classification, KeyResult, Objective } from '../../domain/types';
+import type { Classification, Objective } from '../../domain/types';
 
 interface DailyReportEvidenceProps {
   objectives: readonly Objective[];
-  keyResults: readonly KeyResult[];
   linkedObjectiveId?: string;
-  linkedKeyResultId?: string;
   evidence: DailyEvidenceDraft[];
   onLinkedObjectiveChange: (objectiveId: string | undefined) => void;
-  onLinkedKeyResultChange: (keyResultId: string | undefined) => void;
   onEvidenceChange: (items: DailyEvidenceDraft[]) => void;
 }
 
@@ -19,8 +16,7 @@ const classifications: Array<{ value: Classification; label: string }> = [
   { value: 'restricted', label: '受限' },
 ];
 
-export function DailyReportEvidence({ objectives, keyResults, linkedObjectiveId, linkedKeyResultId, evidence, onLinkedObjectiveChange, onLinkedKeyResultChange, onEvidenceChange }: DailyReportEvidenceProps) {
-  const availableKeyResults = linkedObjectiveId ? keyResults.filter((keyResult) => keyResult.objectiveId === linkedObjectiveId) : [];
+export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, onLinkedObjectiveChange, onEvidenceChange }: DailyReportEvidenceProps) {
   const addEvidence = () => {
     const nextNumber = evidence.length + 1;
     onEvidenceChange([...evidence, { id: `evidence-${nextNumber}`, label: '', kind: 'link', classification: 'internal' }]);
@@ -29,19 +25,12 @@ export function DailyReportEvidence({ objectives, keyResults, linkedObjectiveId,
   return (
     <section className="daily-evidence" aria-labelledby="daily-evidence-heading">
       <h2 id="daily-evidence-heading">关联与成果</h2>
-      <div className="daily-form-grid">
+      <div className="daily-form-grid daily-form-grid--single">
         <label htmlFor="linked-objective">
           关联已有 O
           <select id="linked-objective" value={linkedObjectiveId ?? ''} onChange={(event) => onLinkedObjectiveChange(event.target.value || undefined)}>
             <option value="">不关联</option>
             {objectives.map((objective) => <option key={objective.id} value={objective.id}>{objective.title}</option>)}
-          </select>
-        </label>
-        <label htmlFor="linked-key-result">
-          关联已有 KR（可选）
-          <select id="linked-key-result" value={linkedKeyResultId ?? ''} disabled={!linkedObjectiveId} onChange={(event) => onLinkedKeyResultChange(event.target.value || undefined)}>
-            <option value="">不关联</option>
-            {availableKeyResults.map((keyResult) => <option key={keyResult.id} value={keyResult.id}>{keyResult.title}</option>)}
           </select>
         </label>
       </div>
