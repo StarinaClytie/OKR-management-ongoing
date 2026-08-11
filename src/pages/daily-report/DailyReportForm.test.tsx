@@ -4,6 +4,7 @@ import { can } from '../../auth/permissionService';
 import type { KeyResult, Objective } from '../../domain/types';
 import { keyResults as mockKeyResults, objectives as mockObjectives } from '../../mocks/okr';
 import { users } from '../../mocks/users';
+import { completeQuantityKr } from '../../test/dailyReportTestHelpers';
 import { DailyReportForm } from './DailyReportForm';
 
 const objectives: Objective[] = [{
@@ -55,6 +56,12 @@ async function enterQuantityKr(user: ReturnType<typeof userEvent.setup>, values:
   await user.type(screen.getByLabelText('KR1 完成度'), values.progress);
 }
 
+async function completeQuantityForm(user: ReturnType<typeof userEvent.setup>, progress = '60') {
+  await user.type(screen.getByLabelText('当日 O'), '完成可验证的当日目标');
+  await user.type(screen.getByLabelText('当日 O 完成度'), progress);
+  await completeQuantityKr(user, { progress });
+}
+
 describe('DailyReportForm', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -91,8 +98,7 @@ describe('DailyReportForm', () => {
     const onSubmit = vi.fn(() => ({ ok: false as const, error: '所关联的 KR 不属于最终 O' }));
     render(<DailyReportForm objectives={objectives} keyResults={keyResults} onCancel={vi.fn()} onSubmit={onSubmit} />);
 
-    await user.type(screen.getByLabelText('当日 O 完成度'), '60');
-    await user.type(screen.getByLabelText('KR1 完成度'), '75');
+    await completeQuantityForm(user, '75');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
 
     expect(screen.getAllByRole('status')).toHaveLength(1);
@@ -126,8 +132,7 @@ describe('DailyReportForm', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getAllByText('请填写完成度')).toHaveLength(2);
 
-    await user.type(screen.getByLabelText('当日 O 完成度'), '0');
-    await user.type(screen.getByLabelText('KR1 完成度'), '0');
+    await completeQuantityForm(user, '0');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ objectiveProgress: 0 }));
@@ -145,13 +150,19 @@ describe('DailyReportForm', () => {
     expect(screen.queryByLabelText('KR1 目标值')).not.toBeInTheDocument();
     expect(screen.getByText('完成可填写 100%，未完成可填写 0%')).toBeVisible();
     expect(screen.getByRole('complementary', { name: '填写帮助' })).toHaveTextContent('依据截止日期与当前状态自行判断');
-    expect(screen.getByLabelText('KR1 当前状态')).toHaveValue('not_started');
+    expect(screen.getByLabelText('KR1 当前状态')).toHaveValue('');
     expect(screen.getByRole('button', { name: '查看完整规则' })).toHaveAttribute('aria-expanded', 'false');
     await user.click(screen.getByRole('button', { name: '查看完整规则' }));
     expect(screen.getByText(/里程碑完成度仍由员工结合当前状态填写/)).toBeVisible();
     expect(screen.getByRole('button', { name: '收起完整规则' })).toHaveAttribute('aria-expanded', 'true');
 
+    await user.type(screen.getByLabelText('当日 O'), '完成里程碑验证');
     await user.type(screen.getByLabelText('当日 O 完成度'), '0');
+    await user.type(screen.getByLabelText('KR1'), '完成里程碑结果');
+    await user.type(screen.getByLabelText('KR1 本日工时'), '2');
+    await user.type(screen.getByLabelText('KR1 工作说明'), '已推进里程碑');
+    await user.type(screen.getByLabelText('KR1 截止日期'), '2026-08-20');
+    await user.selectOptions(screen.getByLabelText('KR1 当前状态'), 'not_started');
     await user.type(screen.getByLabelText('KR1 完成度'), '0');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
@@ -176,8 +187,7 @@ describe('DailyReportForm', () => {
   it('clears stale type fields, preserves manual progress, and requires subjective acceptance criteria', async () => {
     const { user, onSubmit } = renderForm();
 
-    await enterQuantityKr(user, { target: '20', actual: '15', progress: '75' });
-    await user.type(screen.getByLabelText('当日 O 完成度'), '60');
+    await completeQuantityForm(user, '75');
     await user.selectOptions(screen.getByLabelText('KR1 度量类型'), 'ratio');
     expect(screen.getByLabelText('KR1 完成度')).toHaveValue(75);
     expect(screen.getByLabelText('KR1 起始值')).toHaveValue(null);
@@ -286,10 +296,15 @@ describe('DailyReportForm', () => {
     const secondObjectiveKr: KeyResult = { ...keyResults[0]!, id: 'kr-second-objective', objectiveId: secondObjective.id, title: '第二个目标的 KR' };
     const { user, onSubmit } = renderForm({ objectives: [...objectives, secondObjective], keyResults: [...keyResults, secondObjectiveKr] });
 
+    await completeQuantityForm(user, '10');
     await user.selectOptions(screen.getByLabelText('关联已有 O'), 'objective-orion');
     await user.selectOptions(screen.getByLabelText('KR1 关联已有 KR（可选）'), 'kr-orion');
-    await user.type(screen.getByLabelText('KR1 完成度'), '10');
     await user.click(screen.getByRole('button', { name: '添加 KR' }));
+    await user.type(screen.getByLabelText('KR2'), '第二个可验证结果');
+    await user.type(screen.getByLabelText('KR2 本日工时'), '2');
+    await user.type(screen.getByLabelText('KR2 目标值'), '10');
+    await user.type(screen.getByLabelText('KR2 当前实际值'), '2');
+    await user.type(screen.getByLabelText('KR2 工作说明'), '已完成第二项验证');
     await user.selectOptions(screen.getByLabelText('KR2 关联已有 KR（可选）'), 'kr-orion-second');
     await user.type(screen.getByLabelText('KR2 完成度'), '20');
     await user.click(screen.getByRole('button', { name: '上移 KR2' }));
@@ -297,6 +312,7 @@ describe('DailyReportForm', () => {
     expect(screen.getByLabelText('KR1 关联已有 KR（可选）')).toHaveValue('kr-orion-second');
     expect(screen.getByLabelText('KR2 关联已有 KR（可选）')).toHaveValue('kr-orion');
 
+    await user.clear(screen.getByLabelText('当日 O 完成度'));
     await user.type(screen.getByLabelText('当日 O 完成度'), '15');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
@@ -330,6 +346,48 @@ describe('DailyReportForm', () => {
     }
   });
 
+  it('exposes accessible errors for every required structured field before submitting', async () => {
+    const { user, onSubmit } = renderForm();
+
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    for (const field of [
+      screen.getByLabelText('当日 O'),
+      screen.getByLabelText('当日 O 完成度'),
+      screen.getByLabelText('KR1'),
+      screen.getByLabelText('KR1 本日工时'),
+      screen.getByLabelText('KR1 完成度'),
+      screen.getByLabelText('KR1 目标值'),
+      screen.getByLabelText('KR1 当前实际值'),
+      screen.getByLabelText('KR1 工作说明'),
+    ]) {
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      const descriptionId = field.getAttribute('aria-describedby');
+      expect(descriptionId).toBeTruthy();
+      expect(document.getElementById(descriptionId!)).toHaveAttribute('role', 'alert');
+    }
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('requires the type-specific milestones fields and describes their errors', async () => {
+    const { user, onSubmit } = renderForm();
+
+    await user.type(screen.getByLabelText('当日 O'), '完成里程碑验收');
+    await user.type(screen.getByLabelText('当日 O 完成度'), '60');
+    await user.type(screen.getByLabelText('KR1'), '提交验收材料');
+    await user.type(screen.getByLabelText('KR1 本日工时'), '2');
+    await user.type(screen.getByLabelText('KR1 完成度'), '60');
+    await user.type(screen.getByLabelText('KR1 工作说明'), '已整理材料');
+    await user.selectOptions(screen.getByLabelText('KR1 度量类型'), 'milestone');
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    for (const field of [screen.getByLabelText('KR1 截止日期'), screen.getByLabelText('KR1 当前状态')]) {
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(document.getElementById(field.getAttribute('aria-describedby')!)).toHaveAttribute('role', 'alert');
+    }
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('submits only values the employee entered', async () => {
     const { user, onSubmit } = renderForm();
 
@@ -338,6 +396,9 @@ describe('DailyReportForm', () => {
     await user.type(screen.getByLabelText('KR1'), '完成 20 条数据收集');
     await user.type(screen.getByLabelText('KR1 本日工时'), '3.5');
     await user.type(screen.getByLabelText('KR1 完成度'), '75');
+    await user.type(screen.getByLabelText('KR1 目标值'), '20');
+    await user.type(screen.getByLabelText('KR1 当前实际值'), '15');
+    await user.type(screen.getByLabelText('KR1 工作说明'), '完成收集并完成记录');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({

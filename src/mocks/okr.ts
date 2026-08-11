@@ -1,4 +1,6 @@
-import type { KeyResult, Milestone, Objective, ProgressSnapshot, Project, Risk } from '../domain/types';
+import type { CompanyObjective, KeyResult, Milestone, Objective, ProgressSnapshot, Project, ProjectTask, Risk } from '../domain/types';
+
+export const companyObjectives: CompanyObjective[] = [{ id: 'company-growth', level: 'company', title: '提升客户价值与可持续增长', progress: 60, status: 'on_track', classification: 'public' }];
 
 export const projects: Project[] = [
   {
@@ -11,6 +13,7 @@ export const projects: Project[] = [
     startDate: '2026-06-01',
     dueDate: '2026-08-31',
     status: 'on_track',
+    companyObjectiveId: 'company-growth',
   },
   {
     id: 'project-nova',
@@ -22,8 +25,11 @@ export const projects: Project[] = [
     startDate: '2026-06-15',
     dueDate: '2026-09-30',
     status: 'at_risk',
+    companyObjectiveId: 'company-growth',
   },
 ];
+
+export const projectTasks: ProjectTask[] = [{ id: 'task-orion-experiment-design', projectId: 'project-orion', keyResultId: 'kr-orion-activation', title: '完成新手引导实验设计', ownerId: 'user-project-leader', startDate: '2026-06-03', dueDate: '2026-06-20', progress: 100, classification: 'internal' }];
 
 export const objectives: Objective[] = [
   {

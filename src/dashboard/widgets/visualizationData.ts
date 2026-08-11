@@ -19,6 +19,7 @@ export interface PreparedKeyResult {
   startDate: string;
   dueDate: string;
 }
+export interface PreparedTask { id: string; title: string; keyResultTitle: string; startDate: string; dueDate: string; progress: number; }
 
 export interface PreparedObjective {
   id: string;
@@ -55,6 +56,7 @@ export interface PreparedRisk {
   probabilityLabel: string;
   impactLabel: string;
   status: ProgressStatus;
+  mitigation: string;
 }
 
 export interface PreparedWorkload {
@@ -67,12 +69,14 @@ export interface PreparedWorkload {
 }
 
 export interface PreparedVisualizationData {
+  companyObjectives: Array<{ id: string; title: string }>;
   alignmentProjects: PreparedAlignmentProject[];
   keyResults: PreparedKeyResult[];
   milestones: PreparedMilestone[];
   trendPoints: ProgressSnapshot[];
   risks: PreparedRisk[];
   workloads: PreparedWorkload[];
+  tasks: PreparedTask[];
 }
 
 const probabilityLabels = { 1: '低概率', 2: '中概率', 3: '高概率' } as const;
@@ -113,6 +117,9 @@ function canReadMilestone(data: DashboardData, milestone: Milestone): boolean {
 }
 
 export function prepareVisualizationData(data: DashboardData): PreparedVisualizationData {
+  const companyObjectives = data.companyObjectives
+    .filter((objective) => can(data.currentUser, 'company_objective.read', objective).allowed)
+    .map((objective) => ({ id: objective.id, title: objective.title }));
   const visibleProjects = data.projects.filter((project) =>
     can(data.currentUser, 'okr.read_summary', project).allowed,
   );
@@ -175,6 +182,9 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
         .map((dependencyId) => preparedKeyResultsById.get(dependencyId)?.title)
         .filter((label): label is string => Boolean(label)),
     }));
+  const tasks = data.projectTasks.filter((task) => visibleKeyResultIds.has(task.keyResultId) && can(data.currentUser, 'task.read', task).allowed).map((task) => ({
+    id: task.id, title: task.title, keyResultTitle: preparedKeyResultsById.get(task.keyResultId)?.title ?? '授权 KR', startDate: task.startDate, dueDate: task.dueDate, progress: task.progress,
+  }));
 
   const trendSourceId = preparedKeyResults
     .map((keyResult) => ({
@@ -198,6 +208,7 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
       probabilityLabel: probabilityLabels[risk.probability],
       impactLabel: impactLabels[risk.impact],
       status: risk.status,
+      mitigation: risk.mitigation,
     }));
 
   const workloads = data.workloads
@@ -212,11 +223,13 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
     }));
 
   return {
+    companyObjectives,
     alignmentProjects,
     keyResults: preparedKeyResults,
     milestones,
     trendPoints,
     risks,
     workloads,
+    tasks,
   };
 }

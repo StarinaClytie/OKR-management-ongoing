@@ -103,5 +103,6 @@ export const activeShares: ActiveShare[] = [
     grantedToUserId: 'user-employee',
     createdAt: '2026-08-07T17:00:00Z',
     active: true,
+    allowedActions: ['daily_report.read_body'],
   },
 ];

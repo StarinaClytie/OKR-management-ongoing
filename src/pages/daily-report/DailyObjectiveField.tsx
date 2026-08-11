@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 interface DailyObjectiveFieldProps {
   objective: string;
+  objectiveError: string | null;
   progress?: number;
   progressError: string | null;
   averageReference: number | null;
@@ -11,6 +12,7 @@ interface DailyObjectiveFieldProps {
 
 export function DailyObjectiveField({
   objective,
+  objectiveError,
   progress,
   progressError,
   averageReference,
@@ -30,10 +32,13 @@ export function DailyObjectiveField({
         id="daily-objective"
         autoFocus
         value={objective}
+        aria-invalid={objectiveError ? 'true' : undefined}
+        aria-describedby={objectiveError ? 'daily-objective-error' : undefined}
         onChange={(event) => onObjectiveChange(event.target.value)}
         placeholder="例如：完成数据收集，为评审提供依据"
         rows={3}
       />
+      {objectiveError && <p id="daily-objective-error" className="form-error" role="alert">{objectiveError}</p>}
       <button
         type="button"
         className="text-button"
@@ -74,7 +79,7 @@ export function DailyObjectiveField({
             onChange={(event) => onProgressChange(event.target.value === '' ? undefined : Number(event.target.value))}
             aria-describedby={progressError ? 'daily-objective-progress-error' : undefined}
           />
-          {progressError && <p id="daily-objective-progress-error" className="form-error">{progressError}</p>}
+          {progressError && <p id="daily-objective-progress-error" className="form-error" role="alert">{progressError}</p>}
         </div>
         <p className="daily-reference">KR 平均完成度参考：{averageReference === null ? '—' : `${averageReference}%`}</p>
       </div>

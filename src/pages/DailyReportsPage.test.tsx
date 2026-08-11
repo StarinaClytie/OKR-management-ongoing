@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { AuthProvider } from '../auth/AuthContext';
 import { AppRoutes } from '../app/routes';
 import { mockData } from '../mocks/repository';
+import { completeQuantityKr } from '../test/dailyReportTestHelpers';
 import { resolveDailyAuthoringContext } from './DailyReportsPage';
 
 function renderPageAs(userId: string) {
@@ -43,9 +44,14 @@ describe('DailyReportsPage', () => {
     await user.click(screen.getByRole('button', { name: '填写今日日报' }));
     await user.type(screen.getByLabelText('当日 O'), '完成原型验证，为评审提供依据');
     await user.type(screen.getByLabelText('当日 O 完成度'), '60');
-    await user.type(screen.getByLabelText('KR1'), '完成 20 条数据收集');
-    await user.type(screen.getByLabelText('KR1 完成度'), '75');
-    await user.type(screen.getByLabelText('KR1 本日工时'), '3.5');
+    await completeQuantityKr(user, {
+      title: '完成 20 条数据收集',
+      hours: '3.5',
+      target: '20',
+      actual: '15',
+      workNote: '已完成数据收集并记录验证结果',
+      progress: '75',
+    });
     await user.click(screen.getByRole('button', { name: '添加成果附件或链接' }));
     await user.type(screen.getByLabelText('成果 1', { selector: 'input' }), '原型评审链接');
     await user.selectOptions(screen.getByLabelText('成果 1 密级'), 'confidential');
@@ -68,7 +74,7 @@ describe('DailyReportsPage', () => {
       await user.click(screen.getByRole('button', { name: '填写今日日报' }));
       await user.type(screen.getByLabelText('当日 O'), objective);
       await user.type(screen.getByLabelText('当日 O 完成度'), '60');
-      await user.type(screen.getByLabelText('KR1 完成度'), '75');
+      await completeQuantityKr(user, { progress: '75' });
       await user.click(screen.getByRole('button', { name: '提交日报' }));
     };
 
@@ -96,8 +102,9 @@ describe('DailyReportsPage', () => {
     expect(authorButton).toHaveFocus();
 
     await user.click(authorButton);
+    await user.type(screen.getByLabelText('当日 O'), '完成焦点恢复验证');
     await user.type(screen.getByLabelText('当日 O 完成度'), '60');
-    await user.type(screen.getByLabelText('KR1 完成度'), '75');
+    await completeQuantityKr(user, { progress: '75' });
     await user.click(screen.getByRole('button', { name: '提交日报' }));
 
     expect(authorButton).toHaveFocus();
@@ -110,8 +117,9 @@ describe('DailyReportsPage', () => {
     renderPageAs('user-employee');
 
     await user.click(screen.getByRole('button', { name: '填写今日日报' }));
+    await user.type(screen.getByLabelText('当日 O'), '完成关联失败验证');
     await user.type(screen.getByLabelText('当日 O 完成度'), '60');
-    await user.type(screen.getByLabelText('KR1 完成度'), '75');
+    await completeQuantityKr(user, { progress: '75' });
     await user.selectOptions(screen.getByLabelText('关联已有 O'), 'objective-orion-activation');
     await user.selectOptions(screen.getByLabelText('KR1 关联已有 KR（可选）'), linkedKeyResult.id);
     linkedKeyResult.objectiveId = 'objective-nova-trust';

@@ -2,6 +2,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider } from '../auth/AuthContext';
 import { projects } from '../mocks/okr';
+import { dailyReports } from '../mocks/reports';
+import { mockData } from '../mocks/repository';
 import { ConfidentialityBadge } from './ConfidentialityBadge';
 import { EmptyState } from './EmptyState';
 import { ExportGuard } from './ExportGuard';
@@ -42,21 +44,37 @@ describe('security-aware shared components', () => {
   it('allows an authorized user to export with pointer, Enter, and Space activation', async () => {
     const user = userEvent.setup();
     let activationCount = 0;
+    const report = dailyReports[0]!;
+    const exportGrant = {
+      id: 'grant-report-export-to-management-component-test',
+      resourceId: report.id,
+      resourceType: 'daily_report' as const,
+      grantedByUserId: report.authorId,
+      grantedToUserId: 'user-management',
+      createdAt: '2026-08-11T00:00:00Z',
+      active: true,
+      allowedActions: ['record.export' as const],
+    };
+    mockData.activeShares.push(exportGrant);
 
-    render(
-      <AuthProvider initialUserId="user-management">
-        <ExportGuard resource={projects[1]} label="导出项目" onExport={() => { activationCount += 1; }} />
-      </AuthProvider>,
-    );
+    try {
+      render(
+        <AuthProvider initialUserId="user-management">
+          <ExportGuard resource={report} label="导出项目" onExport={() => { activationCount += 1; }} />
+        </AuthProvider>,
+      );
 
-    const exportControl = screen.getByRole('button', { name: '导出项目' });
-    await user.click(exportControl);
-    exportControl.focus();
-    await user.keyboard('{Enter}');
-    await user.keyboard(' ');
+      const exportControl = screen.getByRole('button', { name: '导出项目' });
+      await user.click(exportControl);
+      exportControl.focus();
+      await user.keyboard('{Enter}');
+      await user.keyboard(' ');
 
-    expect(exportControl).toBeEnabled();
-    expect(activationCount).toBe(3);
+      expect(exportControl).toBeEnabled();
+      expect(activationCount).toBe(3);
+    } finally {
+      mockData.activeShares.splice(mockData.activeShares.indexOf(exportGrant), 1);
+    }
   });
 
   it('gives each denied export control a unique description relationship', () => {

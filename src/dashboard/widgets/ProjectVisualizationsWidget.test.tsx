@@ -2,8 +2,10 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { mockRepository } from '../../mocks/repository';
 import { AlignmentTreeWidget } from './AlignmentTreeWidget';
+import { GanttChartWidget } from './GanttChartWidget';
 import { ProgressTrendWidget } from './ProgressTrendWidget';
 import { ProjectVisualizationsWidget, VisualizationLoadingFallback } from './ProjectVisualizationsWidget';
+import { RiskMatrixWidget } from './RiskMatrixWidget';
 
 const leaderData = mockRepository.getDashboardData('user-project-leader');
 
@@ -134,6 +136,65 @@ describe('ProjectVisualizationsWidget', () => {
     );
 
     expect(screen.getByText('周明（我）')).toBeVisible();
+  });
+
+  it('renders the company O to project O to KR hierarchy from one authorized model', () => {
+    render(<AlignmentTreeWidget data={leaderData} />);
+
+    expect(screen.getByText('公司 O')).toBeVisible();
+    expect(screen.getByText('提升客户价值与可持续增长')).toBeVisible();
+    expect(screen.getByText('让新用户在首周感受到核心价值')).toBeVisible();
+    expect(screen.getByText('将七日激活率提升至 62%')).toBeVisible();
+  });
+
+  it('includes separately modeled tasks beneath their authorized KR in the Gantt chart', () => {
+    render(<GanttChartWidget data={leaderData} />);
+
+    expect(screen.getByText('任务：完成新手引导实验设计')).toBeVisible();
+    expect(screen.getByText(/关联 KR：将七日激活率提升至 62%/)).toBeVisible();
+  });
+
+  it('does not render a restricted company objective through the alignment hierarchy', () => {
+    const secret = '不得泄漏的严格机密公司目标';
+    const data = {
+      ...leaderData,
+      companyObjectives: leaderData.companyObjectives.map((objective) => ({
+        ...objective,
+        title: secret,
+        classification: 'restricted' as const,
+      })),
+    };
+
+    const { container } = render(<AlignmentTreeWidget data={data} />);
+
+    expect(container).not.toHaveTextContent(secret);
+  });
+
+  it('does not render a restricted project task through an authorized KR', () => {
+    const secret = '不得泄漏的严格机密项目任务';
+    const data = {
+      ...leaderData,
+      projectTasks: leaderData.projectTasks.map((task) => ({
+        ...task,
+        title: secret,
+        classification: 'restricted' as const,
+      })),
+    };
+
+    const { container } = render(<GanttChartWidget data={data} />);
+
+    expect(container).not.toHaveTextContent(secret);
+  });
+
+  it('opens an authorized risk into a real in-place detail panel instead of a fragment-only link', async () => {
+    const user = userEvent.setup();
+    render(<RiskMatrixWidget data={leaderData} />);
+
+    await user.click(screen.getByRole('button', { name: '查看风险详情：实验样本量不足' }));
+
+    const panel = screen.getByRole('region', { name: '风险详情' });
+    expect(panel).toHaveTextContent('实验样本量不足');
+    expect(panel).toHaveTextContent('按周监控流量并准备合并实验方案。');
   });
 
   it('never leaves denied labels in text, accessible names, or hidden panels', async () => {

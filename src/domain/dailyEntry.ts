@@ -6,7 +6,7 @@ export interface DailyKeyResultDraft {
   id: string;
   title: string;
   type: DailyKrType;
-  hours: number;
+  hours?: number;
   progress?: number;
   workNote: string;
   targetValue?: number;
@@ -51,7 +51,12 @@ export interface DailyReportConversionContext {
   keyResults: ReadonlyArray<Pick<KeyResult, 'id' | 'objectiveId'>>;
 }
 
-export type DailyReportConversionErrorCode = 'OBJECTIVE_NOT_IN_PROJECT' | 'KEY_RESULT_NOT_IN_OBJECTIVE';
+export type DailyReportConversionErrorCode = 'INVALID_DRAFT' | 'OBJECTIVE_NOT_IN_PROJECT' | 'KEY_RESULT_NOT_IN_OBJECTIVE';
+
+export interface DailyReportValidationIssue {
+  field: string;
+  message: string;
+}
 
 export type DailyReportConversionResult =
   | { ok: true; report: DailyReport }
@@ -108,6 +113,84 @@ export function getKrGuidance(type: DailyKrType): DailyKrGuidance {
   return guidanceByType[type];
 }
 
+function isFiniteNonNegative(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value) && value >= 0;
+}
+
+function isMilestoneStatus(value: DailyKeyResultDraft['milestoneStatus']): boolean {
+  return value === 'not_started' || value === 'in_progress' || value === 'completed';
+}
+
+function isEvidenceKind(value: DailyEvidenceDraft['kind']): boolean {
+  return value === 'file' || value === 'link';
+}
+
+function isClassification(value: Classification): boolean {
+  return Object.hasOwn(classificationRank, value);
+}
+
+function numericIssue(
+  issues: DailyReportValidationIssue[],
+  field: string,
+  value: number | undefined,
+  requiredMessage: string,
+): void {
+  if (value === undefined) {
+    issues.push({ field, message: requiredMessage });
+  } else if (!isFiniteNonNegative(value)) {
+    issues.push({ field, message: `${requiredMessage.replace('请填写', '')}需填写有限且不小于 0 的数值` });
+  }
+}
+
+export function validateDailyReportDraft(draft: DailyReportDraft): DailyReportValidationIssue[] {
+  const issues: DailyReportValidationIssue[] = [];
+  if (!draft.dailyObjective.trim()) issues.push({ field: 'dailyObjective', message: '请填写当日 O' });
+
+  const objectiveProgressError = validateProgress(draft.objectiveProgress);
+  if (objectiveProgressError) issues.push({ field: 'objectiveProgress', message: objectiveProgressError });
+  if (draft.keyResults.length === 0) issues.push({ field: 'keyResults', message: '请至少添加一个当日 KR' });
+
+  draft.keyResults.forEach((keyResult, index) => {
+    const field = `keyResults.${index}`;
+    if (!keyResult.title.trim()) issues.push({ field: `${field}.title`, message: '请填写 KR 内容' });
+    if (!keyResult.workNote.trim()) issues.push({ field: `${field}.workNote`, message: '请填写 KR 工作说明' });
+    if (!isFiniteNonNegative(keyResult.hours)) {
+      issues.push({ field: `${field}.hours`, message: '工时需填写有限且不小于 0 的数值' });
+    }
+    const progressError = validateProgress(keyResult.progress);
+    if (progressError) issues.push({ field: `${field}.progress`, message: progressError });
+
+    if (keyResult.type === 'quantity') {
+      numericIssue(issues, `${field}.targetValue`, keyResult.targetValue, '请填写数量型 KR 的目标值');
+      numericIssue(issues, `${field}.actualValue`, keyResult.actualValue, '当前实际值');
+    }
+    if (keyResult.type === 'ratio') {
+      numericIssue(issues, `${field}.baselineValue`, keyResult.baselineValue, '请填写比率型 KR 的起始值');
+      numericIssue(issues, `${field}.targetValue`, keyResult.targetValue, '请填写比率型 KR 的目标值');
+      numericIssue(issues, `${field}.actualValue`, keyResult.actualValue, '请填写比率型 KR 的当前值');
+    }
+    if (keyResult.type === 'milestone') {
+      if (!keyResult.dueDate) issues.push({ field: `${field}.dueDate`, message: '请填写里程碑截止日期' });
+      if (!isMilestoneStatus(keyResult.milestoneStatus)) {
+        issues.push({ field: `${field}.milestoneStatus`, message: '请选择里程碑当前状态' });
+      }
+    }
+    if (keyResult.type === 'subjective' && !keyResult.acceptanceCriteria?.trim()) {
+      issues.push({ field: `${field}.acceptanceCriteria`, message: '请填写主观型 KR 的验收标准' });
+    }
+  });
+
+  draft.evidence.forEach((item, index) => {
+    const field = `evidence.${index}`;
+    if (!item.label.trim()) issues.push({ field: `${field}.label`, message: '请填写成果名称或链接说明' });
+    if (!isEvidenceKind(item.kind)) issues.push({ field: `${field}.kind`, message: '请选择成果类型' });
+    if (!isClassification(item.classification)) issues.push({ field: `${field}.classification`, message: '请选择有效的成果密级' });
+  });
+
+  if (!isClassification(draft.classification)) issues.push({ field: 'classification', message: '请选择有效的日报密级' });
+  return issues;
+}
+
 function mostRestrictiveClassification(current: Classification, item: DailyEvidenceDraft): Classification {
   return classificationRank[item.classification] > classificationRank[current]
     ? item.classification
@@ -146,6 +229,17 @@ export function toLocalDailyReport(
     };
   }
 
+  const validationIssues = validateDailyReportDraft(draft);
+  if (validationIssues.length > 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'INVALID_DRAFT',
+        message: validationIssues[0]!.message,
+      },
+    };
+  }
+
   return { ok: true, report: {
     id: `local-${context.authorId}-${context.date}${context.submissionNonce === undefined ? '' : `-${context.submissionNonce}`}`,
     authorId: context.authorId,
@@ -158,8 +252,9 @@ export function toLocalDailyReport(
     objectiveProgress: draft.objectiveProgress,
     dailyKeyResults: draft.keyResults.map((kr) => ({ ...kr })),
     classification: draft.classification,
-    hours: draft.keyResults.reduce((sum, kr) => sum + kr.hours, 0),
+    hours: draft.keyResults.reduce((sum, kr) => sum + (kr.hours ?? 0), 0),
     evidence: draft.evidence.map((item) => item.label),
+    evidenceItems: draft.evidence.map((item) => ({ ...item })),
     evidenceClassification: draft.evidence.reduce<Classification>(mostRestrictiveClassification, 'public'),
     attachmentIds: [],
     status: 'submitted',

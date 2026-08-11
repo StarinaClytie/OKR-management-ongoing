@@ -1,15 +1,18 @@
 import type {
   Classification,
+  CompanyObjective,
   DailyReport,
   DocumentRecord,
   KeyResult,
   Milestone,
   Objective,
   Project,
+  ProjectTask,
   Risk,
   WeeklyReport,
   WorkloadEntry,
 } from './types';
+import type { DailyEvidenceDraft } from './dailyEntry';
 
 export type Action =
   | 'dashboard.view'
@@ -18,6 +21,8 @@ export type Action =
   | 'okr.update'
   | 'milestone.read'
   | 'risk.read'
+  | 'company_objective.read'
+  | 'task.read'
   | 'project.manage'
   | 'daily_report.create'
   | 'daily_report.read'
@@ -43,6 +48,8 @@ export type PermissionResource =
   | KeyResult
   | Milestone
   | Risk
+  | CompanyObjective
+  | ProjectTask
   | DailyReport
   | WeeklyReport
   | DocumentRecord
@@ -70,6 +77,8 @@ export type ResourceType =
   | 'workload'
   | 'milestone'
   | 'risk'
+  | 'company_objective'
+  | 'project_task'
   | 'system';
 
 export interface AccessControlledResource {
@@ -105,17 +114,22 @@ export interface ActiveShare {
   grantedToUserId: string;
   createdAt: string;
   active: boolean;
+  allowedActions?: readonly Action[];
+}
+
+export function getDailyReportBodyPermissionScope(report: DailyReport): PermissionScope {
+  return {
+    resourceId: report.id,
+    resourceType: 'daily_report_body',
+    ownerId: report.authorId,
+    projectId: report.projectId,
+    classification: report.classification,
+  };
 }
 
 export function getDailyReportPermissionScopes(report: DailyReport): PermissionScope[] {
   return [
-    {
-      resourceId: report.id,
-      resourceType: 'daily_report_body',
-      ownerId: report.authorId,
-      projectId: report.projectId,
-      classification: report.classification,
-    },
+    getDailyReportBodyPermissionScope(report),
     {
       resourceId: `${report.id}:evidence`,
       resourceType: 'evidence',
@@ -125,6 +139,17 @@ export function getDailyReportPermissionScopes(report: DailyReport): PermissionS
       classification: report.evidenceClassification,
     },
   ];
+}
+
+export function getDailyEvidencePermissionScope(report: DailyReport, evidence: DailyEvidenceDraft): PermissionScope {
+  return {
+    resourceId: `${report.id}:evidence:${evidence.id}`,
+    resourceType: 'evidence',
+    ownerId: report.authorId,
+    projectId: report.projectId,
+    parentResourceId: report.id,
+    classification: evidence.classification,
+  };
 }
 
 export function getAttachmentPermissionScope(attachment: DocumentRecord): PermissionScope {

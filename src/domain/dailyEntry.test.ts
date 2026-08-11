@@ -3,6 +3,7 @@ import {
   getKrAverageReference,
   getKrGuidance,
   toLocalDailyReport,
+  validateDailyReportDraft,
   validateProgress,
   type DailyReportConversionContext,
   type DailyKeyResultDraft,
@@ -227,5 +228,72 @@ describe('daily entry helpers', () => {
 
     expect(result.report.dailyKeyResults).toEqual([expect.objectContaining({ progress: 75 })]);
     expect(result.report.evidence).toEqual(['数据表链接']);
+  });
+
+  it('fails closed for missing structured O, KR, work note, finite hours, type fields, and evidence metadata', () => {
+    const invalidDraft: DailyReportDraft = {
+      dailyObjective: ' ',
+      objectiveProgress: 60,
+      keyResults: [
+        quantityKr({
+          title: ' ',
+          workNote: ' ',
+          hours: Number.NaN,
+          targetValue: undefined,
+          actualValue: Number.NEGATIVE_INFINITY,
+        }),
+        {
+          id: 'daily-kr-2',
+          title: '里程碑',
+          type: 'milestone',
+          hours: -0.5,
+          progress: 60,
+          workNote: '已跟进',
+          dueDate: '',
+          milestoneStatus: undefined,
+        },
+      ],
+      evidence: [{ id: 'evidence-1', label: ' ', kind: 'link', classification: 'internal' }],
+      classification: 'internal',
+    };
+
+    expect(validateDailyReportDraft(invalidDraft)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'dailyObjective', message: '请填写当日 O' }),
+      expect.objectContaining({ field: 'keyResults.0.title', message: '请填写 KR 内容' }),
+      expect.objectContaining({ field: 'keyResults.0.workNote', message: '请填写 KR 工作说明' }),
+      expect.objectContaining({ field: 'keyResults.0.hours', message: '工时需填写有限且不小于 0 的数值' }),
+      expect.objectContaining({ field: 'keyResults.0.targetValue', message: '请填写数量型 KR 的目标值' }),
+      expect.objectContaining({ field: 'keyResults.0.actualValue', message: '当前实际值需填写有限且不小于 0 的数值' }),
+      expect.objectContaining({ field: 'keyResults.1.hours', message: '工时需填写有限且不小于 0 的数值' }),
+      expect.objectContaining({ field: 'keyResults.1.dueDate', message: '请填写里程碑截止日期' }),
+      expect.objectContaining({ field: 'keyResults.1.milestoneStatus', message: '请选择里程碑当前状态' }),
+      expect.objectContaining({ field: 'evidence.0.label', message: '请填写成果名称或链接说明' }),
+    ]));
+    expect(toLocalDailyReport(invalidDraft, conversionContext())).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'INVALID_DRAFT' }),
+    });
+  });
+
+  it('preserves an immutable typed record for every submitted evidence item', () => {
+    const draft: DailyReportDraft = {
+      dailyObjective: '完成数据收集',
+      objectiveProgress: 60,
+      keyResults: [quantityKr()],
+      evidence: [
+        { id: 'evidence-link', label: '数据表链接', kind: 'link', classification: 'internal' },
+        { id: 'evidence-file', label: '访谈记录.xlsx', kind: 'file', classification: 'confidential' },
+      ],
+      classification: 'internal',
+    };
+    const result = toLocalDailyReport(draft, conversionContext());
+
+    if (!result.ok) throw new Error(result.error.message);
+    draft.evidence[0]!.label = '被篡改的标题';
+
+    expect(result.report.evidenceItems).toEqual([
+      { id: 'evidence-link', label: '数据表链接', kind: 'link', classification: 'internal' },
+      { id: 'evidence-file', label: '访谈记录.xlsx', kind: 'file', classification: 'confidential' },
+    ]);
   });
 });

@@ -26,7 +26,7 @@ function barStyle(keyResult: PreparedKeyResult, actual: boolean): CSSProperties 
 }
 
 export function GanttChartWidget({ data }: GanttChartWidgetProps) {
-  const { keyResults, milestones } = prepareVisualizationData(data);
+  const { keyResults, milestones, tasks } = prepareVisualizationData(data);
 
   if (keyResults.length === 0 && milestones.length === 0) {
     return <p className="visualization-empty">当前权限范围内没有可展示的计划。</p>;
@@ -64,6 +64,7 @@ export function GanttChartWidget({ data }: GanttChartWidgetProps) {
               </div>
             </article>
           ))}
+          {tasks.map((task) => <article className="gantt-row gantt-row--task" key={task.id}><div className="gantt-row__label"><strong>任务：{task.title}</strong><span>关联 KR：{task.keyResultTitle}</span></div><div className="gantt-row__track"><span className="gantt-bar gantt-bar--baseline" style={{ left: `${offsetPercent(task.startDate)}%`, width: `${Math.max(3, offsetPercent(task.dueDate) - offsetPercent(task.startDate))}%` }} aria-label={`任务计划：${task.startDate} 至 ${task.dueDate}`} /><span className="gantt-bar gantt-bar--actual" style={{ left: `${offsetPercent(task.startDate)}%`, width: `${Math.max(3, offsetPercent(task.dueDate) - offsetPercent(task.startDate)) * task.progress / 100}%` }} aria-label={`任务实际完成 ${task.progress}%`} /></div></article>)}
           {milestones.map((milestone) => (
             <article className="gantt-row gantt-row--milestone" key={milestone.id}>
               <div className="gantt-row__label">

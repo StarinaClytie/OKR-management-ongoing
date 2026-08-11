@@ -8,7 +8,7 @@ export interface AlignmentTreeWidgetProps {
 }
 
 export function AlignmentTreeWidget({ data }: AlignmentTreeWidgetProps) {
-  const { alignmentProjects } = prepareVisualizationData(data);
+  const { alignmentProjects, companyObjectives } = prepareVisualizationData(data);
 
   if (alignmentProjects.length === 0) {
     return <p className="visualization-empty">当前权限范围内没有可展示的 OKR 对齐关系。</p>;
@@ -17,6 +17,7 @@ export function AlignmentTreeWidget({ data }: AlignmentTreeWidgetProps) {
   return (
     <div className="alignment-tree">
       <p className="visualization-description">从项目目标向下查看 Objective、KR 与负责人。</p>
+      {companyObjectives[0] && <article className="alignment-node alignment-node--company"><span className="alignment-node__type">公司 O</span><strong>{companyObjectives[0].title}</strong></article>}
       <ul className="alignment-tree__projects">
         {alignmentProjects.map((project) => (
           <li key={project.id}>

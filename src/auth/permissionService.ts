@@ -10,6 +10,8 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.read_summary',
     'okr.read_detail',
     'risk.read',
+    'company_objective.read',
+    'task.read',
     'daily_report.read',
     'daily_report.read_body',
     'evidence.read',
@@ -31,6 +33,8 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.update',
     'milestone.read',
     'risk.read',
+    'company_objective.read',
+    'task.read',
     'project.manage',
     'daily_report.read',
     'daily_report.read_body',
@@ -53,6 +57,8 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.update',
     'milestone.read',
     'risk.read',
+    'company_objective.read',
+    'task.read',
     'project.manage',
     'daily_report.create',
     'daily_report.read',
@@ -76,6 +82,8 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.update',
     'milestone.read',
     'risk.read',
+    'company_objective.read',
+    'task.read',
     'daily_report.create',
     'daily_report.read',
     'daily_report.read_body',
@@ -89,7 +97,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'document.download',
     'user.read',
   ]),
-  hr: new Set(['dashboard.view', 'okr.read_summary', 'daily_report.read', 'weekly_report.read', 'worklog.read_hours', 'user.read']),
+  hr: new Set(['dashboard.view', 'okr.read_summary', 'company_objective.read', 'daily_report.read', 'weekly_report.read', 'worklog.read_hours', 'user.read']),
 };
 
 const systemActions = new Set<Action>(['dashboard.view', 'user.manage', 'permission.manage', 'audit.read']);
@@ -125,9 +133,9 @@ const shareableReadActions = new Set<Action>([
   'evidence.read',
   'attachment.read',
   'document.read_body',
-  'document.download',
-  'record.export',
 ]);
+
+const grantControlledActions = new Set<Action>(['document.download', 'record.export']);
 
 function deny(reason = '没有访问权限'): PermissionDecision {
   return { allowed: false, reason };
@@ -147,6 +155,14 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
       projectIds: 'projectIds' in resource ? resource.projectIds as readonly string[] : undefined,
       classification: resource.classification,
       systemAction: 'systemAction' in resource ? resource.systemAction : undefined,
+    };
+  }
+
+  if ('level' in resource && resource.level === 'company') {
+    return {
+      id: resource.id,
+      type: 'company_objective',
+      classification: resource.classification,
     };
   }
 
@@ -220,6 +236,16 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
     };
   }
 
+  if ('keyResultId' in resource) {
+    return {
+      id: resource.id,
+      type: 'project_task',
+      ownerId: resource.ownerId,
+      projectId: resource.projectId,
+      classification: resource.classification,
+    };
+  }
+
   if ('objectiveId' in resource && 'ownerId' in resource) {
     const objective = mockData.objectives.find((candidate) => candidate.id === resource.objectiveId);
     return {
@@ -263,8 +289,11 @@ function isResourceCompatibleWithAction(action: Action, context: ResourceContext
 
   if (action === 'milestone.read') return context.type === 'milestone';
   if (action === 'risk.read') return context.type === 'risk';
+  if (action === 'company_objective.read') return context.type === 'company_objective';
+  if (action === 'task.read') return context.type === 'project_task';
 
   if (action === 'project.manage') return context.type === 'project';
+  if (action === 'daily_report.read_body') return context.type === 'daily_report' || context.type === 'daily_report_body';
   if (action.startsWith('daily_report.')) return context.type === 'daily_report';
   if (action.startsWith('weekly_report.')) return context.type === 'weekly_report';
   if (action === 'user.read') return context.type === 'user';
@@ -310,7 +339,7 @@ function isSameProject(userId: string, ownerId: string | undefined, projectId: s
   return hasProjectRole(userId, projectId) && hasProjectRole(ownerId, projectId);
 }
 
-function hasActiveShare(userId: string, context: ResourceContext): boolean {
+function hasActiveShare(userId: string, action: Action, context: ResourceContext): boolean {
   const shareResourceType = context.type === 'daily_report_body' ? 'daily_report' : context.type;
 
   return mockData.activeShares.some(
@@ -318,7 +347,8 @@ function hasActiveShare(userId: string, context: ResourceContext): boolean {
       share.active &&
       share.grantedToUserId === userId &&
       share.resourceId === context.id &&
-      share.resourceType === shareResourceType,
+      share.resourceType === shareResourceType &&
+      share.allowedActions?.includes(action) === true,
   );
 }
 
@@ -376,11 +406,23 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
     return deny();
   }
 
-  const explicitlyShared = shareableReadActions.has(action) && hasActiveShare(user.id, context);
+  const explicitlyShared = shareableReadActions.has(action) && hasActiveShare(user.id, action, context);
+  const explicitlyGranted = grantControlledActions.has(action) && hasActiveShare(user.id, action, context);
+  if (grantControlledActions.has(action) && !explicitlyGranted) {
+    return deny('下载或导出需要明确操作授权');
+  }
   if (context.classification === 'restricted' && !explicitlyShared) {
+    if (explicitlyGranted) return allow('资源已明确授权当前操作');
     return deny('严格机密资源需要明确授权');
   }
-  if (explicitlyShared) return allow('资源已明确共享');
+  if (explicitlyShared || explicitlyGranted) return allow('资源已明确授权当前操作');
+
+  if (action === 'company_objective.read') {
+    if (context.classification === 'public' || context.classification === 'internal') {
+      return allow('可查看组织级目标');
+    }
+    return user.role === 'management' ? allow('管理层组织范围') : deny();
+  }
 
   if (action === 'milestone.read') {
     if (user.role === 'management') return allow('管理层组织范围');
@@ -411,8 +453,9 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
   }
 
   if (action === 'project.manage') {
-    if (user.role === 'management') return allow('可管理职责范围内项目');
-    return hasProjectRole(user.id, context.projectId, 'leader') ? allow('可管理负责项目') : deny();
+    return context.ownerId === user.id || hasProjectRole(user.id, context.projectId, 'leader')
+      ? allow('可管理负责项目')
+      : deny();
   }
 
   const confidentialIndependentFile = isIndependentFile(context) && context.classification === 'confidential';

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { PageHeader } from '../components/PageHeader';
 
@@ -13,6 +13,10 @@ export function SettingsPage() {
     ...(currentUser.role === 'administrator' ? [{ id: 'system', label: '系统设置', description: '用户、角色、权限与审计元数据。' }] : []),
   ];
   const [activeTab, setActiveTab] = useState(tabs[0].id);
+  const idBase = useId();
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab)) setActiveTab(tabs[0].id);
+  }, [activeTab, tabs]);
   const active = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
 
   return (
@@ -20,9 +24,9 @@ export function SettingsPage() {
       <PageHeader title="设置" description="按角色提供个人、项目、HR 或系统配置入口；此版本不会持久化修改。" primaryAction={{ label: '保存模拟设置', onClick: () => setNotice('设置已在本地演示状态中保存。') }} />
       {notice && <p className="page-notice" role="status">{notice}</p>}
       <div className="settings-tabs" role="tablist" aria-label="设置类别">
-        {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={tab.id === activeTab} className="settings-tab" onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+        {tabs.map((tab) => <button key={tab.id} id={`${idBase}-${tab.id}-tab`} type="button" role="tab" aria-selected={tab.id === activeTab} aria-controls={tab.id === activeTab ? `${idBase}-${tab.id}-panel` : undefined} className="settings-tab" onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
       </div>
-      <section className="settings-panel" role="tabpanel" aria-label={active.label}><h2>{active.label}</h2><p>{active.description}</p><label className="settings-toggle"><input type="checkbox" defaultChecked /> 接收相关提醒</label></section>
+      <section id={`${idBase}-${active.id}-panel`} className="settings-panel" role="tabpanel" aria-label={active.label} aria-labelledby={`${idBase}-${active.id}-tab`}><h2>{active.label}</h2><p>{active.description}</p><label className="settings-toggle"><input type="checkbox" defaultChecked /> 接收相关提醒</label></section>
     </section>
   );
 }

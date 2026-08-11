@@ -5,9 +5,11 @@ import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { toLocalDailyReport, type DailyReportDraft } from '../domain/dailyEntry';
+import { getDailyReportBodyPermissionScope } from '../domain/permissions';
 import type { Classification, DailyReport, Objective, User } from '../domain/types';
 import { mockRepository } from '../mocks/repository';
 import { DailyReportForm } from './daily-report/DailyReportForm';
+import { DailyReportEvidenceDetails } from './DailyReportEvidenceDetails';
 
 function authorName(authorId: string, users: ReturnType<typeof mockRepository.getDashboardData>['users']) {
   return users.find((user) => user.id === authorId)?.name ?? '未知成员';
@@ -69,6 +71,12 @@ export function DailyReportsPage() {
   const authoringButtonRef = useRef<HTMLButtonElement>(null);
   const restoreAuthoringFocus = useRef(false);
   useEffect(() => {
+    setIsAuthoring(false);
+    setLocalReports([]);
+    setNotice('');
+    nextLocalSubmissionNonce.current = 1;
+  }, [currentUser?.id]);
+  useEffect(() => {
     if (!isAuthoring && restoreAuthoringFocus.current) {
       restoreAuthoringFocus.current = false;
       authoringButtonRef.current?.focus();
@@ -77,7 +85,7 @@ export function DailyReportsPage() {
   if (!currentUser) return null;
   const data = mockRepository.getDashboardData(currentUser.id);
   const readableReports = useMemo(
-    () => [...localReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', report).allowed),
+    () => [...localReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed),
     [currentUser, data.dailyReports, localReports],
   );
 
@@ -152,6 +160,7 @@ export function DailyReportsPage() {
             <p key={keyResult.id}>KR{index + 1}：{keyResult.title}（<span>{keyResult.progress ?? '—'}%</span>）</p>
           ))}
           {report.dailyKeyResults && report.evidence.length > 0 && <p>{`成果密级：${classificationLabels[report.evidenceClassification]}`}</p>}
+          <DailyReportEvidenceDetails viewer={currentUser} report={report} attachments={data.attachments} />
         </div>
       ),
     },

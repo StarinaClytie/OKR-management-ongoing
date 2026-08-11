@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getKrAverageReference, validateProgress, type DailyKeyResultDraft, type DailyReportDraft } from '../../domain/dailyEntry';
+import { getKrAverageReference, validateDailyReportDraft, validateProgress, type DailyKeyResultDraft, type DailyReportDraft } from '../../domain/dailyEntry';
 import type { KeyResult, Objective } from '../../domain/types';
 import { DailyKeyResultEditor } from './DailyKeyResultEditor';
 import { DailyKrHelp } from './DailyKrHelp';
@@ -21,7 +21,7 @@ const initialKeyResult = (id: string): DailyKeyResultDraft => ({
   id,
   title: '',
   type: 'quantity',
-  hours: 0,
+  hours: undefined,
   progress: undefined,
   workNote: '',
 });
@@ -54,6 +54,9 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
   const nextKrId = useRef(2);
   const narrow = useNarrowDailyForm();
   const averageReference = useMemo(() => getKrAverageReference(draft.keyResults), [draft.keyResults]);
+  const validationErrors = useMemo(() => showSubmitErrors
+    ? Object.fromEntries(validateDailyReportDraft(draft).map((issue) => [issue.field, issue.message])) as Record<string, string>
+    : {}, [draft, showSubmitErrors]);
   const objectiveProgressValidation = validateProgress(draft.objectiveProgress);
   const objectiveProgressError = showSubmitErrors || draft.objectiveProgress !== undefined ? objectiveProgressValidation : null;
   const activeKr = draft.keyResults.find((keyResult) => keyResult.id === activeKrId);
@@ -107,13 +110,10 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
     }));
   };
 
-  const hasInvalidProgress = validateProgress(draft.objectiveProgress) !== null
-    || draft.keyResults.some((keyResult) => validateProgress(keyResult.progress) !== null);
-  const hasInvalidSubjectiveCriteria = draft.keyResults.some((keyResult) => keyResult.type === 'subjective' && !keyResult.acceptanceCriteria?.trim());
   const saveDraft = () => setStatus('草稿已保存在当前页面。');
   const submit = () => {
     setShowSubmitErrors(true);
-    if (hasInvalidProgress || hasInvalidSubjectiveCriteria) {
+    if (validateDailyReportDraft(draft).length > 0) {
       setStatus('请先补全或修正必填项。');
       return;
     }
@@ -126,6 +126,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
       <div className="daily-entry-form">
         <DailyObjectiveField
           objective={draft.dailyObjective}
+          objectiveError={validationErrors.dailyObjective ?? null}
           progress={draft.objectiveProgress}
           progressError={objectiveProgressError}
           averageReference={averageReference}
@@ -142,8 +143,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
               key={keyResult.id}
               index={index}
               keyResult={keyResult}
-              progressError={showSubmitErrors || keyResult.progress !== undefined ? validateProgress(keyResult.progress) : null}
-              acceptanceCriteriaError={showSubmitErrors && keyResult.type === 'subjective' && !keyResult.acceptanceCriteria?.trim() ? '请填写主观型 KR 的验收标准' : null}
+              errors={{ title: validationErrors[`keyResults.${index}.title`], hours: validationErrors[`keyResults.${index}.hours`], progress: showSubmitErrors || keyResult.progress !== undefined ? validateProgress(keyResult.progress) ?? undefined : undefined, targetValue: validationErrors[`keyResults.${index}.targetValue`], actualValue: validationErrors[`keyResults.${index}.actualValue`], baselineValue: validationErrors[`keyResults.${index}.baselineValue`], dueDate: validationErrors[`keyResults.${index}.dueDate`], milestoneStatus: validationErrors[`keyResults.${index}.milestoneStatus`], acceptanceCriteria: validationErrors[`keyResults.${index}.acceptanceCriteria`], workNote: validationErrors[`keyResults.${index}.workNote`] }}
               onChange={(patch) => updateKeyResult(keyResult.id, patch)}
               onProgressChange={(progress) => updateKeyResultProgress(keyResult.id, progress)}
               onActivate={() => setActiveKrId(keyResult.id)}

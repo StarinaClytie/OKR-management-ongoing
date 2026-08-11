@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { DashboardData } from '../../mocks/repository';
 import { prepareVisualizationData } from './visualizationData';
 
@@ -9,6 +10,8 @@ const levels = [3, 2, 1] as const;
 
 export function RiskMatrixWidget({ data }: RiskMatrixWidgetProps) {
   const { risks } = prepareVisualizationData(data);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = risks.find((risk) => risk.id === selectedId);
 
   if (risks.length === 0) {
     return <p className="visualization-empty">当前权限范围内没有可展示的风险。</p>;
@@ -30,11 +33,11 @@ export function RiskMatrixWidget({ data }: RiskMatrixWidgetProps) {
                   aria-label={`${probability === 3 ? '高' : probability === 2 ? '中' : '低'}概率，${impact === 3 ? '高' : impact === 2 ? '中' : '低'}影响`}
                 >
                   {cellRisks.map((risk) => (
-                    <a className="risk-marker" href={`/projects#${risk.id}`} key={risk.id}>
+                    <button type="button" className="risk-marker" aria-label={`查看风险详情：${risk.title}`} onClick={() => setSelectedId(risk.id)} key={risk.id}>
                       <span className="risk-marker__shape" aria-hidden="true">◆</span>
                       <strong>{risk.title}</strong>
                       <small>{risk.probabilityLabel} · {risk.impactLabel}</small>
-                    </a>
+                    </button>
                   ))}
                 </section>
               );
@@ -43,6 +46,7 @@ export function RiskMatrixWidget({ data }: RiskMatrixWidgetProps) {
         </div>
         <span className="risk-matrix__axis risk-matrix__axis--x">业务影响 →</span>
       </div>
+      {selected && <section className="risk-details" role="region" aria-label="风险详情"><h3>{selected.title}</h3><p>{selected.mitigation}</p></section>}
     </div>
   );
 }

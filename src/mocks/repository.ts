@@ -1,5 +1,6 @@
 import type {
   CollaborationRelation,
+  CompanyObjective,
   DailyReport,
   DocumentRecord,
   KeyResult,
@@ -8,6 +9,7 @@ import type {
   OrganizationRelation,
   ProgressSnapshot,
   Project,
+  ProjectTask,
   ProjectMembership,
   Risk,
   User,
@@ -15,7 +17,7 @@ import type {
   WorkloadEntry,
 } from '../domain/types';
 import type { ActiveShare } from '../domain/permissions';
-import { keyResults, milestones, objectives, progressSnapshots, projects, risks } from './okr';
+import { companyObjectives, keyResults, milestones, objectives, progressSnapshots, projectTasks, projects, risks } from './okr';
 import { dailyReports, weeklyReports, workloads } from './reports';
 import { activeShares, attachments, collaborationRelations, documents } from './security';
 import { organizationRelations, projectMemberships, users } from './users';
@@ -31,6 +33,9 @@ export interface DashboardData {
   risks: Risk[];
   progressSnapshots: ProgressSnapshot[];
   workloads: WorkloadEntry[];
+  attachments: DocumentRecord[];
+  companyObjectives: CompanyObjective[];
+  projectTasks: ProjectTask[];
 }
 
 export interface MockData {
@@ -50,6 +55,8 @@ export interface MockData {
   workloads: WorkloadEntry[];
   attachments: DocumentRecord[];
   documents: DocumentRecord[];
+  companyObjectives: CompanyObjective[];
+  projectTasks: ProjectTask[];
 }
 
 export const mockData: MockData = {
@@ -69,6 +76,8 @@ export const mockData: MockData = {
   workloads,
   attachments,
   documents,
+  companyObjectives,
+  projectTasks,
 };
 
 export function validateRepositoryIntegrity(data: MockData): string[] {
@@ -230,6 +239,9 @@ export const mockRepository = {
       risks,
       progressSnapshots,
       workloads,
+      attachments,
+      companyObjectives,
+      projectTasks,
     };
   },
 };

@@ -18,7 +18,19 @@ export function DataTable<Row>({ ariaLabel, columns, rows, getRowKey, emptyMessa
   if (rows.length === 0) return <p className="data-table__empty">{emptyMessage}</p>;
 
   return (
-    <div className="data-table__scroll">
+    <div
+      className="data-table__scroll"
+      role="region"
+      tabIndex={0}
+      aria-label={`${ariaLabel}，可横向滚动`}
+      onKeyDown={(event) => {
+        const distance = 80;
+        if (event.key === 'ArrowRight') { event.preventDefault(); event.currentTarget.scrollLeft += distance; }
+        if (event.key === 'ArrowLeft') { event.preventDefault(); event.currentTarget.scrollLeft -= distance; }
+        if (event.key === 'Home') { event.preventDefault(); event.currentTarget.scrollLeft = 0; }
+        if (event.key === 'End') { event.preventDefault(); event.currentTarget.scrollLeft = event.currentTarget.scrollWidth; }
+      }}
+    >
       <table className="data-table" aria-label={ariaLabel}>
         <thead>
           <tr>{columns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr>

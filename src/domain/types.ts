@@ -1,4 +1,4 @@
-import type { DailyKeyResultDraft } from './dailyEntry';
+import type { DailyEvidenceDraft, DailyKeyResultDraft } from './dailyEntry';
 
 export type Role = 'administrator' | 'management' | 'project_leader' | 'employee' | 'hr';
 export type Classification = 'public' | 'internal' | 'confidential' | 'restricted';
@@ -44,6 +44,28 @@ export interface Project {
   startDate: string;
   dueDate: string;
   status: ProgressStatus;
+  companyObjectiveId?: string;
+}
+
+export interface CompanyObjective {
+  id: string;
+  level: 'company';
+  title: string;
+  progress: number;
+  status: ProgressStatus;
+  classification: Classification;
+}
+
+export interface ProjectTask {
+  id: string;
+  projectId: string;
+  keyResultId: string;
+  title: string;
+  ownerId: string;
+  startDate: string;
+  dueDate: string;
+  progress: number;
+  classification: Classification;
 }
 
 export interface Objective {
@@ -85,6 +107,7 @@ export interface DailyReport {
   classification: Classification;
   hours: number;
   evidence: string[];
+  evidenceItems?: DailyEvidenceDraft[];
   evidenceClassification: Classification;
   attachmentIds: string[];
   status: ReportStatus;

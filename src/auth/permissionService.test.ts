@@ -3,7 +3,7 @@ import { dailyReports, weeklyReports } from '../mocks/reports';
 import { attachments, documents } from '../mocks/security';
 import { mockData } from '../mocks/repository';
 import { users } from '../mocks/users';
-import type { ActiveShare, SystemPermissionScope } from '../domain/permissions';
+import { getDailyReportPermissionScopes, type ActiveShare, type SystemPermissionScope } from '../domain/permissions';
 import { can, getUserPermissionScope } from './permissionService';
 
 const admin = users.find((user) => user.id === 'user-administrator')!;
@@ -25,6 +25,8 @@ const confidentialAttachment = attachments.find(
   (attachment) => attachment.id === 'attachment-confidential-orion-evidence',
 )!;
 const restrictedAttachment = attachments.find((attachment) => attachment.id === 'attachment-restricted-nova-access')!;
+const orionProject = mockData.projects.find((project) => project.id === 'project-orion')!;
+const novaProject = mockData.projects.find((project) => project.id === 'project-nova')!;
 const managementPermissionScope: SystemPermissionScope = {
   resourceId: 'system-permission-center',
   resourceType: 'system',
@@ -100,6 +102,14 @@ describe('can — capability, ownership, and field-level access', () => {
     expect(can(hr, 'daily_report.read_body', memberReport).allowed).toBe(false);
   });
 
+  it('accepts the typed daily report body scope for the read-body action', () => {
+    const [bodyScope] = getDailyReportPermissionScopes(memberReport);
+
+    expect(bodyScope.resourceType).toBe('daily_report_body');
+    expect(can(projectLeader, 'daily_report.read_body', bodyScope).allowed).toBe(true);
+    expect(can(employee, 'daily_report.read_body', bodyScope).allowed).toBe(true);
+  });
+
   it('uses the typed user scope for project-member team visibility', () => {
     expect(can(projectLeader, 'user.read', getUserPermissionScope(employee)).allowed).toBe(true);
     expect(can(projectLeader, 'user.read', getUserPermissionScope(hr)).allowed).toBe(false);
@@ -132,12 +142,78 @@ describe('can — classification and relationship transparency', () => {
       grantedToUserId: management.id,
       createdAt: '2026-08-10T10:00:00Z',
       active: true,
+      allowedActions: ['attachment.read'],
     });
 
     try {
       expect(can(management, 'attachment.read', confidentialAttachment).allowed).toBe(true);
     } finally {
       removeShare();
+    }
+  });
+
+  it('keeps view-only shares from escalating into export or download grants', () => {
+    const removeAttachmentShare = addActiveShare({
+      id: 'share-restricted-attachment-view-only-test',
+      resourceId: restrictedAttachment.id,
+      resourceType: 'attachment',
+      grantedByUserId: restrictedAttachment.ownerId,
+      grantedToUserId: admin.id,
+      createdAt: '2026-08-10T10:10:00Z',
+      active: true,
+      allowedActions: ['attachment.read'],
+    });
+    const removeDocumentShare = addActiveShare({
+      id: 'share-confidential-document-view-only-test',
+      resourceId: confidentialDocument.id,
+      resourceType: 'document',
+      grantedByUserId: confidentialDocument.ownerId,
+      grantedToUserId: admin.id,
+      createdAt: '2026-08-10T10:11:00Z',
+      active: true,
+      allowedActions: ['document.read_body'],
+    });
+
+    try {
+      expect(can(admin, 'attachment.read', restrictedAttachment).allowed).toBe(true);
+      expect(can(admin, 'record.export', restrictedAttachment).allowed).toBe(false);
+      expect(can(admin, 'document.read_body', confidentialDocument).allowed).toBe(true);
+      expect(can(admin, 'document.download', confidentialDocument).allowed).toBe(false);
+    } finally {
+      removeDocumentShare();
+      removeAttachmentShare();
+    }
+  });
+
+  it('allows export and download only when the matching action is explicitly granted', () => {
+    const removeAttachmentGrant = addActiveShare({
+      id: 'grant-restricted-attachment-export-test',
+      resourceId: restrictedAttachment.id,
+      resourceType: 'attachment',
+      grantedByUserId: restrictedAttachment.ownerId,
+      grantedToUserId: admin.id,
+      createdAt: '2026-08-10T10:12:00Z',
+      active: true,
+      allowedActions: ['record.export'],
+    });
+    const removeDocumentGrant = addActiveShare({
+      id: 'grant-confidential-document-download-test',
+      resourceId: confidentialDocument.id,
+      resourceType: 'document',
+      grantedByUserId: confidentialDocument.ownerId,
+      grantedToUserId: admin.id,
+      createdAt: '2026-08-10T10:13:00Z',
+      active: true,
+      allowedActions: ['document.download'],
+    });
+
+    try {
+      expect(can(admin, 'record.export', restrictedAttachment).allowed).toBe(true);
+      expect(can(admin, 'document.download', confidentialDocument).allowed).toBe(true);
+      expect(can(admin, 'attachment.read', restrictedAttachment).allowed).toBe(false);
+    } finally {
+      removeDocumentGrant();
+      removeAttachmentGrant();
     }
   });
 
@@ -174,16 +250,24 @@ describe('can — classification and relationship transparency', () => {
   });
 
   it('keeps export independent from read access and denies restricted export without a grant', () => {
-    expect(can(management, 'record.export', memberReport).allowed).toBe(true);
+    expect(can(management, 'record.export', memberReport).allowed).toBe(false);
     expect(can(employee, 'record.export', memberReport).allowed).toBe(false);
     expect(can(management, 'record.export', restrictedAttachment).allowed).toBe(false);
+  });
+
+  it('limits project management to the named project leader instead of all Management projects', () => {
+    expect(can(management, 'okr.read_detail', orionProject).allowed).toBe(true);
+    expect(can(management, 'project.manage', orionProject).allowed).toBe(false);
+    expect(can(management, 'project.manage', novaProject).allowed).toBe(true);
+    expect(can(projectLeader, 'project.manage', orionProject).allowed).toBe(true);
+    expect(can(projectLeader, 'project.manage', novaProject).allowed).toBe(false);
   });
 
   it('exports only explicitly compatible business resources', () => {
     const workload = mockData.workloads[0]!;
 
     expect(can(management, 'record.export', workload).allowed).toBe(false);
-    expect(can(management, 'record.export', memberReport).allowed).toBe(true);
+    expect(can(management, 'record.export', memberReport).allowed).toBe(false);
   });
 
   it('allows organization-public OKR summaries without a project relationship', () => {
@@ -217,6 +301,7 @@ describe('can — classification and relationship transparency', () => {
       grantedToUserId: admin.id,
       createdAt: '2026-08-10T10:00:00Z',
       active: true,
+      allowedActions: ['attachment.read'],
     });
 
     try {
@@ -237,6 +322,7 @@ describe('can — classification and relationship transparency', () => {
       grantedToUserId: admin.id,
       createdAt: '2026-08-10T10:00:00Z',
       active: true,
+      allowedActions: ['document.read_body'],
     });
     const removeAttachmentShare = addActiveShare({
       id: 'share-restricted-nova-attachment-to-admin-test',
@@ -246,6 +332,7 @@ describe('can — classification and relationship transparency', () => {
       grantedToUserId: admin.id,
       createdAt: '2026-08-10T10:00:00Z',
       active: true,
+      allowedActions: ['attachment.read'],
     });
 
     try {
