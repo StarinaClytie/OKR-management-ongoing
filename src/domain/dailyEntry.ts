@@ -7,7 +7,7 @@ export interface DailyKeyResultDraft {
   title: string;
   type: DailyKrType;
   hours: number;
-  progress: number;
+  progress?: number;
   workNote: string;
   targetValue?: number;
   actualValue?: number;
@@ -27,7 +27,7 @@ export interface DailyEvidenceDraft {
 
 export interface DailyReportDraft {
   dailyObjective: string;
-  objectiveProgress: number;
+  objectiveProgress?: number;
   linkedObjectiveId?: string;
   keyResults: DailyKeyResultDraft[];
   evidence: DailyEvidenceDraft[];
@@ -90,12 +90,17 @@ const classificationRank: Record<Classification, number> = {
   restricted: 3,
 };
 
-export const validateProgress = (value: number): string | null =>
-  Number.isFinite(value) && value >= 0 && value <= 100 ? null : '完成度需填写 0%～100%';
+export const validateProgress = (value: number | undefined): string | null => {
+  if (value === undefined) return '请填写完成度';
+  return Number.isFinite(value) && value >= 0 && value <= 100 ? null : '完成度需填写 0%～100%';
+};
 
 export function getKrAverageReference(krs: DailyKeyResultDraft[]): number | null {
-  if (krs.length === 0) return null;
-  return Math.round(krs.reduce((sum, kr) => sum + kr.progress, 0) / krs.length);
+  const enteredProgress = krs
+    .map((kr) => kr.progress)
+    .filter((progress): progress is number => validateProgress(progress) === null);
+  if (enteredProgress.length === 0) return null;
+  return Math.round(enteredProgress.reduce((sum, progress) => sum + progress, 0) / enteredProgress.length);
 }
 
 export function getKrGuidance(type: DailyKrType): DailyKrGuidance {

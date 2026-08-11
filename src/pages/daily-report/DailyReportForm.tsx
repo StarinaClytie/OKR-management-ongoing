@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
-import { getKrAverageReference, getKrGuidance, validateProgress, type DailyKeyResultDraft, type DailyKrType, type DailyReportDraft } from '../../domain/dailyEntry';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { getKrAverageReference, validateProgress, type DailyKeyResultDraft, type DailyReportDraft } from '../../domain/dailyEntry';
 import type { KeyResult, Objective } from '../../domain/types';
 import { DailyKeyResultEditor } from './DailyKeyResultEditor';
+import { DailyKrHelp } from './DailyKrHelp';
 import { DailyObjectiveField } from './DailyObjectiveField';
 import { DailyReportEvidence } from './DailyReportEvidence';
 
@@ -17,40 +18,76 @@ const initialKeyResult = (id: string): DailyKeyResultDraft => ({
   title: '',
   type: 'quantity',
   hours: 0,
-  progress: 0,
+  progress: undefined,
   workNote: '',
 });
+
+function useNarrowDailyForm() {
+  const [narrow, setNarrow] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia('(max-width: 760px)');
+    const update = () => setNarrow(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  return narrow;
+}
 
 export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: DailyReportFormProps) {
   const [draft, setDraft] = useState<DailyReportDraft>({
     dailyObjective: '',
-    objectiveProgress: 0,
+    objectiveProgress: undefined,
     keyResults: [initialKeyResult('daily-kr-1')],
     evidence: [],
     classification: 'internal',
   });
-  const [objectiveProgressEntered, setObjectiveProgressEntered] = useState(false);
-  const [selectedType, setSelectedType] = useState<DailyKrType>('quantity');
+  const [activeKrId, setActiveKrId] = useState('daily-kr-1');
+  const [showSubmitErrors, setShowSubmitErrors] = useState(false);
   const [status, setStatus] = useState('');
+  const nextKrId = useRef(2);
+  const narrow = useNarrowDailyForm();
   const averageReference = useMemo(() => getKrAverageReference(draft.keyResults), [draft.keyResults]);
-  const objectiveProgressError = objectiveProgressEntered ? validateProgress(draft.objectiveProgress) : null;
-  const guidance = getKrGuidance(selectedType);
+  const objectiveProgressValidation = validateProgress(draft.objectiveProgress);
+  const objectiveProgressError = showSubmitErrors || draft.objectiveProgress !== undefined ? objectiveProgressValidation : null;
+  const activeKr = draft.keyResults.find((keyResult) => keyResult.id === activeKrId) ?? draft.keyResults[0]!;
 
   const updateKeyResult = (id: string, patch: Partial<DailyKeyResultDraft>) => {
     setDraft((current) => ({ ...current, keyResults: current.keyResults.map((keyResult) => keyResult.id === id ? { ...keyResult, ...patch } : keyResult) }));
   };
 
-  const updateKeyResultProgress = (id: string, progress: number) => {
+  const updateKeyResultProgress = (id: string, progress: number | undefined) => {
     updateKeyResult(id, { progress });
   };
 
-  const updateObjectiveProgress = (progress: number) => {
-    setObjectiveProgressEntered(true);
+  const updateObjectiveProgress = (progress: number | undefined) => {
     setDraft((current) => ({ ...current, objectiveProgress: progress }));
   };
 
   const addKeyResult = () => {
-    setDraft((current) => ({ ...current, keyResults: [...current.keyResults, initialKeyResult(`daily-kr-${current.keyResults.length + 1}`)] }));
+    const id = `daily-kr-${nextKrId.current++}`;
+    setDraft((current) => ({ ...current, keyResults: [...current.keyResults, initialKeyResult(id)] }));
+    setActiveKrId(id);
+  };
+
+  const moveKeyResult = (index: number, offset: -1 | 1) => {
+    setDraft((current) => {
+      const destination = index + offset;
+      if (destination < 0 || destination >= current.keyResults.length) return current;
+      const keyResults = [...current.keyResults];
+      [keyResults[index], keyResults[destination]] = [keyResults[destination]!, keyResults[index]!];
+      return { ...current, keyResults };
+    });
+  };
+
+  const removeKeyResult = (id: string) => {
+    if (draft.keyResults.length === 1) return;
+    const index = draft.keyResults.findIndex((keyResult) => keyResult.id === id);
+    const keyResults = draft.keyResults.filter((keyResult) => keyResult.id !== id);
+    setDraft((current) => ({ ...current, keyResults }));
+    if (id === activeKrId) setActiveKrId(keyResults[Math.min(index, keyResults.length - 1)]!.id);
   };
 
   const changeLinkedObjective = (linkedObjectiveId: string | undefined) => {
@@ -65,11 +102,14 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
     setDraft((current) => ({ ...current, keyResults: current.keyResults.map((keyResult, index) => index === 0 ? { ...keyResult, linkedKeyResultId } : keyResult) }));
   };
 
-  const invalidProgress = objectiveProgressError || draft.keyResults.map((keyResult) => validateProgress(keyResult.progress)).find(Boolean);
+  const hasInvalidProgress = validateProgress(draft.objectiveProgress) !== null
+    || draft.keyResults.some((keyResult) => validateProgress(keyResult.progress) !== null);
+  const hasInvalidSubjectiveCriteria = draft.keyResults.some((keyResult) => keyResult.type === 'subjective' && !keyResult.acceptanceCriteria?.trim());
   const saveDraft = () => setStatus('草稿已保存在当前页面。');
   const submit = () => {
-    if (invalidProgress) {
-      setStatus('请先修正完成度。');
+    setShowSubmitErrors(true);
+    if (hasInvalidProgress || hasInvalidSubjectiveCriteria) {
+      setStatus('请先补全或修正必填项。');
       return;
     }
     onSubmit(draft);
@@ -77,12 +117,11 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
   };
 
   return (
-    <form className="daily-entry-layout" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+    <form className="daily-entry-layout" noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
       <div className="daily-entry-form">
         <DailyObjectiveField
           objective={draft.dailyObjective}
           progress={draft.objectiveProgress}
-          progressEntered={objectiveProgressEntered}
           progressError={objectiveProgressError}
           averageReference={averageReference}
           onObjectiveChange={(dailyObjective) => setDraft((current) => ({ ...current, dailyObjective }))}
@@ -98,10 +137,18 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
               key={keyResult.id}
               index={index}
               keyResult={keyResult}
-              progressError={validateProgress(keyResult.progress)}
+              progressError={showSubmitErrors || keyResult.progress !== undefined ? validateProgress(keyResult.progress) : null}
+              acceptanceCriteriaError={showSubmitErrors && keyResult.type === 'subjective' && !keyResult.acceptanceCriteria?.trim() ? '请填写主观型 KR 的验收标准' : null}
               onChange={(patch) => updateKeyResult(keyResult.id, patch)}
               onProgressChange={(progress) => updateKeyResultProgress(keyResult.id, progress)}
-              onActivate={setSelectedType}
+              onActivate={() => setActiveKrId(keyResult.id)}
+              onMoveUp={() => moveKeyResult(index, -1)}
+              onMoveDown={() => moveKeyResult(index, 1)}
+              onRemove={() => removeKeyResult(keyResult.id)}
+              canMoveUp={index > 0}
+              canMoveDown={index < draft.keyResults.length - 1}
+              canRemove={draft.keyResults.length > 1}
+              help={narrow && activeKrId === keyResult.id ? <DailyKrHelp type={keyResult.type} className="daily-entry-help--mobile" /> : undefined}
             />
           ))}
         </section>
@@ -122,12 +169,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
         </div>
         {status && <p className="page-notice" role="status">{status}</p>}
       </div>
-      <aside className="daily-entry-help" aria-label="填写帮助">
-        <p className="daily-entry-help__eyebrow">{guidance.label}填写参考</p>
-        <p>公式参考：{guidance.formula}</p>
-        <p>示例：<span>{guidance.example}</span></p>
-        <p>注意：{guidance.caution}</p>
-      </aside>
+      {!narrow && <aside className="daily-entry-help-shell" aria-label="填写帮助"><DailyKrHelp type={activeKr.type} /></aside>}
     </form>
   );
 }

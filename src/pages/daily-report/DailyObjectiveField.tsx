@@ -2,18 +2,16 @@ import { useState } from 'react';
 
 interface DailyObjectiveFieldProps {
   objective: string;
-  progress: number;
-  progressEntered: boolean;
+  progress?: number;
   progressError: string | null;
   averageReference: number | null;
   onObjectiveChange: (value: string) => void;
-  onProgressChange: (value: number) => void;
+  onProgressChange: (value: number | undefined) => void;
 }
 
 export function DailyObjectiveField({
   objective,
   progress,
-  progressEntered,
   progressError,
   averageReference,
   onObjectiveChange,
@@ -35,14 +33,25 @@ export function DailyObjectiveField({
         placeholder="例如：完成数据收集，为评审提供依据"
         rows={3}
       />
-      <button type="button" className="text-button" onClick={() => setExamplesVisible((visible) => !visible)}>查看更多 O 写法</button>
+      <button
+        type="button"
+        className="text-button"
+        aria-expanded={examplesVisible}
+        aria-controls="daily-objective-examples"
+        onClick={() => setExamplesVisible((visible) => !visible)}
+      >
+        {examplesVisible ? '收起 O 写法' : '查看更多 O 写法'}
+      </button>
       {examplesVisible && (
-        <section className="daily-objective-field__examples" aria-label="O 写法示例">
-          <p><strong>副词＋动词＋名词</strong></p>
+        <section id="daily-objective-examples" className="daily-objective-field__examples" aria-label="O 写法示例">
+          <p><strong>副词＋动词＋名词</strong>：高质量完成访谈数据整理</p>
+          <p><strong>动词＋对象＋结果</strong>：验证引导方案并形成评审结论</p>
+          <p><strong>完成＋交付物＋用途</strong>：完成实验复盘，为下轮决策提供依据</p>
+          <p><strong>解决＋问题＋影响</strong>：解决口径分歧，避免评审返工</p>
           <ul>
-            <li>高质量完成访谈数据整理</li>
-            <li>准时交付实验复盘材料</li>
-            <li>清晰确认评审所需依据</li>
+            <li>一个当日 O 聚焦今天最重要的结果。</li>
+            <li>O 描述目标方向，不替代员工填写完成度。</li>
+            <li>避免把多个不相关目标塞进同一句。</li>
           </ul>
         </section>
       )}
@@ -55,8 +64,10 @@ export function DailyObjectiveField({
             min="0"
             max="100"
             inputMode="decimal"
-            value={progressEntered ? progress : ''}
-            onChange={(event) => onProgressChange(Number(event.target.value))}
+            value={progress ?? ''}
+            required
+            aria-invalid={progressError ? 'true' : undefined}
+            onChange={(event) => onProgressChange(event.target.value === '' ? undefined : Number(event.target.value))}
             aria-describedby={progressError ? 'daily-objective-progress-error' : undefined}
           />
           {progressError && <p id="daily-objective-progress-error" className="form-error">{progressError}</p>}

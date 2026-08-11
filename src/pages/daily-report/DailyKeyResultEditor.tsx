@@ -1,12 +1,21 @@
 import type { DailyKeyResultDraft, DailyKrType } from '../../domain/dailyEntry';
+import type { ReactNode } from 'react';
 
 interface DailyKeyResultEditorProps {
   index: number;
   keyResult: DailyKeyResultDraft;
   progressError: string | null;
+  acceptanceCriteriaError: string | null;
   onChange: (patch: Partial<DailyKeyResultDraft>) => void;
-  onProgressChange: (value: number) => void;
+  onProgressChange: (value: number | undefined) => void;
   onActivate: (type: DailyKrType) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canRemove: boolean;
+  help?: ReactNode;
 }
 
 const typeLabels: Record<DailyKrType, string> = {
@@ -20,17 +29,47 @@ function numberValue(value: string) {
   return value === '' ? undefined : Number(value);
 }
 
-export function DailyKeyResultEditor({ index, keyResult, progressError, onChange, onProgressChange, onActivate }: DailyKeyResultEditorProps) {
+const typePatch = (type: DailyKrType): Partial<DailyKeyResultDraft> => ({
+  type,
+  targetValue: undefined,
+  actualValue: undefined,
+  baselineValue: undefined,
+  dueDate: type === 'milestone' ? '' : undefined,
+  milestoneStatus: type === 'milestone' ? 'not_started' : undefined,
+  acceptanceCriteria: type === 'subjective' ? '' : undefined,
+});
+
+export function DailyKeyResultEditor({
+  index,
+  keyResult,
+  progressError,
+  acceptanceCriteriaError,
+  onChange,
+  onProgressChange,
+  onActivate,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+  canMoveUp,
+  canMoveDown,
+  canRemove,
+  help,
+}: DailyKeyResultEditorProps) {
   const number = index + 1;
   const prefix = `KR${number}`;
   const setType = (type: DailyKrType) => {
-    onChange({ type });
+    onChange(typePatch(type));
     onActivate(type);
   };
 
   return (
     <fieldset className="daily-kr-editor" aria-label={`当日 KR ${number}`} onFocus={() => onActivate(keyResult.type)}>
       <legend>KR{number}</legend>
+      <div className="daily-kr-toolbar" aria-label={`${prefix} 排序与删除`}>
+        <button type="button" className="text-button" disabled={!canMoveUp} onClick={onMoveUp}>上移 {prefix}</button>
+        <button type="button" className="text-button" disabled={!canMoveDown} onClick={onMoveDown}>下移 {prefix}</button>
+        <button type="button" className="text-button text-button--danger" disabled={!canRemove} onClick={onRemove}>删除 {prefix}</button>
+      </div>
       <div className="daily-form-grid">
         <label htmlFor={`daily-kr-${keyResult.id}-title`}>
           {prefix}
@@ -63,12 +102,15 @@ export function DailyKeyResultEditor({ index, keyResult, progressError, onChange
           {prefix} 完成度
           <input
             id={`daily-kr-${keyResult.id}-progress`}
+            aria-label={`${prefix} 完成度`}
             type="number"
             min="0"
             max="100"
             inputMode="decimal"
-            value={keyResult.progress || ''}
-            onChange={(event) => onProgressChange(Number(event.target.value))}
+            value={keyResult.progress ?? ''}
+            required
+            aria-invalid={progressError ? 'true' : undefined}
+            onChange={(event) => onProgressChange(numberValue(event.target.value))}
             aria-describedby={progressError ? `daily-kr-${keyResult.id}-progress-error` : undefined}
           />
           {progressError && <span id={`daily-kr-${keyResult.id}-progress-error`} className="form-error">{progressError}</span>}
@@ -121,13 +163,24 @@ export function DailyKeyResultEditor({ index, keyResult, progressError, onChange
       {keyResult.type === 'subjective' && (
         <label htmlFor={`daily-kr-${keyResult.id}-criteria`} className="daily-wide-field">
           {prefix} 验收标准
-          <textarea id={`daily-kr-${keyResult.id}-criteria`} rows={2} value={keyResult.acceptanceCriteria ?? ''} onChange={(event) => onChange({ acceptanceCriteria: event.target.value })} />
+          <textarea
+            id={`daily-kr-${keyResult.id}-criteria`}
+            aria-label={`${prefix} 验收标准`}
+            rows={2}
+            value={keyResult.acceptanceCriteria ?? ''}
+            required
+            aria-invalid={acceptanceCriteriaError ? 'true' : undefined}
+            aria-describedby={acceptanceCriteriaError ? `daily-kr-${keyResult.id}-criteria-error` : undefined}
+            onChange={(event) => onChange({ acceptanceCriteria: event.target.value })}
+          />
+          {acceptanceCriteriaError && <span id={`daily-kr-${keyResult.id}-criteria-error`} className="form-error">{acceptanceCriteriaError}</span>}
         </label>
       )}
       <label htmlFor={`daily-kr-${keyResult.id}-note`} className="daily-wide-field">
         {prefix} 工作说明
         <textarea id={`daily-kr-${keyResult.id}-note`} rows={2} value={keyResult.workNote} onChange={(event) => onChange({ workNote: event.target.value })} />
       </label>
+      {help}
     </fieldset>
   );
 }

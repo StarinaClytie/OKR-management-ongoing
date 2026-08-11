@@ -50,12 +50,32 @@ describe('daily entry helpers', () => {
     expect(getKrAverageReference([])).toBeNull();
   });
 
+  it('averages only explicitly entered valid KR progress, including 0%', () => {
+    expect(getKrAverageReference([
+      quantityKr({ progress: undefined }),
+      quantityKr({ id: 'daily-kr-2', progress: 0 }),
+      quantityKr({ id: 'daily-kr-3', progress: 100 }),
+      quantityKr({ id: 'daily-kr-4', progress: 101 }),
+    ])).toBe(50);
+  });
+
+  it('returns no average when every KR progress is empty or invalid', () => {
+    expect(getKrAverageReference([
+      quantityKr({ progress: undefined }),
+      quantityKr({ id: 'daily-kr-2', progress: 101 }),
+    ])).toBeNull();
+  });
+
   it.each([[-1], [101], [Number.NaN], [Number.POSITIVE_INFINITY]])(
     'rejects progress outside 0 to 100: %s',
     (value) => {
       expect(validateProgress(value)).toBe('完成度需填写 0%～100%');
     },
   );
+
+  it('rejects missing progress separately from an out-of-range value', () => {
+    expect(validateProgress(undefined)).toBe('请填写完成度');
+  });
 
   it.each([[0], [75], [100]])('accepts employee-entered progress within 0 to 100: %s', (value) => {
     expect(validateProgress(value)).toBeNull();
