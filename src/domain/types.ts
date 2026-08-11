@@ -1,3 +1,5 @@
+import type { DailyKeyResultDraft } from './dailyEntry';
+
 export type Role = 'administrator' | 'management' | 'project_leader' | 'employee' | 'hr';
 export type Classification = 'public' | 'internal' | 'confidential' | 'restricted';
 export type ReportStatus = 'draft' | 'submitted' | 'returned' | 'confirmed';
@@ -77,6 +79,9 @@ export interface DailyReport {
   keyResultIds: string[];
   date: string;
   content: string;
+  dailyObjective?: string;
+  objectiveProgress?: number;
+  dailyKeyResults?: DailyKeyResultDraft[];
   classification: Classification;
   hours: number;
   evidence: string[];
