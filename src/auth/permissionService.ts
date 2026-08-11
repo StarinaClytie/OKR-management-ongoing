@@ -9,6 +9,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'dashboard.view',
     'okr.read_summary',
     'okr.read_detail',
+    'risk.read',
     'daily_report.read',
     'daily_report.read_body',
     'evidence.read',
@@ -26,6 +27,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.read_detail',
     'okr.update',
     'milestone.read',
+    'risk.read',
     'project.manage',
     'daily_report.create',
     'daily_report.read',
@@ -45,6 +47,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.read_detail',
     'okr.update',
     'milestone.read',
+    'risk.read',
     'project.manage',
     'daily_report.create',
     'daily_report.read',
@@ -64,6 +67,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'okr.read_detail',
     'okr.update',
     'milestone.read',
+    'risk.read',
     'daily_report.create',
     'daily_report.read',
     'daily_report.read_body',
@@ -181,6 +185,16 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
     };
   }
 
+  if ('probability' in resource && 'impact' in resource) {
+    return {
+      id: resource.id,
+      type: 'risk',
+      ownerId: resource.ownerId,
+      projectId: resource.projectId,
+      classification: resource.classification,
+    };
+  }
+
   if ('objectiveId' in resource && 'ownerId' in resource) {
     const objective = mockData.objectives.find((candidate) => candidate.id === resource.objectiveId);
     return {
@@ -223,6 +237,7 @@ function isResourceCompatibleWithAction(action: Action, context: ResourceContext
   }
 
   if (action === 'milestone.read') return context.type === 'milestone';
+  if (action === 'risk.read') return context.type === 'risk';
 
   if (action === 'project.manage') return context.type === 'project';
   if (action.startsWith('daily_report.')) return context.type === 'daily_report';

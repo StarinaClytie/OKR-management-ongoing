@@ -1,4 +1,4 @@
-import { keyResults, objectives } from '../mocks/okr';
+import { keyResults, objectives, risks } from '../mocks/okr';
 import { dailyReports } from '../mocks/reports';
 import { attachments, documents } from '../mocks/security';
 import { mockData } from '../mocks/repository';
@@ -19,6 +19,7 @@ const leaderReport = dailyReports.find((report) => report.id === 'daily-report-l
 const memberReport = dailyReports.find((report) => report.id === 'daily-report-employee-2026-08-07')!;
 const sharedReport = dailyReports.find((report) => report.id === 'daily-report-peer-2026-08-07')!;
 const leaderObjective = objectives.find((objective) => objective.id === 'objective-orion-activation')!;
+const leaderRisk = risks.find((risk) => risk.id === 'risk-orion-sample-size')!;
 const confidentialAttachment = attachments.find(
   (attachment) => attachment.id === 'attachment-confidential-orion-evidence',
 )!;
@@ -89,6 +90,13 @@ describe('can — capability, ownership, and field-level access', () => {
 });
 
 describe('can — classification and relationship transparency', () => {
+  it('authorizes a risk as its own typed resource and applies its classification', () => {
+    expect(can(projectLeader, 'risk.read', leaderRisk).allowed).toBe(true);
+    expect(
+      can(projectLeader, 'risk.read', { ...leaderRisk, classification: 'restricted' }).allowed,
+    ).toBe(false);
+  });
+
   it('allows management to read every employee report body but not a restricted attachment without a grant', () => {
     expect(can(management, 'daily_report.read_body', memberReport).allowed).toBe(true);
     expect(can(management, 'attachment.read', restrictedAttachment).allowed).toBe(false);

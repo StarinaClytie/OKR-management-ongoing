@@ -50,7 +50,7 @@ export function WidgetTabs<T extends string>({ tabs, activeTab, onChange, idBase
             type="button"
             role="tab"
             aria-selected={selected}
-            aria-controls={`${instanceId}-${tab.id}-panel`}
+            aria-controls={selected ? `${instanceId}-${tab.id}-panel` : undefined}
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => handleKeyDown(event, index)}

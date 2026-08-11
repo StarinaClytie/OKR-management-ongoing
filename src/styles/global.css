@@ -707,7 +707,8 @@ select {
 
 .widget-tabs__tab:focus-visible,
 .gantt-scroll:focus-visible,
-.trend-chart__scroll:focus-visible {
+.trend-chart__scroll:focus-visible,
+.risk-matrix:focus-visible {
   outline: 3px solid #93c5fd;
   outline-offset: 2px;
 }

@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
+import { DashboardPage } from '../dashboard/DashboardPage';
 import { AppShell } from '../layout/AppShell';
 import { navigationItems, type NavigationItem } from '../navigation/navigation';
 import { AccessDeniedPage } from '../pages/AccessDeniedPage';
@@ -18,7 +19,7 @@ function RoutePlaceholder({ title }: { title: string }) {
 function ProtectedNavigationRoute({ item }: { item: NavigationItem }) {
   return (
     <ProtectedRoute action={item.action} resource={item.resource}>
-      <RoutePlaceholder title={item.label} />
+      {item.path === '/dashboard' ? <DashboardPage /> : <RoutePlaceholder title={item.label} />}
     </ProtectedRoute>
   );
 }

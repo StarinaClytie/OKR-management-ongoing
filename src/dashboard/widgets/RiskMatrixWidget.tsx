@@ -17,7 +17,7 @@ export function RiskMatrixWidget({ data }: RiskMatrixWidgetProps) {
   return (
     <div className="risk-matrix-wrap">
       <p className="visualization-description">纵轴为发生概率，横轴为业务影响；每项同时提供文字级别。</p>
-      <div className="risk-matrix" aria-label="发生概率与业务影响风险矩阵">
+      <div className="risk-matrix" role="region" tabIndex={0} aria-label="风险矩阵，可横向滚动">
         <span className="risk-matrix__axis risk-matrix__axis--y">发生概率 ↑</span>
         <div className="risk-matrix__grid">
           {levels.flatMap((probability) =>

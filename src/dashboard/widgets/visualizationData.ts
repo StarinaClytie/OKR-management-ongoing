@@ -117,11 +117,6 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
     can(data.currentUser, 'okr.read_summary', project).allowed,
   );
   const visibleProjectIds = new Set(visibleProjects.map((project) => project.id));
-  const detailedProjectIds = new Set(
-    visibleProjects
-      .filter((project) => can(data.currentUser, 'okr.read_detail', project).allowed)
-      .map((project) => project.id),
-  );
   const visibleObjectives = data.objectives.filter(
     (objective) => visibleProjectIds.has(objective.projectId) && canReadObjective(data, objective),
   );
@@ -194,11 +189,7 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
     : [];
 
   const risks = data.risks
-    .filter(
-      (risk) =>
-        detailedProjectIds.has(risk.projectId) &&
-        !isExplicitlyRestricted(risk.classification),
-    )
+    .filter((risk) => can(data.currentUser, 'risk.read', risk).allowed)
     .map((risk): PreparedRisk => ({
       id: risk.id,
       title: risk.title,

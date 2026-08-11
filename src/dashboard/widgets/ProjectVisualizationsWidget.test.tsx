@@ -57,6 +57,39 @@ describe('ProjectVisualizationsWidget', () => {
     expect(ganttTab).toHaveAttribute('aria-controls', screen.getByRole('tabpanel').id);
   });
 
+  it('never declares an aria-controls IDREF for a panel that is not mounted', async () => {
+    const user = userEvent.setup();
+    render(<ProjectVisualizationsWidget data={leaderData} />);
+
+    for (const tab of screen.getAllByRole('tab')) {
+      const controlledId = tab.getAttribute('aria-controls');
+      if (tab.getAttribute('aria-selected') === 'true') {
+        expect(controlledId).not.toBeNull();
+        expect(document.getElementById(controlledId!)).toBeInTheDocument();
+      } else {
+        expect(controlledId).toBeNull();
+      }
+    }
+
+    await user.click(screen.getByRole('tab', { name: '风险矩阵' }));
+    const riskTab = screen.getByRole('tab', { name: '风险矩阵' });
+    expect(document.getElementById(riskTab.getAttribute('aria-controls')!)).toBe(
+      screen.getByRole('tabpanel', { name: '风险矩阵' }),
+    );
+  });
+
+  it('makes the narrow-screen risk matrix scroll container keyboard reachable', async () => {
+    const user = userEvent.setup();
+    render(<ProjectVisualizationsWidget data={leaderData} />);
+
+    await user.click(screen.getByRole('tab', { name: '风险矩阵' }));
+
+    const scrollRegion = screen.getByRole('region', { name: '风险矩阵，可横向滚动' });
+    expect(scrollRegion).toHaveAttribute('tabindex', '0');
+    scrollRegion.focus();
+    expect(scrollRegion).toHaveFocus();
+  });
+
   it('marks a project leader owned KR as mine', () => {
     render(
       <AlignmentTreeWidget
@@ -86,6 +119,26 @@ describe('ProjectVisualizationsWidget', () => {
     await user.click(screen.getByRole('tab', { name: '甘特图' }));
     expect(container).not.toHaveTextContent(sensitiveLabel);
     expect(container.querySelector(`[title*="${sensitiveLabel}"]`)).not.toBeInTheDocument();
+  });
+
+  it('does not mount a restricted risk label after opening the risk matrix', async () => {
+    const user = userEvent.setup();
+    const sensitiveLabel = '严格机密风险不应进入风险矩阵';
+    const restrictedData = {
+      ...leaderData,
+      risks: leaderData.risks.map((risk) =>
+        risk.id === 'risk-orion-sample-size'
+          ? { ...risk, title: sensitiveLabel, classification: 'restricted' as const }
+          : risk,
+      ),
+    };
+    const { container } = render(<ProjectVisualizationsWidget data={restrictedData} />);
+
+    await user.click(screen.getByRole('tab', { name: '风险矩阵' }));
+
+    expect(container).not.toHaveTextContent(sensitiveLabel);
+    expect(container.querySelector(`[aria-label*="${sensitiveLabel}"]`)).not.toBeInTheDocument();
+    expect(container.querySelector(`[href*="risk-orion-sample-size"]`)).not.toBeInTheDocument();
   });
 
   it('renders twelve authorized weekly points with directly identified series', () => {

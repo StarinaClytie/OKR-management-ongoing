@@ -6,6 +6,7 @@ import type {
   Milestone,
   Objective,
   Project,
+  Risk,
   WeeklyReport,
   WorkloadEntry,
 } from './types';
@@ -16,6 +17,7 @@ export type Action =
   | 'okr.read_detail'
   | 'okr.update'
   | 'milestone.read'
+  | 'risk.read'
   | 'project.manage'
   | 'daily_report.create'
   | 'daily_report.read'
@@ -37,6 +39,7 @@ export type PermissionResource =
   | Objective
   | KeyResult
   | Milestone
+  | Risk
   | DailyReport
   | WeeklyReport
   | DocumentRecord
@@ -61,6 +64,7 @@ export type ResourceType =
   | 'attachment'
   | 'workload'
   | 'milestone'
+  | 'risk'
   | 'system';
 
 export interface AccessControlledResource {

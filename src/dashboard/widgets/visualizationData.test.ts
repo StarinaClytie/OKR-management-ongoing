@@ -41,6 +41,22 @@ describe('prepareVisualizationData', () => {
     expect(prepareVisualizationData(data).trendPoints).toEqual([]);
   });
 
+  it('does not leak a restricted risk even when its project is readable', () => {
+    const source = mockRepository.getDashboardData('user-project-leader');
+    const secret = '项目可读但风险标题严格机密';
+    const restrictedRisk = {
+      ...source.risks.find((risk) => risk.projectId === 'project-orion')!,
+      title: secret,
+      classification: 'restricted' as const,
+    };
+
+    const prepared = prepareVisualizationData({ ...source, risks: [restrictedRisk] });
+
+    expect(prepared.alignmentProjects.some((project) => project.id === 'project-orion')).toBe(true);
+    expect(prepared.risks).toEqual([]);
+    expect(JSON.stringify(prepared)).not.toContain(secret);
+  });
+
   it('filters workloads with worklog permission before resolving member labels', () => {
     const source = mockRepository.getDashboardData('user-hr');
     const unauthorized = {
