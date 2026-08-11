@@ -4,22 +4,30 @@ import { DashboardPage } from '../dashboard/DashboardPage';
 import { AppShell } from '../layout/AppShell';
 import { navigationItems, type NavigationItem } from '../navigation/navigation';
 import { AccessDeniedPage } from '../pages/AccessDeniedPage';
+import { AnalyticsPage } from '../pages/AnalyticsPage';
+import { DailyReportsPage } from '../pages/DailyReportsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { OkrManagementPage } from '../pages/OkrManagementPage';
+import { ProjectsPage } from '../pages/ProjectsPage';
+import { SettingsPage } from '../pages/SettingsPage';
+import { TeamPage } from '../pages/TeamPage';
+import { WeeklyReportsPage } from '../pages/WeeklyReportsPage';
 
-function RoutePlaceholder({ title }: { title: string }) {
-  return (
-    <section className="route-placeholder" aria-labelledby="route-placeholder-title">
-      <p className="route-placeholder__eyebrow">工作区</p>
-      <h1 id="route-placeholder-title">{title}</h1>
-      <p>页面框架将在后续迭代中补充。</p>
-    </section>
-  );
-}
+const pageByPath = {
+  '/okrs': OkrManagementPage,
+  '/projects': ProjectsPage,
+  '/daily-reports': DailyReportsPage,
+  '/weekly-reports': WeeklyReportsPage,
+  '/team': TeamPage,
+  '/analytics': AnalyticsPage,
+  '/settings': SettingsPage,
+} as const;
 
 function ProtectedNavigationRoute({ item }: { item: NavigationItem }) {
+  const Page = item.path === '/dashboard' ? DashboardPage : pageByPath[item.path as keyof typeof pageByPath];
   return (
     <ProtectedRoute action={item.action} resource={item.resource}>
-      {item.path === '/dashboard' ? <DashboardPage /> : <RoutePlaceholder title={item.label} />}
+      <Page />
     </ProtectedRoute>
   );
 }

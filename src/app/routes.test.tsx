@@ -6,12 +6,15 @@ import { App } from './App';
 import { AppRoutes } from './routes';
 
 describe('application routes', () => {
-  it('redirects an employee from an unauthorized settings route', async () => {
+  it('opens personal settings for an employee without exposing role-restricted settings', async () => {
     window.history.pushState({}, '', '/settings');
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: '访问受限' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '设置' })).toBeVisible();
+    expect(screen.getByRole('tab', { name: '个人偏好' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: '系统设置' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'HR 规则' })).not.toBeInTheDocument();
   });
 
   it('renders the real DashboardPage when the dashboard URL is opened directly', () => {

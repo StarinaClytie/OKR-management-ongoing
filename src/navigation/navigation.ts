@@ -26,13 +26,6 @@ const dashboardScope: SystemPermissionScope = {
   systemAction: 'dashboard.view',
 };
 
-const settingsScope: SystemPermissionScope = {
-  resourceId: 'system-settings',
-  resourceType: 'system',
-  classification: 'internal',
-  systemAction: 'permission.manage',
-};
-
 export const navigationItems: readonly NavigationItem[] = [
   { path: '/dashboard', label: '仪表盘', icon: LayoutDashboard, action: 'dashboard.view', resource: dashboardScope },
   { path: '/okrs', label: 'OKR 管理', icon: Target, action: 'dashboard.view', resource: dashboardScope },
@@ -41,5 +34,5 @@ export const navigationItems: readonly NavigationItem[] = [
   { path: '/weekly-reports', label: '周报', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
   { path: '/team', label: '团队', icon: Users, action: 'dashboard.view', resource: dashboardScope },
   { path: '/analytics', label: '分析', icon: BarChart3, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/settings', label: '设置', icon: Settings, action: 'permission.manage', resource: settingsScope },
+  { path: '/settings', label: '设置', icon: Settings, action: 'dashboard.view', resource: dashboardScope },
 ];
