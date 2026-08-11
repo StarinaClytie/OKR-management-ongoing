@@ -1,4 +1,4 @@
-import type { Classification, DailyReport } from './types';
+import type { Classification, DailyReport, KeyResult, Objective } from './types';
 
 export type DailyKrType = 'quantity' | 'ratio' | 'milestone' | 'subjective';
 
@@ -41,6 +41,21 @@ export interface DailyKrGuidance {
   caution: string;
 }
 
+export interface DailyReportConversionContext {
+  authorId: string;
+  projectId: string;
+  fallbackObjectiveId: string;
+  date: string;
+  objectives: ReadonlyArray<Pick<Objective, 'id' | 'projectId'>>;
+  keyResults: ReadonlyArray<Pick<KeyResult, 'id' | 'objectiveId'>>;
+}
+
+export type DailyReportConversionErrorCode = 'OBJECTIVE_NOT_IN_PROJECT' | 'KEY_RESULT_NOT_IN_OBJECTIVE';
+
+export type DailyReportConversionResult =
+  | { ok: true; report: DailyReport }
+  | { ok: false; error: { code: DailyReportConversionErrorCode; message: string } };
+
 const guidanceByType: Record<DailyKrType, DailyKrGuidance> = {
   quantity: {
     label: '数量型',
@@ -62,9 +77,9 @@ const guidanceByType: Record<DailyKrType, DailyKrGuidance> = {
   },
   subjective: {
     label: '主观型',
-    formula: '依据预先写明的验收标准自行判断',
-    example: '先写清验收标准，再填写 0～100% 的自评完成度。',
-    caution: '仅在难以量化时使用，并确保标准可共同判断。',
+    formula: '自评分 × 100%',
+    example: '自评 0.75 分时换算填写 75%',
+    caution: '仅在难以量化时使用，并先写清可共同判断的验收标准。',
   },
 };
 
@@ -95,24 +110,52 @@ function mostRestrictiveClassification(current: Classification, item: DailyEvide
 
 export function toLocalDailyReport(
   draft: DailyReportDraft,
-  context: { authorId: string; projectId: string; fallbackObjectiveId: string; date: string },
-): DailyReport {
-  return {
+  context: DailyReportConversionContext,
+): DailyReportConversionResult {
+  const objectiveId = draft.linkedObjectiveId ?? context.fallbackObjectiveId;
+  const objective = context.objectives.find((item) => item.id === objectiveId);
+
+  if (!objective || objective.projectId !== context.projectId) {
+    return {
+      ok: false,
+      error: {
+        code: 'OBJECTIVE_NOT_IN_PROJECT',
+        message: '所关联的 O 不属于当前项目',
+      },
+    };
+  }
+
+  const hasKeyResultOutsideObjective = draft.keyResults.some((kr) => {
+    if (!kr.linkedKeyResultId) return false;
+    return context.keyResults.find((item) => item.id === kr.linkedKeyResultId)?.objectiveId !== objectiveId;
+  });
+
+  if (hasKeyResultOutsideObjective) {
+    return {
+      ok: false,
+      error: {
+        code: 'KEY_RESULT_NOT_IN_OBJECTIVE',
+        message: '所关联的 KR 不属于最终 O',
+      },
+    };
+  }
+
+  return { ok: true, report: {
     id: `local-${context.authorId}-${context.date}`,
     authorId: context.authorId,
     projectId: context.projectId,
-    objectiveId: draft.linkedObjectiveId ?? context.fallbackObjectiveId,
+    objectiveId,
     keyResultIds: draft.keyResults.flatMap((kr) => (kr.linkedKeyResultId ? [kr.linkedKeyResultId] : [])),
     date: context.date,
     content: draft.dailyObjective,
     dailyObjective: draft.dailyObjective,
     objectiveProgress: draft.objectiveProgress,
-    dailyKeyResults: draft.keyResults,
+    dailyKeyResults: draft.keyResults.map((kr) => ({ ...kr })),
     classification: draft.classification,
     hours: draft.keyResults.reduce((sum, kr) => sum + kr.hours, 0),
     evidence: draft.evidence.map((item) => item.label),
     evidenceClassification: draft.evidence.reduce<Classification>(mostRestrictiveClassification, 'public'),
     attachmentIds: [],
     status: 'submitted',
-  };
+  } };
 }

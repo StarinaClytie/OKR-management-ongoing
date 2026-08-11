@@ -4,6 +4,7 @@ import {
   getKrGuidance,
   toLocalDailyReport,
   validateProgress,
+  type DailyReportConversionContext,
   type DailyKeyResultDraft,
   type DailyReportDraft,
 } from './dailyEntry';
@@ -18,6 +19,21 @@ function quantityKr(overrides: Partial<DailyKeyResultDraft> = {}): DailyKeyResul
     workNote: '已完成 15 条数据收集',
     targetValue: 20,
     actualValue: 15,
+    ...overrides,
+  };
+}
+
+function conversionContext(overrides: Partial<DailyReportConversionContext> = {}): DailyReportConversionContext {
+  return {
+    authorId: 'user-employee',
+    projectId: 'project-orion',
+    fallbackObjectiveId: 'objective-fallback',
+    date: '2026-08-11',
+    objectives: [
+      { id: 'objective-fallback', projectId: 'project-orion' },
+      { id: 'objective-linked', projectId: 'project-orion' },
+    ],
+    keyResults: [{ id: 'kr-linked', objectiveId: 'objective-linked' }],
     ...overrides,
   };
 }
@@ -52,17 +68,37 @@ describe('daily entry helpers', () => {
     }));
   });
 
-  it.each(['ratio', 'milestone', 'subjective'] as const)(
-    'provides concise formula, example, and caution for a %s KR',
-    (type) => {
-      const guidance = getKrGuidance(type);
-
-      expect(guidance.label).not.toBe('');
-      expect(guidance.formula).not.toBe('');
-      expect(guidance.example).not.toBe('');
-      expect(guidance.caution).not.toBe('');
-    },
-  );
+  it.each([
+    [
+      'ratio',
+      {
+        label: '比率型',
+        formula: '（当前值 − 起始值）÷（目标值 − 起始值）',
+        example: '从 40% 提升至 70%，当前 55%，可自行计算后填写完成度。',
+        caution: '请区分“提升”与“提升至”的基准差异。',
+      },
+    ],
+    [
+      'milestone',
+      {
+        label: '里程碑型',
+        formula: '依据截止日期与当前状态自行判断',
+        example: '完成可填写 100%，未完成可填写 0%',
+        caution: '过程进度由员工结合实际情况自行评估。',
+      },
+    ],
+    [
+      'subjective',
+      {
+        label: '主观型',
+        formula: '自评分 × 100%',
+        example: '自评 0.75 分时换算填写 75%',
+        caution: '仅在难以量化时使用，并先写清可共同判断的验收标准。',
+      },
+    ],
+  ] as const)('provides the complete %s KR guidance', (type, guidance) => {
+    expect(getKrGuidance(type)).toEqual(guidance);
+  });
 
   it('creates a submitted local report while preserving the employee-entered O and KR progress', () => {
     const draft: DailyReportDraft = {
@@ -77,14 +113,9 @@ describe('daily entry helpers', () => {
       classification: 'internal',
     };
 
-    const report = toLocalDailyReport(draft, {
-      authorId: 'user-employee',
-      projectId: 'project-orion',
-      fallbackObjectiveId: 'objective-fallback',
-      date: '2026-08-11',
-    });
+    const result = toLocalDailyReport(draft, conversionContext());
 
-    expect(report).toMatchObject({
+    expect(result).toMatchObject({ ok: true, report: {
       id: 'local-user-employee-2026-08-11',
       objectiveId: 'objective-linked',
       content: '完成数据收集，为评审提供依据',
@@ -96,7 +127,69 @@ describe('daily entry helpers', () => {
       evidence: ['数据表链接', '访谈记录'],
       evidenceClassification: 'confidential',
       status: 'submitted',
-    });
+    } });
     expect(draft.keyResults[0]?.progress).toBe(75);
+  });
+
+  it('rejects a linked objective outside the current project', () => {
+    const result = toLocalDailyReport({
+      dailyObjective: '完成数据收集',
+      objectiveProgress: 60,
+      linkedObjectiveId: 'objective-nova',
+      keyResults: [],
+      evidence: [],
+      classification: 'internal',
+    }, conversionContext({
+      objectives: [{ id: 'objective-nova', projectId: 'project-nova' }],
+    }));
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'OBJECTIVE_NOT_IN_PROJECT',
+        message: '所关联的 O 不属于当前项目',
+      },
+    });
+  });
+
+  it('rejects a linked KR that does not belong to the final objective', () => {
+    const result = toLocalDailyReport({
+      dailyObjective: '完成数据收集',
+      objectiveProgress: 60,
+      linkedObjectiveId: 'objective-linked',
+      keyResults: [quantityKr({ linkedKeyResultId: 'kr-other-objective' })],
+      evidence: [],
+      classification: 'internal',
+    }, conversionContext({
+      keyResults: [{ id: 'kr-other-objective', objectiveId: 'objective-fallback' }],
+    }));
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'KEY_RESULT_NOT_IN_OBJECTIVE',
+        message: '所关联的 KR 不属于最终 O',
+      },
+    });
+  });
+
+  it('copies daily KR and evidence values so later draft edits cannot change the report', () => {
+    const draft: DailyReportDraft = {
+      dailyObjective: '完成数据收集',
+      objectiveProgress: 60,
+      linkedObjectiveId: 'objective-linked',
+      keyResults: [quantityKr({ linkedKeyResultId: 'kr-linked' })],
+      evidence: [{ id: 'evidence-1', label: '数据表链接', kind: 'link', classification: 'internal' }],
+      classification: 'internal',
+    };
+    const result = toLocalDailyReport(draft, conversionContext());
+
+    if (!result.ok) throw new Error(result.error.message);
+    draft.keyResults[0]!.progress = 10;
+    draft.evidence[0]!.label = '已替换的链接';
+    draft.evidence.push({ id: 'evidence-2', label: '新附件', kind: 'file', classification: 'confidential' });
+
+    expect(result.report.dailyKeyResults).toEqual([expect.objectContaining({ progress: 75 })]);
+    expect(result.report.evidence).toEqual(['数据表链接']);
   });
 });
