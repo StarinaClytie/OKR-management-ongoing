@@ -18,6 +18,7 @@ describe('DailyReportsPage', () => {
     renderPageAs('user-project-leader');
 
     expect(screen.getByRole('button', { name: '填写今日日报' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '编辑我的日报' })).toBeEnabled();
   });
 
   it('offers review actions but not edit for a member report', () => {
@@ -25,7 +26,16 @@ describe('DailyReportsPage', () => {
 
     expect(screen.getByRole('button', { name: '确认成员日报' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '退回成员日报' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '添加评论' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: '编辑成员日报' })).not.toBeInTheDocument();
+  });
+
+  it('lets an employee edit only their own report without project review actions', () => {
+    renderPageAs('user-employee');
+
+    expect(screen.getByRole('button', { name: '编辑我的日报' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '添加评论' })).not.toBeInTheDocument();
   });
 
   it('keeps HR on an hours-only view without confidential report fields', () => {

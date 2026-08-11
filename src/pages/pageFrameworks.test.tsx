@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthContext';
 import { AppRoutes } from '../app/routes';
+import { mockData } from '../mocks/repository';
 
 function renderRoute(userId: string, path: string) {
   return render(
@@ -42,5 +43,33 @@ describe('business route frameworks', () => {
 
     expect(screen.getByRole('button', { name: '更新我的 KR' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: '更新成员 KR' })).not.toBeInTheDocument();
+  });
+
+  it('does not leak a same-project restricted weekly report through its summary or plan', () => {
+    const restrictedReport = {
+      ...mockData.weeklyReports[0]!,
+      id: 'weekly-report-orion-restricted-test',
+      summary: '不得显示的严格机密周报摘要',
+      nextWeekPlan: '不得显示的严格机密下周计划',
+      classification: 'restricted' as const,
+    };
+    mockData.weeklyReports.push(restrictedReport);
+
+    try {
+      renderRoute('user-project-leader', '/weekly-reports');
+
+      expect(screen.queryByText('不得显示的严格机密周报摘要')).not.toBeInTheDocument();
+      expect(screen.queryByText('不得显示的严格机密下周计划')).not.toBeInTheDocument();
+    } finally {
+      mockData.weeklyReports.splice(mockData.weeklyReports.indexOf(restrictedReport), 1);
+    }
+  });
+
+  it('shows team members only when the shared user-read policy permits them', () => {
+    renderRoute('user-project-leader', '/team');
+
+    expect(screen.getByText('周琳')).toBeVisible();
+    expect(screen.getByText('赵峰')).toBeVisible();
+    expect(screen.queryByText('孙悦')).not.toBeInTheDocument();
   });
 });

@@ -4,17 +4,17 @@ import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { mockData, mockRepository } from '../mocks/repository';
+import { mockData } from '../mocks/repository';
 
 export function WeeklyReportsPage() {
   const { currentUser } = useAuth();
   const [notice, setNotice] = useState('');
   if (!currentUser) return null;
-  const data = mockRepository.getDashboardData(currentUser.id);
-  const reports = mockData.weeklyReports.filter((report) => {
-    const project = data.projects.find((candidate) => candidate.id === report.projectId);
-    return project ? can(currentUser, 'okr.read_detail', project).allowed : false;
-  });
+  const reports = mockData.weeklyReports.filter(
+    (report) =>
+      can(currentUser, 'weekly_report.read', report).allowed &&
+      can(currentUser, 'weekly_report.read_body', report).allowed,
+  );
   const canCreate = currentUser.role === 'project_leader' || currentUser.role === 'management';
 
   return (

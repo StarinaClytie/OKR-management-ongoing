@@ -1,4 +1,4 @@
-import type { Action, PermissionDecision, PermissionResource, ResourceType } from '../domain/permissions';
+import type { Action, PermissionDecision, PermissionResource, ResourceType, UserPermissionScope } from '../domain/permissions';
 import type { Classification, Role, User } from '../domain/types';
 import { mockData } from '../mocks/repository';
 
@@ -13,6 +13,8 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'daily_report.read',
     'daily_report.read_body',
     'evidence.read',
+    'weekly_report.read',
+    'weekly_report.read_body',
     'attachment.read',
     'document.read_body',
     'document.download',
@@ -20,6 +22,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'user.manage',
     'permission.manage',
     'audit.read',
+    'user.read',
   ]),
   management: new Set([
     'dashboard.view',
@@ -34,12 +37,15 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'daily_report.read_body',
     'daily_report.edit',
     'daily_report.review',
+    'weekly_report.read',
+    'weekly_report.read_body',
     'worklog.read_hours',
     'evidence.read',
     'attachment.read',
     'document.read_body',
     'document.download',
     'record.export',
+    'user.read',
   ]),
   project_leader: new Set([
     'dashboard.view',
@@ -54,12 +60,15 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'daily_report.read_body',
     'daily_report.edit',
     'daily_report.review',
+    'weekly_report.read',
+    'weekly_report.read_body',
     'worklog.read_hours',
     'evidence.read',
     'attachment.read',
     'document.read_body',
     'document.download',
     'record.export',
+    'user.read',
   ]),
   employee: new Set([
     'dashboard.view',
@@ -72,13 +81,16 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'daily_report.read',
     'daily_report.read_body',
     'daily_report.edit',
+    'weekly_report.read',
+    'weekly_report.read_body',
     'worklog.read_hours',
     'evidence.read',
     'attachment.read',
     'document.read_body',
     'document.download',
+    'user.read',
   ]),
-  hr: new Set(['dashboard.view', 'okr.read_summary', 'daily_report.read', 'worklog.read_hours']),
+  hr: new Set(['dashboard.view', 'okr.read_summary', 'daily_report.read', 'weekly_report.read', 'worklog.read_hours', 'user.read']),
 };
 
 const systemActions = new Set<Action>(['dashboard.view', 'user.manage', 'permission.manage', 'audit.read']);
@@ -88,6 +100,7 @@ interface ResourceContext {
   type: ResourceType;
   ownerId?: string;
   projectId?: string;
+  projectIds?: readonly string[];
   classification?: Classification;
   systemAction?: Action;
 }
@@ -108,6 +121,8 @@ const shareableReadActions = new Set<Action>([
   'okr.read_detail',
   'daily_report.read',
   'daily_report.read_body',
+  'weekly_report.read',
+  'weekly_report.read_body',
   'evidence.read',
   'attachment.read',
   'document.read_body',
@@ -130,6 +145,7 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
       type: resource.resourceType,
       ownerId: 'ownerId' in resource ? resource.ownerId : undefined,
       projectId: 'projectId' in resource ? resource.projectId : undefined,
+      projectIds: 'projectIds' in resource ? resource.projectIds as readonly string[] : undefined,
       classification: resource.classification,
       systemAction: 'systemAction' in resource ? resource.systemAction : undefined,
     };
@@ -142,6 +158,16 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
       ownerId: resource.ownerId,
       projectId: resource.projectId,
       classification: resource.classification,
+    };
+  }
+
+  if ('projectIds' in resource && 'role' in resource) {
+    return {
+      id: resource.id,
+      type: 'user',
+      ownerId: resource.id,
+      projectIds: resource.projectIds as readonly string[],
+      classification: 'internal',
     };
   }
 
@@ -241,6 +267,8 @@ function isResourceCompatibleWithAction(action: Action, context: ResourceContext
 
   if (action === 'project.manage') return context.type === 'project';
   if (action.startsWith('daily_report.')) return context.type === 'daily_report';
+  if (action.startsWith('weekly_report.')) return context.type === 'weekly_report';
+  if (action === 'user.read') return context.type === 'user';
   if (action === 'worklog.read_hours') return context.type === 'workload' || context.type === 'daily_report';
   if (action === 'evidence.read') return context.type === 'evidence';
   if (action === 'attachment.read') return context.type === 'attachment';
@@ -248,6 +276,16 @@ function isResourceCompatibleWithAction(action: Action, context: ResourceContext
   if (action === 'record.export') return exportableResourceTypes.has(context.type);
 
   return false;
+}
+
+export function getUserPermissionScope(user: User): UserPermissionScope {
+  return {
+    resourceId: user.id,
+    resourceType: 'user',
+    ownerId: user.id,
+    projectIds: user.projectIds,
+    classification: 'internal',
+  };
 }
 
 function hasProjectRole(userId: string, projectId: string | undefined, membershipRole?: 'leader' | 'member'): boolean {
@@ -314,6 +352,14 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
   if (!isResourceCompatibleWithAction(action, context)) return deny('操作与资源类型不匹配');
 
   if (systemActions.has(action)) return allow('角色具备系统权限');
+
+  if (action === 'user.read') {
+    if (context.ownerId === user.id) return allow('可查看本人资料');
+    if (user.role === 'administrator' || user.role === 'management' || user.role === 'hr') return allow('角色具备组织人员范围');
+    if (isManagerOf(user.id, context.ownerId)) return allow('可查看下级资料');
+    if (context.projectIds?.some((projectId) => hasProjectRole(user.id, projectId))) return allow('同项目成员范围');
+    return deny();
+  }
 
   if (action === 'worklog.read_hours') {
     if (user.role === 'hr') {

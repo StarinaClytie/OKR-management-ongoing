@@ -1,4 +1,5 @@
 import { useAuth } from '../auth/AuthContext';
+import { can, getUserPermissionScope } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { mockRepository } from '../mocks/repository';
@@ -7,9 +8,7 @@ export function TeamPage() {
   const { currentUser } = useAuth();
   if (!currentUser) return null;
   const data = mockRepository.getDashboardData(currentUser.id);
-  const teamMembers = currentUser.role === 'administrator' || currentUser.role === 'hr'
-    ? data.users
-    : data.users.filter((user) => user.id === currentUser.id || user.projectIds.some((projectId) => currentUser.projectIds.includes(projectId)));
+  const teamMembers = data.users.filter((user) => can(currentUser, 'user.read', getUserPermissionScope(user)).allowed);
 
   return (
     <section className="business-page" aria-labelledby="team-page-title">

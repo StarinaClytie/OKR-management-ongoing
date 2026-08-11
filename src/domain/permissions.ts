@@ -24,6 +24,8 @@ export type Action =
   | 'daily_report.read_body'
   | 'daily_report.edit'
   | 'daily_report.review'
+  | 'weekly_report.read'
+  | 'weekly_report.read_body'
   | 'worklog.read_hours'
   | 'evidence.read'
   | 'attachment.read'
@@ -32,7 +34,8 @@ export type Action =
   | 'record.export'
   | 'user.manage'
   | 'permission.manage'
-  | 'audit.read';
+  | 'audit.read'
+  | 'user.read';
 
 export type PermissionResource =
   | Project
@@ -45,6 +48,7 @@ export type PermissionResource =
   | DocumentRecord
   | WorkloadEntry
   | PermissionScope
+  | UserPermissionScope
   | SystemPermissionScope;
 
 export interface PermissionDecision {
@@ -60,6 +64,7 @@ export type ResourceType =
   | 'daily_report_body'
   | 'evidence'
   | 'weekly_report'
+  | 'user'
   | 'document'
   | 'attachment'
   | 'workload'
@@ -77,6 +82,12 @@ export interface PermissionScope extends AccessControlledResource {
   ownerId: string;
   projectId?: string;
   parentResourceId?: string;
+}
+
+export interface UserPermissionScope extends AccessControlledResource {
+  resourceType: 'user';
+  ownerId: string;
+  projectIds: readonly string[];
 }
 
 export type SystemAction = Extract<Action, 'dashboard.view' | 'user.manage' | 'permission.manage' | 'audit.read'>;

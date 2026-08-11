@@ -46,13 +46,14 @@ export function DailyReportsPage() {
   const memberReports = readableReports.filter((report) => can(currentUser, 'daily_report.review', report).allowed);
   const authoringReport = ownReports[0];
 
-  const reportColumns = (showReviewActions: boolean) => [
+  const reportColumns = (showReviewActions: boolean, showOwnActions: boolean) => [
     { key: 'author', label: '填写人', render: (report: DailyReport) => authorName(report.authorId, data.users) },
     { key: 'date', label: '日期', render: (report: DailyReport) => report.date },
     { key: 'content', label: '日报内容', render: (report: DailyReport) => report.content },
     { key: 'hours', label: '工时', render: (report: DailyReport) => `${report.hours} 小时` },
     { key: 'status', label: '状态', render: (report: DailyReport) => <StatusBadge status={report.status} /> },
-    ...(showReviewActions ? [{ key: 'actions', label: '审核', render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice('已确认成员日报（模拟操作）。')}>确认成员日报</button><button type="button" className="text-button" onClick={() => setNotice('已退回成员日报（模拟操作）。')}>退回成员日报</button></span> }] : []),
+    ...(showOwnActions ? [{ key: 'own-actions', label: '操作', render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={() => setNotice('已打开我的日报模拟编辑。')}>编辑我的日报</button> : null }] : []),
+    ...(showReviewActions ? [{ key: 'actions', label: '审核', render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice('已确认成员日报（模拟操作）。')}>确认成员日报</button><button type="button" className="text-button" onClick={() => setNotice('已退回成员日报（模拟操作）。')}>退回成员日报</button><button type="button" className="text-button" onClick={() => setNotice('已添加成员日报评论（模拟操作）。')}>添加评论</button></span> }] : []),
   ];
 
   return (
@@ -63,8 +64,8 @@ export function DailyReportsPage() {
         primaryAction={authoringReport && can(currentUser, 'daily_report.create', authoringReport).allowed ? { label: '填写今日日报', onClick: () => setNotice('已开始一份仅保存在当前页面的模拟日报。') } : undefined}
       />
       {notice && <p className="page-notice" role="status">{notice}</p>}
-      <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">我的日报</h2><DataTable ariaLabel="我的日报" rows={ownReports} getRowKey={(report) => report.id} emptyMessage="今天还没有日报，填写后可在这里查看。" columns={reportColumns(false)} /></section>
-      {currentUser.role === 'project_leader' && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">项目成员日报</h2><DataTable ariaLabel="项目成员日报" rows={memberReports} getRowKey={(report) => report.id} emptyMessage="暂无需要审核的成员日报。" columns={reportColumns(true)} /></section>}
+      <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">我的日报</h2><DataTable ariaLabel="我的日报" rows={ownReports} getRowKey={(report) => report.id} emptyMessage="今天还没有日报，填写后可在这里查看。" columns={reportColumns(false, true)} /></section>
+      {currentUser.role === 'project_leader' && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">项目成员日报</h2><DataTable ariaLabel="项目成员日报" rows={memberReports} getRowKey={(report) => report.id} emptyMessage="暂无需要审核的成员日报。" columns={reportColumns(true, false)} /></section>}
     </section>
   );
 }

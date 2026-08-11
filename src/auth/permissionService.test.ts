@@ -1,10 +1,10 @@
 import { keyResults, objectives, risks } from '../mocks/okr';
-import { dailyReports } from '../mocks/reports';
+import { dailyReports, weeklyReports } from '../mocks/reports';
 import { attachments, documents } from '../mocks/security';
 import { mockData } from '../mocks/repository';
 import { users } from '../mocks/users';
 import type { ActiveShare, SystemPermissionScope } from '../domain/permissions';
-import { can } from './permissionService';
+import { can, getUserPermissionScope } from './permissionService';
 
 const admin = users.find((user) => user.id === 'user-administrator')!;
 const management = users.find((user) => user.id === 'user-management')!;
@@ -18,6 +18,7 @@ const leaderOwnedKr = keyResults.find((keyResult) => keyResult.id === 'kr-orion-
 const leaderReport = dailyReports.find((report) => report.id === 'daily-report-leader-2026-08-07')!;
 const memberReport = dailyReports.find((report) => report.id === 'daily-report-employee-2026-08-07')!;
 const sharedReport = dailyReports.find((report) => report.id === 'daily-report-peer-2026-08-07')!;
+const leaderWeeklyReport = weeklyReports.find((report) => report.id === 'weekly-report-orion-2026-08-07')!;
 const leaderObjective = objectives.find((objective) => objective.id === 'objective-orion-activation')!;
 const leaderRisk = risks.find((risk) => risk.id === 'risk-orion-sample-size')!;
 const confidentialAttachment = attachments.find(
@@ -87,6 +88,11 @@ describe('can — capability, ownership, and field-level access', () => {
     expect(can(hr, 'worklog.read_hours', memberReport).allowed).toBe(true);
     expect(can(hr, 'daily_report.read_body', memberReport).allowed).toBe(false);
   });
+
+  it('uses the typed user scope for project-member team visibility', () => {
+    expect(can(projectLeader, 'user.read', getUserPermissionScope(employee)).allowed).toBe(true);
+    expect(can(projectLeader, 'user.read', getUserPermissionScope(hr)).allowed).toBe(false);
+  });
 });
 
 describe('can — classification and relationship transparency', () => {
@@ -147,6 +153,13 @@ describe('can — classification and relationship transparency', () => {
   it('requires an explicit relation or active share for cross-project report detail', () => {
     expect(can(projectLeader, 'daily_report.read_body', sharedReport).allowed).toBe(false);
     expect(can(employee, 'daily_report.read_body', sharedReport).allowed).toBe(true);
+  });
+
+  it('denies a same-project restricted weekly report body without an explicit share', () => {
+    const restrictedWeeklyReport = { ...leaderWeeklyReport, classification: 'restricted' as const };
+
+    expect(can(projectLeader, 'weekly_report.read', restrictedWeeklyReport).allowed).toBe(false);
+    expect(can(projectLeader, 'weekly_report.read_body', restrictedWeeklyReport).allowed).toBe(false);
   });
 
   it('keeps export independent from read access and denies restricted export without a grant', () => {
