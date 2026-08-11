@@ -22,7 +22,7 @@ export function TodayFocusWidget({ data }: TodayFocusWidgetProps) {
           <p className="dashboard-widget__eyebrow">今天</p>
           <h2 id="today-focus-title">今日重点</h2>
         </div>
-        <button className="button button--primary" data-testid="primary-action" type="button" onClick={() => navigate('/daily-reports')}>
+        <button className="button button--primary" type="button" onClick={() => navigate('/daily-reports')}>
           填写今日日报
         </button>
       </div>

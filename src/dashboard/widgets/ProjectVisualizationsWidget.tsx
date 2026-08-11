@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useId, useState } from 'react';
 import type { Role } from '../../domain/types';
+import { useMediaQuery } from '../../layout/useMediaQuery';
 import type { DashboardData } from '../../mocks/repository';
 import { WidgetTabs, type WidgetTab } from './WidgetTabs';
 import { prepareVisualizationData } from './visualizationData';
@@ -51,8 +52,10 @@ function renderPanel(activeTab: VisualizationId, data: DashboardData) {
   }
 }
 
-function renderResponsivePanel(activeTab: VisualizationId, data: DashboardData) {
+function renderResponsivePanel(activeTab: VisualizationId, data: DashboardData, isMobile: boolean) {
   const panel = renderPanel(activeTab, data);
+  if (!isMobile) return panel;
+
   const visualizationData = prepareVisualizationData(data);
   const summary = activeTab === 'alignment'
     ? {
@@ -86,9 +89,14 @@ export interface ProjectVisualizationsWidgetProps {
   data: DashboardData;
 }
 
+export function VisualizationLoadingFallback() {
+  return <p className="visualization-loading" role="status" aria-live="polite">正在加载项目视图</p>;
+}
+
 export function ProjectVisualizationsWidget({ data }: ProjectVisualizationsWidgetProps) {
   const titleId = useId();
   const tabsId = useId();
+  const isMobile = useMediaQuery('(max-width: 767px)');
   const [activeTab, setActiveTab] = useState<VisualizationId>(() => defaultTab(data.currentUser.role));
   const activeDefinition = tabs.find((tab) => tab.id === activeTab)!;
 
@@ -112,8 +120,8 @@ export function ProjectVisualizationsWidget({ data }: ProjectVisualizationsWidge
         role="tabpanel"
         aria-label={activeDefinition.label}
       >
-        <Suspense fallback={<p className="visualization-loading" role="status" aria-live="polite">正在加载项目视图</p>}>
-          {renderResponsivePanel(activeTab, data)}
+        <Suspense fallback={<VisualizationLoadingFallback />}>
+          {renderResponsivePanel(activeTab, data, isMobile)}
         </Suspense>
       </div>
     </section>

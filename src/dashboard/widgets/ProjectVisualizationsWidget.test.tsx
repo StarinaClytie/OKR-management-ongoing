@@ -1,18 +1,47 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { mockRepository } from '../../mocks/repository';
 import { AlignmentTreeWidget } from './AlignmentTreeWidget';
 import { ProgressTrendWidget } from './ProgressTrendWidget';
-import { ProjectVisualizationsWidget } from './ProjectVisualizationsWidget';
+import { ProjectVisualizationsWidget, VisualizationLoadingFallback } from './ProjectVisualizationsWidget';
 
 const leaderData = mockRepository.getDashboardData('user-project-leader');
 
+function mockVisualizationViewport(initialMatches: boolean) {
+  let matches = initialMatches;
+  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  vi.stubGlobal('matchMedia', vi.fn().mockImplementation((media: string) => ({
+    media,
+    get matches() { return matches; },
+    addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+    removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+  })));
+  return (nextMatches: boolean) => {
+    matches = nextMatches;
+    act(() => listeners.forEach((listener) => listener({ matches, media: '(max-width: 767px)' } as MediaQueryListEvent)));
+  };
+}
+
 describe('ProjectVisualizationsWidget', () => {
-  it('announces an accessible loading state while a visualization module loads', async () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('renders mobile summaries only after matchMedia enters the narrow breakpoint', async () => {
+    const setMobile = mockVisualizationViewport(false);
     render(<ProjectVisualizationsWidget data={leaderData} />);
+    await screen.findByText('从项目目标向下查看 Objective、KR 与负责人。');
+
+    expect(screen.queryByText('OKR 对齐摘要')).not.toBeInTheDocument();
+
+    setMobile(true);
+
+    expect(await screen.findByText('OKR 对齐摘要')).toBeVisible();
+    expect(screen.getByText('查看详情')).toBeVisible();
+  });
+
+  it('provides an accessible status for the Suspense loading fallback', () => {
+    render(<VisualizationLoadingFallback />);
 
     expect(screen.getByRole('status')).toHaveTextContent('正在加载项目视图');
-    await screen.findByText('从项目目标向下查看 Objective、KR 与负责人。');
   });
 
   it.each(['对齐树', '甘特图', '进度趋势', '风险矩阵', '工作负载'])(
