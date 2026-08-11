@@ -280,6 +280,11 @@ select {
   font: inherit;
 }
 
+:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
 .metric-card,
 .empty-state,
 .restricted-content,
@@ -942,12 +947,31 @@ select {
   padding-top: var(--space-5);
 }
 
+.visualization-mobile-details > summary {
+  display: none;
+}
+
+.visualization-mobile-details__content {
+  display: block;
+}
+
 .visualization-description,
 .visualization-empty {
   margin: 0 0 var(--space-4);
   color: #64748b;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.visualization-loading {
+  margin: 0;
+  padding: var(--space-5);
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .alignment-tree ul {
@@ -1338,7 +1362,7 @@ select {
 }
 
 @media (max-width: 900px) {
-  .dashboard-grid {
+  .dashboard-grid--responsive {
     grid-template-columns: 1fr;
   }
 
@@ -1422,5 +1446,60 @@ select {
 
   .workload-card dl {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .widget-tabs {
+    margin-right: calc(-1 * var(--space-2));
+    padding-right: var(--space-2);
+    scroll-padding-inline: var(--space-2);
+  }
+
+  .visualization-mobile-details {
+    padding: var(--space-3);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: var(--radius-md);
+  }
+
+  .visualization-mobile-details > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    cursor: pointer;
+    color: #0f172a;
+    list-style: none;
+  }
+
+  .visualization-mobile-details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .visualization-mobile-details > summary > span:first-child {
+    display: grid;
+    gap: 3px;
+  }
+
+  .visualization-mobile-details > summary > span:first-child span {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .visualization-mobile-details__affordance {
+    flex: 0 0 auto;
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .visualization-mobile-details:not([open]) > .visualization-mobile-details__content {
+    display: none;
+  }
+
+  .visualization-mobile-details[open] > .visualization-mobile-details__content {
+    padding-top: var(--space-4);
   }
 }

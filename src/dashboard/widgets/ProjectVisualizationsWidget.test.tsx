@@ -8,6 +8,13 @@ import { ProjectVisualizationsWidget } from './ProjectVisualizationsWidget';
 const leaderData = mockRepository.getDashboardData('user-project-leader');
 
 describe('ProjectVisualizationsWidget', () => {
+  it('announces an accessible loading state while a visualization module loads', async () => {
+    render(<ProjectVisualizationsWidget data={leaderData} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载项目视图');
+    await screen.findByText('从项目目标向下查看 Objective、KR 与负责人。');
+  });
+
   it.each(['对齐树', '甘特图', '进度趋势', '风险矩阵', '工作负载'])(
     'switches visible content to %s without retaining the previous panel',
     async (label) => {

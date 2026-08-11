@@ -35,7 +35,7 @@ function renderWidget(widgetId: WidgetId, data: DashboardData) {
 
 export function DashboardGrid({ data, widgetIds }: DashboardGridProps) {
   return (
-    <div className="dashboard-grid">
+    <div className="dashboard-grid dashboard-grid--responsive">
       {widgetIds.map((widgetId) => (
         <WidgetErrorBoundary key={widgetId}>{renderWidget(widgetId, data)}</WidgetErrorBoundary>
       ))}

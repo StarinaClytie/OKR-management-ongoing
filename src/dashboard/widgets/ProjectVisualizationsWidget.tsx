@@ -1,12 +1,29 @@
-import { useEffect, useId, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useState } from 'react';
 import type { Role } from '../../domain/types';
 import type { DashboardData } from '../../mocks/repository';
-import { AlignmentTreeWidget } from './AlignmentTreeWidget';
-import { GanttChartWidget } from './GanttChartWidget';
-import { ProgressTrendWidget } from './ProgressTrendWidget';
-import { RiskMatrixWidget } from './RiskMatrixWidget';
 import { WidgetTabs, type WidgetTab } from './WidgetTabs';
-import { WorkloadWidget } from './WorkloadWidget';
+import { prepareVisualizationData } from './visualizationData';
+
+const AlignmentTreeWidget = lazy(async () => {
+  const module = await import('./AlignmentTreeWidget');
+  return { default: module.AlignmentTreeWidget };
+});
+const GanttChartWidget = lazy(async () => {
+  const module = await import('./GanttChartWidget');
+  return { default: module.GanttChartWidget };
+});
+const ProgressTrendWidget = lazy(async () => {
+  const module = await import('./ProgressTrendWidget');
+  return { default: module.ProgressTrendWidget };
+});
+const RiskMatrixWidget = lazy(async () => {
+  const module = await import('./RiskMatrixWidget');
+  return { default: module.RiskMatrixWidget };
+});
+const WorkloadWidget = lazy(async () => {
+  const module = await import('./WorkloadWidget');
+  return { default: module.WorkloadWidget };
+});
 
 type VisualizationId = 'alignment' | 'gantt' | 'trend' | 'risk' | 'workload';
 
@@ -32,6 +49,37 @@ function renderPanel(activeTab: VisualizationId, data: DashboardData) {
     case 'risk': return <RiskMatrixWidget data={data} />;
     case 'workload': return <WorkloadWidget data={data} />;
   }
+}
+
+function renderResponsivePanel(activeTab: VisualizationId, data: DashboardData) {
+  const panel = renderPanel(activeTab, data);
+  const visualizationData = prepareVisualizationData(data);
+  const summary = activeTab === 'alignment'
+    ? {
+        title: 'OKR 对齐摘要',
+        description: `已整理 ${visualizationData.alignmentProjects.length} 个授权项目的 Objective 与 KR 关系。`,
+      }
+    : activeTab === 'gantt'
+      ? {
+          title: '项目计划摘要',
+          description: `已纳入 ${visualizationData.keyResults.length} 个 KR 和 ${visualizationData.milestones.length} 个里程碑。`,
+        }
+      : undefined;
+
+  if (!summary) return panel;
+
+  return (
+    <details className="visualization-mobile-details">
+      <summary>
+        <span>
+          <strong>{summary.title}</strong>
+          <span>{summary.description}</span>
+        </span>
+        <span className="visualization-mobile-details__affordance">查看详情</span>
+      </summary>
+      <div className="visualization-mobile-details__content">{panel}</div>
+    </details>
+  );
 }
 
 export interface ProjectVisualizationsWidgetProps {
@@ -64,7 +112,9 @@ export function ProjectVisualizationsWidget({ data }: ProjectVisualizationsWidge
         role="tabpanel"
         aria-label={activeDefinition.label}
       >
-        {renderPanel(activeTab, data)}
+        <Suspense fallback={<p className="visualization-loading" role="status" aria-live="polite">正在加载项目视图</p>}>
+          {renderResponsivePanel(activeTab, data)}
+        </Suspense>
       </div>
     </section>
   );
