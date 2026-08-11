@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
 export interface PageHeaderProps {
   title: string;
   description: string;
-  primaryAction?: { label: string; onClick: () => void; disabled?: boolean };
+  primaryAction?: { label: string; onClick: () => void; disabled?: boolean; buttonRef?: Ref<HTMLButtonElement> };
   children?: ReactNode;
 }
 
@@ -18,7 +18,7 @@ export function PageHeader({ title, description, primaryAction, children }: Page
       <div className="page-header__actions">
         {children}
         {primaryAction && (
-          <button className="button button--primary" type="button" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
+          <button ref={primaryAction.buttonRef} className="button button--primary" type="button" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
             {primaryAction.label}
           </button>
         )}

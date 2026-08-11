@@ -46,6 +46,7 @@ export interface DailyReportConversionContext {
   projectId: string;
   fallbackObjectiveId: string;
   date: string;
+  submissionNonce?: number;
   objectives: ReadonlyArray<Pick<Objective, 'id' | 'projectId'>>;
   keyResults: ReadonlyArray<Pick<KeyResult, 'id' | 'objectiveId'>>;
 }
@@ -146,7 +147,7 @@ export function toLocalDailyReport(
   }
 
   return { ok: true, report: {
-    id: `local-${context.authorId}-${context.date}`,
+    id: `local-${context.authorId}-${context.date}${context.submissionNonce === undefined ? '' : `-${context.submissionNonce}`}`,
     authorId: context.authorId,
     projectId: context.projectId,
     objectiveId,

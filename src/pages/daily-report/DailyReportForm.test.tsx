@@ -42,7 +42,7 @@ const keyResults: KeyResult[] = [{
 }];
 
 function renderForm(options: { objectives?: Objective[]; keyResults?: KeyResult[] } = {}) {
-  const onSubmit = vi.fn();
+  const onSubmit = vi.fn(() => ({ ok: true as const }));
   const onCancel = vi.fn();
   const user = userEvent.setup();
   const view = render(<DailyReportForm objectives={options.objectives ?? objectives} keyResults={options.keyResults ?? keyResults} onCancel={onCancel} onSubmit={onSubmit} />);
@@ -84,6 +84,20 @@ describe('DailyReportForm', () => {
     expect(screen.getByText(/不超过 20 个字/)).toBeVisible();
     expect(screen.getByText(/避免“协助、参与、支持”/)).toBeVisible();
     expect(screen.getByRole('button', { name: '收起 O 写法' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows one fail-closed error and never reports success when parent conversion fails', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(() => ({ ok: false as const, error: '所关联的 KR 不属于最终 O' }));
+    render(<DailyReportForm objectives={objectives} keyResults={keyResults} onCancel={vi.fn()} onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText('当日 O 完成度'), '60');
+    await user.type(screen.getByLabelText('KR1 完成度'), '75');
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('所关联的 KR 不属于最终 O');
+    expect(screen.queryByText('日报已提交（当前页面模拟）。')).not.toBeInTheDocument();
   });
 
   it('never overwrites employee-entered KR or O progress', async () => {

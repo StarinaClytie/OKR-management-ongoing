@@ -6,11 +6,15 @@ import { DailyKrHelp } from './DailyKrHelp';
 import { DailyObjectiveField } from './DailyObjectiveField';
 import { DailyReportEvidence } from './DailyReportEvidence';
 
+export type DailyReportSubmitResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
 interface DailyReportFormProps {
   objectives: readonly Objective[];
   keyResults: readonly KeyResult[];
   onCancel: () => void;
-  onSubmit: (draft: DailyReportDraft) => void;
+  onSubmit: (draft: DailyReportDraft) => DailyReportSubmitResult;
 }
 
 const initialKeyResult = (id: string): DailyKeyResultDraft => ({
@@ -113,8 +117,8 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
       setStatus('请先补全或修正必填项。');
       return;
     }
-    onSubmit(draft);
-    setStatus('日报已提交（当前页面模拟）。');
+    const result = onSubmit(draft);
+    setStatus(result.ok ? '日报已提交（当前页面模拟）。' : result.error);
   };
 
   return (

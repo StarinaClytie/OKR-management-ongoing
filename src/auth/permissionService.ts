@@ -32,7 +32,6 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'milestone.read',
     'risk.read',
     'project.manage',
-    'daily_report.create',
     'daily_report.read',
     'daily_report.read_body',
     'daily_report.edit',
@@ -392,7 +391,14 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
     return context.ownerId === user.id ? allow('可更新本人负责的 OKR') : deny();
   }
 
-  if (action === 'daily_report.create' || action === 'daily_report.edit') {
+  if (action === 'daily_report.create') {
+    if (user.role !== 'employee' && user.role !== 'project_leader') return deny();
+    return context.ownerId === user.id && hasProjectRole(user.id, context.projectId)
+      ? allow('可创建本人日报')
+      : deny();
+  }
+
+  if (action === 'daily_report.edit') {
     return context.ownerId === user.id && hasProjectRole(user.id, context.projectId)
       ? allow('可管理本人日报')
       : deny();

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { AuthProvider } from '../auth/AuthContext';
 import { AppRoutes } from '../app/routes';
 import { mockData } from '../mocks/repository';
+import { resolveDailyAuthoringContext } from './DailyReportsPage';
 
 function renderPageAs(userId: string) {
   return render(
@@ -16,6 +17,17 @@ function renderPageAs(userId: string) {
 }
 
 describe('DailyReportsPage', () => {
+  it('prefers the exact authorized historical objective before a same-project fallback', () => {
+    const employee = mockData.users.find((user) => user.id === 'user-employee')!;
+    const report = mockData.dailyReports.find((candidate) => candidate.authorId === employee.id)!;
+    const exactObjective = mockData.objectives.find((objective) => objective.id === report.objectiveId)!;
+    const sameProjectObjective = { ...exactObjective, id: 'objective-orion-other-test' };
+
+    const context = resolveDailyAuthoringContext(employee, [report], [sameProjectObjective, exactObjective]);
+
+    expect(context?.objective.id).toBe(report.objectiveId);
+  });
+
   it('lets the project leader begin their own daily report', () => {
     renderPageAs('user-project-leader');
 
@@ -45,6 +57,75 @@ describe('DailyReportsPage', () => {
     expect(screen.getByText('成果密级：机密')).toBeVisible();
     expect(screen.getByText('日报已保存到当前演示页面，尚未连接后端。')).toBeVisible();
     expect(mockData.dailyReports).toHaveLength(repositoryReportCount);
+  });
+
+  it('keeps same-day local report row keys unique across repeated submissions', async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    renderPageAs('user-employee');
+
+    const submitReport = async (objective: string) => {
+      await user.click(screen.getByRole('button', { name: '填写今日日报' }));
+      await user.type(screen.getByLabelText('当日 O'), objective);
+      await user.type(screen.getByLabelText('当日 O 完成度'), '60');
+      await user.type(screen.getByLabelText('KR1 完成度'), '75');
+      await user.click(screen.getByRole('button', { name: '提交日报' }));
+    };
+
+    try {
+      await submitReport('第一次同日提交');
+      await submitReport('第二次同日提交');
+
+      expect(screen.getByText('第一次同日提交')).toBeVisible();
+      expect(screen.getByText('第二次同日提交')).toBeVisible();
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('moves focus into authoring and restores it after cancel or successful submit', async () => {
+    const user = userEvent.setup();
+    renderPageAs('user-employee');
+    const authorButton = screen.getByRole('button', { name: '填写今日日报' });
+
+    await user.click(authorButton);
+    expect(screen.getByLabelText('当日 O')).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(authorButton).toHaveFocus();
+
+    await user.click(authorButton);
+    await user.type(screen.getByLabelText('当日 O 完成度'), '60');
+    await user.type(screen.getByLabelText('KR1 完成度'), '75');
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    expect(authorButton).toHaveFocus();
+  });
+
+  it('keeps the form open with one explicit error when typed conversion fails closed', async () => {
+    const user = userEvent.setup();
+    const linkedKeyResult = mockData.keyResults.find((keyResult) => keyResult.id === 'kr-orion-onboarding')!;
+    const originalObjectiveId = linkedKeyResult.objectiveId;
+    renderPageAs('user-employee');
+
+    await user.click(screen.getByRole('button', { name: '填写今日日报' }));
+    await user.type(screen.getByLabelText('当日 O 完成度'), '60');
+    await user.type(screen.getByLabelText('KR1 完成度'), '75');
+    await user.selectOptions(screen.getByLabelText('关联已有 O'), 'objective-orion-activation');
+    await user.selectOptions(screen.getByLabelText('KR1 关联已有 KR（可选）'), linkedKeyResult.id);
+    linkedKeyResult.objectiveId = 'objective-nova-trust';
+
+    try {
+      await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+      expect(screen.getByLabelText('当日 O')).toBeVisible();
+      expect(screen.getAllByRole('status')).toHaveLength(1);
+      expect(screen.getByRole('status')).toHaveTextContent('所关联的 KR 不属于最终 O');
+      expect(screen.queryByText('日报已保存到当前演示页面，尚未连接后端。')).not.toBeInTheDocument();
+    } finally {
+      linkedKeyResult.objectiveId = originalObjectiveId;
+    }
   });
 
   it('offers review actions but not edit for a member report', () => {
@@ -81,6 +162,13 @@ describe('DailyReportsPage', () => {
     expect(screen.queryByRole('columnheader', { name: '证据' })).not.toBeInTheDocument();
     expect(screen.queryByText('完成引导文案的用户访谈整理，并提交实验配置。')).not.toBeInTheDocument();
     expect(screen.queryByText('用户访谈纪要')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('当日 O')).not.toBeInTheDocument();
+  });
+
+  it('keeps management out of daily report authoring', () => {
+    renderPageAs('user-management');
+
     expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('当日 O')).not.toBeInTheDocument();
   });

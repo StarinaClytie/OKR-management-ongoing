@@ -28,6 +28,7 @@ export function DailyObjectiveField({
       <label htmlFor="daily-objective">当日 O</label>
       <textarea
         id="daily-objective"
+        autoFocus
         value={objective}
         onChange={(event) => onObjectiveChange(event.target.value)}
         placeholder="例如：完成数据收集，为评审提供依据"

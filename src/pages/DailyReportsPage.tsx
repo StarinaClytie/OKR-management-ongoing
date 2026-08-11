@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { toLocalDailyReport, type DailyReportDraft } from '../domain/dailyEntry';
-import type { Classification, DailyReport, Objective } from '../domain/types';
+import type { Classification, DailyReport, Objective, User } from '../domain/types';
 import { mockRepository } from '../mocks/repository';
 import { DailyReportForm } from './daily-report/DailyReportForm';
 
@@ -38,11 +38,42 @@ function authoringResource(authorId: string, objective: Objective): DailyReport 
   };
 }
 
+export function resolveDailyAuthoringContext(
+  currentUser: User,
+  ownReports: readonly DailyReport[],
+  linkableObjectives: readonly Objective[],
+): { report: DailyReport; objective: Objective } | undefined {
+  for (const report of ownReports) {
+    const objective = linkableObjectives.find(
+      (candidate) => candidate.id === report.objectiveId && candidate.projectId === report.projectId,
+    );
+    if (objective && can(currentUser, 'daily_report.create', report).allowed) return { report, objective };
+  }
+
+  for (const report of ownReports) {
+    const objective = linkableObjectives.find((candidate) => candidate.projectId === report.projectId);
+    if (objective && can(currentUser, 'daily_report.create', report).allowed) return { report, objective };
+  }
+
+  return linkableObjectives
+    .map((objective) => ({ report: authoringResource(currentUser.id, objective), objective }))
+    .find((candidate) => can(currentUser, 'daily_report.create', candidate.report).allowed);
+}
+
 export function DailyReportsPage() {
   const { currentUser } = useAuth();
   const [notice, setNotice] = useState('');
   const [isAuthoring, setIsAuthoring] = useState(false);
   const [localReports, setLocalReports] = useState<DailyReport[]>([]);
+  const nextLocalSubmissionNonce = useRef(1);
+  const authoringButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreAuthoringFocus = useRef(false);
+  useEffect(() => {
+    if (!isAuthoring && restoreAuthoringFocus.current) {
+      restoreAuthoringFocus.current = false;
+      authoringButtonRef.current?.focus();
+    }
+  }, [isAuthoring]);
   if (!currentUser) return null;
   const data = mockRepository.getDashboardData(currentUser.id);
   const readableReports = useMemo(
@@ -75,12 +106,7 @@ export function DailyReportsPage() {
   const memberReports = readableReports.filter((report) => can(currentUser, 'daily_report.review', report).allowed);
   const linkableObjectives = data.objectives.filter((objective) => can(currentUser, 'okr.read_summary', objective).allowed);
   const linkableKeyResults = data.keyResults.filter((keyResult) => can(currentUser, 'okr.read_summary', keyResult).allowed);
-  const authoringContext = ownReports
-    .map((report) => ({ report, objective: linkableObjectives.find((objective) => objective.projectId === report.projectId) }))
-    .find((candidate): candidate is { report: DailyReport; objective: Objective } => Boolean(candidate.objective) && can(currentUser, 'daily_report.create', candidate.report).allowed)
-    ?? linkableObjectives
-      .map((objective) => ({ report: authoringResource(currentUser.id, objective), objective }))
-      .find((candidate) => can(currentUser, 'daily_report.create', candidate.report).allowed);
+  const authoringContext = resolveDailyAuthoringContext(currentUser, ownReports, linkableObjectives);
   const authoringObjectives = authoringContext
     ? linkableObjectives.filter((objective) => objective.projectId === authoringContext.report.projectId)
     : [];
@@ -89,8 +115,7 @@ export function DailyReportsPage() {
 
   function handleSubmit(draft: DailyReportDraft) {
     if (!authoringContext) {
-      setNotice('当前没有可授权的项目可用于填写日报。');
-      return;
+      return { ok: false as const, error: '当前没有可授权的项目可用于填写日报。' };
     }
 
     const result = toLocalDailyReport(draft, {
@@ -98,17 +123,20 @@ export function DailyReportsPage() {
       projectId: authoringContext.report.projectId,
       fallbackObjectiveId: authoringContext.objective.id,
       date: '2026-08-11',
+      submissionNonce: nextLocalSubmissionNonce.current,
       objectives: authoringObjectives,
       keyResults: authoringKeyResults,
     });
     if (!result.ok) {
-      setNotice(result.error.message);
-      return;
+      return { ok: false as const, error: result.error.message };
     }
 
+    nextLocalSubmissionNonce.current += 1;
     setLocalReports((reports) => [result.report, ...reports]);
     setNotice('日报已保存到当前演示页面，尚未连接后端。');
+    restoreAuthoringFocus.current = true;
     setIsAuthoring(false);
+    return { ok: true as const };
   }
 
   const reportColumns = (showReviewActions: boolean, showOwnActions: boolean) => [
@@ -138,7 +166,7 @@ export function DailyReportsPage() {
       <PageHeader
         title="日报"
         description="我的日报由本人创建和编辑；项目负责人仅能审核成员日报，不能修改成员原文。"
-        primaryAction={authoringContext ? { label: '填写今日日报', onClick: () => { setNotice(''); setIsAuthoring(true); } } : undefined}
+        primaryAction={authoringContext ? { label: '填写今日日报', buttonRef: authoringButtonRef, onClick: () => { setNotice(''); setIsAuthoring(true); } } : undefined}
       />
       {notice && <p className="page-notice" role="status">{notice}</p>}
       {isAuthoring && authoringContext && (
@@ -147,7 +175,7 @@ export function DailyReportsPage() {
           <DailyReportForm
             objectives={authoringObjectives}
             keyResults={authoringKeyResults}
-            onCancel={() => setIsAuthoring(false)}
+            onCancel={() => { restoreAuthoringFocus.current = true; setIsAuthoring(false); }}
             onSubmit={handleSubmit}
           />
         </section>

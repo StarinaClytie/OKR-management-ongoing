@@ -151,6 +151,22 @@ describe('daily entry helpers', () => {
     expect(draft.keyResults[0]?.progress).toBe(75);
   });
 
+  it('creates stable distinct ids for multiple local submissions on the same day', () => {
+    const draft: DailyReportDraft = {
+      dailyObjective: '完成数据收集',
+      objectiveProgress: 60,
+      keyResults: [quantityKr()],
+      evidence: [],
+      classification: 'internal',
+    };
+
+    const first = toLocalDailyReport(draft, conversionContext({ submissionNonce: 1 }));
+    const second = toLocalDailyReport(draft, conversionContext({ submissionNonce: 2 }));
+
+    expect(first.ok && first.report.id).toBe('local-user-employee-2026-08-11-1');
+    expect(second.ok && second.report.id).toBe('local-user-employee-2026-08-11-2');
+  });
+
   it('rejects a linked objective outside the current project', () => {
     const result = toLocalDailyReport({
       dailyObjective: '完成数据收集',

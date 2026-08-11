@@ -84,6 +84,17 @@ describe('can — capability, ownership, and field-level access', () => {
     expect(can(projectLeader, 'daily_report.edit', memberReport).allowed).toBe(false);
   });
 
+  it('allows only employees and project leaders to create self-owned daily reports', () => {
+    const employeeOwnedReport = { ...memberReport, authorId: employee.id };
+    const managementOwnedReport = { ...sharedReport, authorId: management.id };
+
+    expect(can(employee, 'daily_report.create', employeeOwnedReport).allowed).toBe(true);
+    expect(can(projectLeader, 'daily_report.create', leaderReport).allowed).toBe(true);
+    expect(can(management, 'daily_report.create', managementOwnedReport).allowed).toBe(false);
+    expect(can(admin, 'daily_report.create', managementOwnedReport).allowed).toBe(false);
+    expect(can(hr, 'daily_report.create', managementOwnedReport).allowed).toBe(false);
+  });
+
   it('allows HR to read authorized hours but not confidential report content', () => {
     expect(can(hr, 'worklog.read_hours', memberReport).allowed).toBe(true);
     expect(can(hr, 'daily_report.read_body', memberReport).allowed).toBe(false);
