@@ -166,6 +166,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
           evidence={draft.evidence}
           onLinkedObjectiveChange={changeLinkedObjective}
           onEvidenceChange={(evidence) => setDraft((current) => ({ ...current, evidence }))}
+          errors={validationErrors}
         />
         <div className="daily-form-actions">
           <button type="button" className="button button--secondary" onClick={onCancel}>取消</button>

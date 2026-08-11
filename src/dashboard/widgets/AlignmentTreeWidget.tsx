@@ -17,9 +17,23 @@ export function AlignmentTreeWidget({ data }: AlignmentTreeWidgetProps) {
   return (
     <div className="alignment-tree">
       <p className="visualization-description">从项目目标向下查看 Objective、KR 与负责人。</p>
-      {companyObjectives[0] && <article className="alignment-node alignment-node--company"><span className="alignment-node__type">公司 O</span><strong>{companyObjectives[0].title}</strong></article>}
-      <ul className="alignment-tree__projects">
-        {alignmentProjects.map((project) => (
+      {companyObjectives.map((companyObjective) => {
+        const projects = alignmentProjects.filter((project) => project.companyObjectiveId === companyObjective.id);
+        if (projects.length === 0) return null;
+        return <section key={companyObjective.id} aria-label={`公司目标：${companyObjective.title}`}>
+          <article className="alignment-node alignment-node--company"><span className="alignment-node__type">公司 O</span><strong>{companyObjective.title}</strong></article>
+          <ProjectBranches projects={projects} />
+        </section>;
+      })}
+      <ProjectBranches projects={alignmentProjects.filter((project) => !companyObjectives.some((objective) => objective.id === project.companyObjectiveId))} />
+    </div>
+  );
+}
+
+function ProjectBranches({ projects }: { projects: ReturnType<typeof prepareVisualizationData>['alignmentProjects'] }) {
+  if (projects.length === 0) return null;
+  return <ul className="alignment-tree__projects">
+        {projects.map((project) => (
           <li key={project.id}>
             <article className="alignment-node alignment-node--project">
               <span className="alignment-node__type">项目目标</span>
@@ -63,7 +77,5 @@ export function AlignmentTreeWidget({ data }: AlignmentTreeWidgetProps) {
             </ul>
           </li>
         ))}
-      </ul>
-    </div>
-  );
+      </ul>;
 }

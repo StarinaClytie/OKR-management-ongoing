@@ -7,6 +7,7 @@ interface DailyReportEvidenceProps {
   evidence: DailyEvidenceDraft[];
   onLinkedObjectiveChange: (objectiveId: string | undefined) => void;
   onEvidenceChange: (items: DailyEvidenceDraft[]) => void;
+  errors?: Record<string, string>;
 }
 
 const classifications: Array<{ value: Classification; label: string }> = [
@@ -16,7 +17,7 @@ const classifications: Array<{ value: Classification; label: string }> = [
   { value: 'restricted', label: '受限' },
 ];
 
-export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, onLinkedObjectiveChange, onEvidenceChange }: DailyReportEvidenceProps) {
+export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, onLinkedObjectiveChange, onEvidenceChange, errors = {} }: DailyReportEvidenceProps) {
   const addEvidence = () => {
     const nextNumber = evidence.length + 1;
     onEvidenceChange([...evidence, { id: `evidence-${nextNumber}`, label: '', kind: 'link', classification: 'internal' }]);
@@ -40,24 +41,29 @@ export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, o
       </div>
       {evidence.map((item, index) => {
         const number = index + 1;
+        const errorFor = (field: 'label' | 'kind' | 'classification') => errors[`evidence.${index}.${field}`];
+        const errorId = (field: 'label' | 'kind' | 'classification') => `evidence-${item.id}-${field}-error`;
         return (
           <div className="daily-evidence__row" key={item.id}>
             <label htmlFor={`evidence-${item.id}-label`}>
               成果 {number}
-              <input id={`evidence-${item.id}-label`} value={item.label} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, label: event.target.value } : candidate))} placeholder="填写文件名或链接说明" />
+              <input id={`evidence-${item.id}-label`} value={item.label} aria-invalid={Boolean(errorFor('label'))} aria-describedby={errorFor('label') ? errorId('label') : undefined} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, label: event.target.value } : candidate))} placeholder="填写文件名或链接说明" />
+              {errorFor('label') && <span id={errorId('label')} role="alert" className="field-error">{errorFor('label')}</span>}
             </label>
             <label htmlFor={`evidence-${item.id}-kind`}>
               成果 {number} 类型
-              <select id={`evidence-${item.id}-kind`} value={item.kind} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, kind: event.target.value as DailyEvidenceDraft['kind'] } : candidate))}>
+              <select id={`evidence-${item.id}-kind`} value={item.kind} aria-invalid={Boolean(errorFor('kind'))} aria-describedby={errorFor('kind') ? errorId('kind') : undefined} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, kind: event.target.value as DailyEvidenceDraft['kind'] } : candidate))}>
                 <option value="file">附件</option>
                 <option value="link">链接</option>
               </select>
+              {errorFor('kind') && <span id={errorId('kind')} role="alert" className="field-error">{errorFor('kind')}</span>}
             </label>
             <label htmlFor={`evidence-${item.id}-classification`}>
               成果 {number} 密级
-              <select id={`evidence-${item.id}-classification`} value={item.classification} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, classification: event.target.value as Classification } : candidate))}>
+              <select id={`evidence-${item.id}-classification`} value={item.classification} aria-invalid={Boolean(errorFor('classification'))} aria-describedby={errorFor('classification') ? errorId('classification') : undefined} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, classification: event.target.value as Classification } : candidate))}>
                 {classifications.map((classification) => <option key={classification.value} value={classification.value}>{classification.label}</option>)}
               </select>
+              {errorFor('classification') && <span id={errorId('classification')} role="alert" className="field-error">{errorFor('classification')}</span>}
             </label>
           </div>
         );

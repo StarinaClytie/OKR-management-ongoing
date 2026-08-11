@@ -4,8 +4,8 @@ import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { toLocalDailyReport, type DailyReportDraft } from '../domain/dailyEntry';
-import { getDailyReportBodyPermissionScope } from '../domain/permissions';
+import { toLocalDailyReport, type DailyEvidenceDraft, type DailyReportDraft } from '../domain/dailyEntry';
+import { getDailyEvidencePermissionScope, getDailyReportBodyPermissionScope } from '../domain/permissions';
 import type { Classification, DailyReport, Objective, User } from '../domain/types';
 import { mockRepository } from '../mocks/repository';
 import { DailyReportForm } from './daily-report/DailyReportForm';
@@ -21,6 +21,12 @@ const classificationLabels: Record<Classification, string> = {
   confidential: '机密',
   restricted: '受限',
 };
+const classificationRank: Record<Classification, number> = { public: 0, internal: 1, confidential: 2, restricted: 3 };
+
+function authorizedEvidence(viewer: User, report: DailyReport): DailyEvidenceDraft[] {
+  const items = report.evidenceItems ?? report.evidence.map((label, index) => ({ id: `legacy-${index + 1}`, label, kind: 'link' as const, classification: report.evidenceClassification }));
+  return items.filter((item) => can(viewer, 'evidence.read', getDailyEvidencePermissionScope(report, item)).allowed);
+}
 
 function authoringResource(authorId: string, objective: Objective): DailyReport {
   return {
@@ -66,13 +72,13 @@ export function DailyReportsPage() {
   const { currentUser } = useAuth();
   const [notice, setNotice] = useState('');
   const [isAuthoring, setIsAuthoring] = useState(false);
-  const [localReports, setLocalReports] = useState<DailyReport[]>([]);
+  const [localReports, setLocalReports] = useState<{ ownerId: string | undefined; reports: DailyReport[] }>(() => ({ ownerId: currentUser?.id, reports: [] }));
   const nextLocalSubmissionNonce = useRef(1);
   const authoringButtonRef = useRef<HTMLButtonElement>(null);
   const restoreAuthoringFocus = useRef(false);
   useEffect(() => {
     setIsAuthoring(false);
-    setLocalReports([]);
+    setLocalReports({ ownerId: currentUser?.id, reports: [] });
     setNotice('');
     nextLocalSubmissionNonce.current = 1;
   }, [currentUser?.id]);
@@ -83,10 +89,12 @@ export function DailyReportsPage() {
     }
   }, [isAuthoring]);
   if (!currentUser) return null;
+  const currentUserId = currentUser.id;
   const data = mockRepository.getDashboardData(currentUser.id);
+  const currentLocalReports = localReports.ownerId === currentUser.id ? localReports.reports : [];
   const readableReports = useMemo(
-    () => [...localReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed),
-    [currentUser, data.dailyReports, localReports],
+    () => [...currentLocalReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed),
+    [currentUser, data.dailyReports, currentLocalReports],
   );
 
   if (currentUser.role === 'hr') {
@@ -140,7 +148,7 @@ export function DailyReportsPage() {
     }
 
     nextLocalSubmissionNonce.current += 1;
-    setLocalReports((reports) => [result.report, ...reports]);
+    setLocalReports((bucket) => ({ ownerId: currentUserId, reports: [result.report, ...(bucket.ownerId === currentUserId ? bucket.reports : [])] }));
     setNotice('日报已保存到当前演示页面，尚未连接后端。');
     restoreAuthoringFocus.current = true;
     setIsAuthoring(false);
@@ -153,16 +161,18 @@ export function DailyReportsPage() {
     {
       key: 'content',
       label: '日报内容',
-      render: (report: DailyReport) => (
-        <div>
+      render: (report: DailyReport) => {
+        const visibleEvidence = authorizedEvidence(currentUser, report);
+        const evidenceClassification = visibleEvidence.reduce<Classification>((highest, item) => classificationRank[item.classification] > classificationRank[highest] ? item.classification : highest, 'public');
+        return <div>
           <p>{report.dailyObjective ?? report.content}</p>
           {report.dailyKeyResults?.map((keyResult, index) => (
             <p key={keyResult.id}>KR{index + 1}：{keyResult.title}（<span>{keyResult.progress ?? '—'}%</span>）</p>
           ))}
-          {report.dailyKeyResults && report.evidence.length > 0 && <p>{`成果密级：${classificationLabels[report.evidenceClassification]}`}</p>}
+          {visibleEvidence.length > 0 && <p>{`成果密级：${classificationLabels[evidenceClassification]}`}</p>}
           <DailyReportEvidenceDetails viewer={currentUser} report={report} attachments={data.attachments} />
-        </div>
-      ),
+        </div>;
+      },
     },
     { key: 'hours', label: '工时', render: (report: DailyReport) => `${report.hours} 小时` },
     { key: 'status', label: '状态', render: (report: DailyReport) => <StatusBadge status={report.status} /> },

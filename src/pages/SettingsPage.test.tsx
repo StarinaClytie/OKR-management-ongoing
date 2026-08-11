@@ -46,4 +46,17 @@ describe('SettingsPage', () => {
     expect(personalTab).toHaveAttribute('aria-controls', panel.id);
     expect(panel).toHaveAttribute('aria-labelledby', personalTab.id);
   });
+
+  it('does not carry checkbox, notice, or personal-tab state to another user', () => {
+    render(<AuthProvider initialUserId="user-project-leader"><RoleControls /><SettingsPage /></AuthProvider>);
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: '保存模拟设置' }));
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(screen.getByRole('status')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: '切换到管理层' }));
+    expect(screen.getByRole('checkbox')).toBeChecked();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '个人偏好' })).toHaveAttribute('aria-selected', 'true');
+  });
 });

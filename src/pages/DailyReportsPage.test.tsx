@@ -60,7 +60,7 @@ describe('DailyReportsPage', () => {
     expect(screen.getByText('完成原型验证，为评审提供依据')).toBeVisible();
     expect(screen.getByText('75%')).toBeVisible();
     expect(screen.getByText('3.5 小时')).toBeVisible();
-    expect(screen.getByText('成果密级：机密')).toBeVisible();
+    expect(screen.getAllByText('成果密级：机密').length).toBeGreaterThan(0);
     expect(screen.getByText('日报已保存到当前演示页面，尚未连接后端。')).toBeVisible();
     expect(mockData.dailyReports).toHaveLength(repositoryReportCount);
   });

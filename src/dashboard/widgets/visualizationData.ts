@@ -33,6 +33,7 @@ export interface PreparedObjective {
 
 export interface PreparedAlignmentProject {
   id: string;
+  companyObjectiveId?: string;
   name: string;
   startDate: string;
   dueDate: string;
@@ -144,6 +145,7 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
 
     return {
       id: project.id,
+      companyObjectiveId: project.companyObjectiveId,
       name: project.name,
       startDate: project.startDate,
       dueDate: project.dueDate,
