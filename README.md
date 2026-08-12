@@ -1,31 +1,103 @@
 # Northstar OKR
 
-一个中文优先的企业 OKR 前端演示。它提供角色化仪表盘、受保护路由、结构化日报和五种项目视图；所有数据均为本地模拟数据。
+Northstar OKR is a Chinese-first enterprise OKR management frontend prototype. It demonstrates role-aware dashboards, protected navigation, structured daily reporting, project visualizations, and confidentiality-aware UI boundaries using local mock data.
 
-## 本地运行
+## Highlights
+
+- Five roles: Administrator, Management, Project Leader, Employee, and HR
+- Eight application areas: Dashboard, OKR Management, Projects, Daily Report, Weekly Report, Team, Analytics, and Settings
+- Modular dashboards tailored to each role
+- Five project views: alignment tree, Gantt chart, progress trend, risk matrix, and workload
+- Structured daily Objective and Key Result entry with manually entered progress, work hours, measurement types, linked OKRs, and evidence metadata
+- Project Leader self-reporting plus member report review, confirmation, return, and comments
+- Permission-aware rendering for OKRs, reports, evidence, milestones, risks, tasks, and system metadata
+- Responsive navigation, keyboard interactions, focus management, and accessible status/error feedback
+
+## Technology
+
+- React 19
+- TypeScript
+- Vite
+- React Router
+- Recharts
+- Vitest and Testing Library
+
+## Run Locally
+
+Requirements: Node.js 20 or later and npm.
 
 ```bash
+git clone https://github.com/StarinaClytie/OKR-management-ongoing.git
+cd OKR-management-ongoing
 npm install
 npm run dev
+```
+
+Open the local URL printed by Vite.
+
+## Quality Checks
+
+```bash
 npm run test:run
 npm run typecheck
 npm run build
 ```
 
-开发服务器启动后，按终端显示的本地地址打开应用。生产构建会输出到 `dist/`。
+The production bundle is written to `dist/`.
 
-## 演示方式
+## Explore the Demo
 
-顶栏的“演示角色”切换器可在管理员、管理层、项目负责人、员工和 HR 五种模拟身份间切换。每种角色会看到其权限范围内的仪表盘和导航；当路由权限被拒绝时，应用会显示访问受限页面。
+Use the role switcher in the top bar to move between the five simulated identities. Each role receives a different dashboard composition and permission scope. Protected routes display an access-denied state when the active user lacks the required capability.
 
-项目负责人可以填写自己的结构化日报并审核成员日报；HR 只查看已授权工时字段，不展示日报正文或证据。项目视图提供对齐树、甘特图、进度趋势、风险矩阵和工作负载五个标签，支持键盘方向键切换。
+Project Leaders can write their own daily reports and review member reports without modifying the member's original content. HR views authorized workload fields only; report bodies and evidence remain outside the HR view. The five project visualizations can be switched with the mouse or keyboard.
 
-## 安全边界
+## Permission Model
 
-这是前端原型，不包含后端、真实认证、数据库、文件上传、加密、真实导出或 AI 校验。菜单隐藏、路由拦截和按钮禁用仅用于演示体验；生产环境必须由后端对每次读取和操作重新鉴权。
+The frontend models both role capabilities and resource-level relationships. It distinguishes summary access from detailed access and treats OKRs, report bodies, evidence, attachments, milestones, risks, project tasks, and audit metadata as separate permission resources.
 
-管理员可以管理用户、角色、权限、设置和审计元数据，但默认不能读取机密业务正文。OKR 摘要、日报正文、证据和附件是分离的权限资源。
+The prototype also models classification levels and filters unauthorized data before mapping, aggregation, or DOM rendering. Administrator and Management are intentionally different roles: administrators manage system configuration and access metadata but do not automatically receive confidential business content.
 
-## 数据与部署
+## Project Structure
 
-演示数据和提交后的日报状态只保存在当前浏览器页面的内存中，刷新后会恢复初始模拟数据。除非你后续自行部署并接入服务，本项目不会发送文件或数据到网络，所有文件都保留在本地工作区。
+```text
+src/
+  app/          Application shell and routes
+  auth/         Permission evaluation and route protection
+  components/   Shared UI and security components
+  dashboard/    Role-specific widgets and visualizations
+  domain/       Types, permissions, and daily-report conversion
+  layout/       Sidebar, role switcher, and responsive shell
+  mocks/        Local demonstration data
+  pages/        Route-level page frameworks and daily report UI
+  styles/       Design tokens and global responsive styles
+```
+
+## Prototype Boundaries
+
+This repository is a frontend foundation, not a production authorization system. It currently has no backend, real identity provider, database, persistent file upload, encryption service, production export pipeline, or AI-based OKR evaluation. Submitted demo state is stored in browser memory and resets on refresh.
+
+Client-side menu hiding and route guards improve the demonstration experience, but a production system must repeat every authorization and classification check on the server. Never treat frontend checks as a security boundary.
+
+## Deployment
+
+Build the static application with:
+
+```bash
+npm ci
+npm run build
+```
+
+Serve the generated `dist/` directory from a static host or web server. Configure history fallback to `index.html` so React Router URLs work when opened directly.
+
+## Roadmap
+
+- Backend API, database, and persistent audit trail
+- Enterprise authentication and server-enforced authorization
+- Real attachment upload and secure object storage
+- Configurable progress baselines and risk-scoring explanations
+- Editable submitted reports with version history
+- AI-assisted Objective and Key Result writing feedback
+
+## License
+
+No open-source license has been added yet. All rights are reserved unless a license is added in a future release.
