@@ -6,3 +6,7 @@ coverage/
 graphify-out/
 .worktrees/
 *.log
+.env.local
+.env.*.local
+supabase/.temp/
+supabase/.branches/
