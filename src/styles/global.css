@@ -1291,7 +1291,7 @@ select {
 .risk-matrix__axis--y {
   align-self: center;
   writing-mode: vertical-rl;
-  transform: rotate(180deg);
+  text-orientation: upright;
 }
 
 .risk-matrix__axis--x {

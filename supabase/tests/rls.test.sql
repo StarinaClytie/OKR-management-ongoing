@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(25);
+select plan(27);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -185,6 +185,16 @@ select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000007
 select throws_ok(
   $$select public.save_progress_plan('41000000-0000-0000-0000-000000000001', '[]'::jsonb)$$,
   '42501', 'Progress plan is not editable by the current user', 'unrelated employee cannot replace a progress plan'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
+select lives_ok(
+  $$select public.save_risk('30000000-0000-0000-0000-000000000001', 'Delivery risk', 2, 3, 'Dependency delay', 'Fallback', current_date, 'confidential')$$,
+  'project leader saves an explained calculated risk'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000007', true);
+select throws_ok(
+  $$select public.save_risk('30000000-0000-0000-0000-000000000001', 'Unauthorized', 1, 1, 'No access', 'None', current_date, 'internal')$$,
+  '42501', 'Risk is not editable by the current user', 'unrelated employee cannot save project risk'
 );
 
 select * from finish();

@@ -149,6 +149,8 @@ export interface Risk {
   probability: 1 | 2 | 3;
   impact: 1 | 2 | 3;
   mitigation: string;
+  reason?: string;
+  lastReviewedAt?: string;
   status: ProgressStatus;
   classification: Classification;
   identifiedAt: string;

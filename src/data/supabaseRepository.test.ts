@@ -90,4 +90,15 @@ describe('SupabaseOkrRepository', () => {
       p_project_id: 'project-1', p_milestones: [{ title: '发布', plannedDate: '2026-08-31' }],
     });
   });
+
+  it('saves explained risks through the restricted risk RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: 'risk-1' });
+    const repository = new SupabaseOkrRepository(client);
+    const result = await repository.saveRisk({
+      projectId: 'project-1', title: '交付风险', probability: 2, impact: 3,
+      reason: '依赖延期', mitigation: '替代方案', lastReviewedAt: '2026-08-13', classification: 'internal',
+    });
+    expect(result).toEqual({ ok: true, data: { id: 'risk-1' } });
+    expect(rpc).toHaveBeenCalledWith('save_risk', expect.objectContaining({ p_probability: 2, p_impact: 3, p_reason: '依赖延期' }));
+  });
 });

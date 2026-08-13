@@ -613,3 +613,37 @@ revoke all on function public.save_progress_plan(uuid, jsonb) from public, anon;
 revoke all on function public.save_milestones(uuid, jsonb) from public, anon;
 grant execute on function public.save_progress_plan(uuid, jsonb) to authenticated;
 grant execute on function public.save_milestones(uuid, jsonb) to authenticated;
+
+create or replace function public.save_risk(
+  p_project_id uuid, p_title text, p_probability integer, p_impact integer,
+  p_reason text, p_mitigation text, p_last_reviewed_at date,
+  p_classification public.classification
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  target public.projects%rowtype;
+  risk_id uuid := gen_random_uuid();
+  score integer := p_probability * p_impact;
+  calculated_level public.risk_level;
+begin
+  select * into target from public.projects p
+  where p.id = p_project_id and p.organization_id = private.current_organization_id()
+    and (p.leader_id = auth.uid() or private.has_role('management'));
+  if not found then raise exception 'Risk is not editable by the current user' using errcode = '42501'; end if;
+  if length(trim(p_title)) = 0 or length(trim(p_reason)) = 0 or length(trim(p_mitigation)) = 0
+    or p_probability not between 1 and 3 or p_impact not between 1 and 3 then
+    raise exception 'Risk fields are invalid' using errcode = '22023';
+  end if;
+  if not private.has_clearance(p_classification) then raise exception 'Risk classification exceeds user clearance' using errcode = '42501'; end if;
+  calculated_level := (case when score <= 2 then 'low' when score <= 4 then 'medium' when score = 6 then 'high' else 'critical' end)::public.risk_level;
+  insert into public.risks (id, organization_id, project_id, owner_id, title, reason, mitigation, probability, impact, level, classification, last_reviewed_at)
+  values (risk_id, target.organization_id, target.id, auth.uid(), p_title, p_reason, p_mitigation, p_probability, p_impact, calculated_level, p_classification, p_last_reviewed_at::timestamptz);
+  return risk_id;
+end;
+$$;
+revoke all on function public.save_risk(uuid, text, integer, integer, text, text, date, public.classification) from public, anon;
+grant execute on function public.save_risk(uuid, text, integer, integer, text, text, date, public.classification) to authenticated;
