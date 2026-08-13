@@ -291,6 +291,37 @@ using (
 );
 
 revoke all on function public.begin_attachment_upload(uuid, text, text, integer, public.classification) from public, anon;
+create or replace function public.begin_daily_report_with_attachments(p_project_id uuid, p_objective_id uuid, p_report_date date, p_status public.report_status, p_classification public.classification, p_total_hours numeric)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare target_organization_id uuid; report_id uuid := gen_random_uuid();
+begin
+  select o.organization_id into target_organization_id from public.objectives o join public.projects p on p.id = p_project_id and p.organization_id = o.organization_id
+  where o.id = p_objective_id and o.project_id = p_project_id and o.owner_id = auth.uid() and o.organization_id = private.current_organization_id();
+  if not found or not private.has_clearance(p_classification) then raise exception 'Daily report subject is not available to the current user' using errcode = '42501'; end if;
+  insert into public.daily_reports(id, organization_id, author_id, project_id, objective_id, report_date, status, classification, total_hours, current_revision)
+  values(report_id, target_organization_id, auth.uid(), p_project_id, p_objective_id, p_report_date, p_status, p_classification, p_total_hours, 0);
+  return report_id;
+end; $$;
+
+create or replace function public.update_daily_report_with_attachments(p_report_id uuid, p_expected_revision integer, p_status public.report_status, p_classification public.classification, p_total_hours numeric, p_daily_objective text, p_objective_progress numeric, p_krs jsonb, p_evidence_links jsonb default '[]'::jsonb)
+returns integer language plpgsql security definer set search_path = '' as $$
+declare next_revision integer; new_revision_id uuid;
+begin
+  if exists (select 1 from public.report_attachments where report_id = p_report_id and uploader_id = auth.uid() and revision_id is null and state = 'pending') then
+    raise exception 'All report attachments must finish uploading before revision submission' using errcode = '55000';
+  end if;
+  next_revision := public.update_daily_report(p_report_id, p_expected_revision, p_status, p_classification, p_total_hours, p_daily_objective, p_objective_progress, p_krs, p_evidence_links);
+  select id into new_revision_id from public.daily_report_revisions where report_id = p_report_id and revision_number = next_revision;
+  update public.report_attachments set revision_id = new_revision_id where report_id = p_report_id and uploader_id = auth.uid() and revision_id is null and state = 'uploaded';
+  return next_revision;
+end; $$;
+
+revoke all on function public.begin_daily_report_with_attachments(uuid, uuid, date, public.report_status, public.classification, numeric) from public, anon;
+revoke all on function public.update_daily_report_with_attachments(uuid, integer, public.report_status, public.classification, numeric, text, numeric, jsonb, jsonb) from public, anon;
+grant execute on function public.begin_daily_report_with_attachments(uuid, uuid, date, public.report_status, public.classification, numeric) to authenticated;
+grant execute on function public.update_daily_report_with_attachments(uuid, integer, public.report_status, public.classification, numeric, text, numeric, jsonb, jsonb) to authenticated;
+
+revoke all on function public.begin_attachment_upload(uuid, text, text, integer, public.classification) from public, anon;
 revoke all on function public.finalize_attachment_upload(uuid, text) from public, anon;
 revoke all on function public.replace_attachment(uuid, text, text, integer, public.classification) from public, anon;
 revoke all on function public.soft_delete_attachment(uuid) from public, anon;

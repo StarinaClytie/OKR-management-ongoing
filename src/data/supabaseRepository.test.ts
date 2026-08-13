@@ -115,4 +115,21 @@ describe('SupabaseOkrRepository', () => {
     expect(storageFrom).toHaveBeenCalledWith('report-attachments');
     expect(createSignedUrl).toHaveBeenCalledWith('organization/o/reports/r/a.pdf', 60);
   });
+
+  it('does not write a report revision until every selected attachment is uploaded and finalized', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: 'report-shell', error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-1', path: 'organization/o/reports/r/a.pdf', bucket: 'report-attachments' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-1' }, error: null })
+      .mockResolvedValueOnce({ data: 1, error: null });
+    const upload = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.storage.from = vi.fn(() => ({ upload, createSignedUrl: vi.fn(), remove: vi.fn() }));
+    const input = { projectId: 'project-1', objectiveId: 'objective-1', reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, totalHours: 2, dailyObjective: '目标', objectiveProgress: 10, keyResults: [], evidenceLinks: [] };
+    const result = await new SupabaseOkrRepository(client).createDailyReportWithAttachments(input, [{ file: new File(['x'], 'a.pdf', { type: 'application/pdf' }), classification: 'confidential' }]);
+    expect(result).toEqual({ ok: true, data: { id: 'report-shell', revision: 1 } });
+    expect(rpc.mock.calls.map((call) => call[0])).toEqual(['begin_daily_report_with_attachments', 'begin_attachment_upload', 'finalize_attachment_upload', 'update_daily_report_with_attachments']);
+    expect(upload.mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[3]!);
+  });
 });

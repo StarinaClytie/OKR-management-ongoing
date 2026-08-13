@@ -50,13 +50,17 @@ export interface DailyReportInput {
   evidenceLinks: unknown[];
 }
 
+export interface ClassifiedAttachmentInput { file: File; classification: Classification }
+
 export interface OkrRepository {
   readonly mode: AppMode;
   getCurrentProfile(): Promise<RepositoryResult<User | null>>;
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
+  createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>>;
+  updateDailyReportWithAttachments(reportId: string, expectedRevision: number, input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ revision: number }>>;
   listReportRevisions(reportId: string): Promise<RepositoryResult<unknown[]>>;
   saveProgressPlan(keyResultId: string, points: Array<{ date: string; value: number }>): Promise<RepositoryResult<void>>;
   saveMilestones(projectId: string, milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>): Promise<RepositoryResult<void>>;

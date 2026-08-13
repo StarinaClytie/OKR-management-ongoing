@@ -165,11 +165,12 @@ export function DailyReportsPage() {
         classification: conversion.report.classification, totalHours: conversion.report.hours,
         dailyObjective: conversion.report.dailyObjective ?? conversion.report.content,
         objectiveProgress: conversion.report.objectiveProgress ?? 0,
-        keyResults: conversion.report.dailyKeyResults ?? [], evidenceLinks: conversion.report.evidenceItems ?? [],
+        keyResults: conversion.report.dailyKeyResults ?? [], evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
+      const files = draft.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []);
       const persisted = editingReport
-        ? await repository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input)
-        : await repository.createDailyReport(input);
+        ? (files.length ? await repository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await repository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
+        : (files.length ? await repository.createDailyReportWithAttachments(input, files) : await repository.createDailyReport(input));
       if (!persisted.ok) return { ok: false as const, error: persisted.error.code === 'conflict' ? '日报已被更新，请刷新后重试。' : persisted.error.message };
     }
 

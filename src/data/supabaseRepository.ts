@@ -1,6 +1,7 @@
 import type { DashboardData } from '../mocks/repository';
 import type { DailyReport, Role, User } from '../domain/types';
-import type { AttachmentUploadTarget, DailyReportInput, OkrRepository, RepositoryErrorCode, RepositoryResult, SupabaseClientLike } from './types';
+import type { AttachmentUploadTarget, ClassifiedAttachmentInput, DailyReportInput, OkrRepository, RepositoryErrorCode, RepositoryResult, SupabaseClientLike } from './types';
+import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
 interface ProfileQuery {
@@ -81,7 +82,7 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
 
   async updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>> {
-    const result = await this.callRpc<number>('update_daily_report', {
+    const result = await this.callRpc<number>('update_daily_report_with_attachments', {
       p_report_id: reportId,
       p_expected_revision: expectedRevision,
       p_status: input.status,
@@ -93,6 +94,34 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_evidence_links: input.evidenceLinks,
     });
     return result.ok ? { ok: true, data: { revision: result.data } } : result;
+  }
+
+  private async uploadAll(reportId: string, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<void>> {
+    for (const attachment of attachments) {
+      const invalid = validateAttachment(attachment.file);
+      if (invalid) return { ok: false, error: { code: 'validation', message: invalid.message } };
+      const pending = await this.beginAttachmentUpload({ p_report_id: reportId, p_original_name: sanitizeFilename(attachment.file.name), p_mime_type: attachment.file.type, p_byte_size: attachment.file.size, p_classification: attachment.classification });
+      if (!pending.ok) return pending;
+      const uploaded = await this.client.storage.from(pending.data.bucket).upload(pending.data.path, attachment.file, { contentType: attachment.file.type, upsert: false });
+      if (uploaded.error) { await this.removeAttachment(pending.data.id); return failure(uploaded.error); }
+      const finalized = await this.finalizeAttachmentUpload(pending.data.id);
+      if (!finalized.ok) return finalized as RepositoryResult<void>;
+    }
+    return { ok: true, data: undefined };
+  }
+
+  async createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>> {
+    const shell = await this.callRpc<string>('begin_daily_report_with_attachments', { p_project_id: input.projectId, p_objective_id: input.objectiveId, p_report_date: input.reportDate, p_status: input.status, p_classification: input.classification, p_total_hours: input.totalHours });
+    if (!shell.ok) return shell;
+    const uploaded = await this.uploadAll(shell.data, attachments);
+    if (!uploaded.ok) return uploaded;
+    const revision = await this.updateDailyReport(shell.data, 0, input);
+    return revision.ok ? { ok: true, data: { id: shell.data, revision: revision.data.revision } } : revision;
+  }
+
+  async updateDailyReportWithAttachments(reportId: string, expectedRevision: number, input: DailyReportInput, attachments: ClassifiedAttachmentInput[]) {
+    const uploaded = await this.uploadAll(reportId, attachments);
+    return uploaded.ok ? this.updateDailyReport(reportId, expectedRevision, input) : uploaded;
   }
 
   async listReportRevisions(reportId: string): Promise<RepositoryResult<unknown[]>> {

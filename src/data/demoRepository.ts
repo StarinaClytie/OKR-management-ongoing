@@ -1,5 +1,5 @@
 import { mockRepository } from '../mocks/repository';
-import type { DailyReportInput, OkrRepository, RepositoryResult } from './types';
+import type { ClassifiedAttachmentInput, DailyReportInput, OkrRepository, RepositoryResult } from './types';
 import type { DailyReport, User } from '../domain/types';
 
 function unsupported<T>(): RepositoryResult<T> {
@@ -22,7 +22,9 @@ export class DemoOkrRepository implements OkrRepository {
   }
 
   async createDailyReport(_input: DailyReportInput) { return unsupported<{ id: string; revision: number }>(); }
+  async createDailyReportWithAttachments(_input: DailyReportInput, _attachments: ClassifiedAttachmentInput[]) { return unsupported<{ id: string; revision: number }>(); }
   async updateDailyReport(_reportId: string, _expectedRevision: number, _input: DailyReportInput) { return unsupported<{ revision: number }>(); }
+  async updateDailyReportWithAttachments(_reportId: string, _expectedRevision: number, _input: DailyReportInput, _attachments: ClassifiedAttachmentInput[]) { return unsupported<{ revision: number }>(); }
   async listReportRevisions(_reportId: string) { return unsupported<unknown[]>(); }
   async saveProgressPlan(_keyResultId: string, _points: Array<{ date: string; value: number }>) { return unsupported<void>(); }
   async saveMilestones(_projectId: string, _milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>) { return unsupported<void>(); }

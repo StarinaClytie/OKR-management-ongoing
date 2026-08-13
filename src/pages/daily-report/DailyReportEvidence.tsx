@@ -26,7 +26,7 @@ export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, o
   };
 
   return (
-    <section className="daily-evidence" aria-labelledby="daily-evidence-heading">
+    <section className="daily-evidence form-card form-section" aria-labelledby="daily-evidence-heading">
       <h2 id="daily-evidence-heading">关联与成果</h2>
       <div className="daily-form-grid daily-form-grid--single">
         <label htmlFor="linked-objective">

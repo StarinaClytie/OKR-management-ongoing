@@ -135,7 +135,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
           onObjectiveChange={(dailyObjective) => setDraft((current) => ({ ...current, dailyObjective }))}
           onProgressChange={updateObjectiveProgress}
         />
-        <section className="daily-key-results" aria-labelledby="daily-key-results-heading">
+        <section className="daily-key-results form-card form-section" aria-labelledby="daily-key-results-heading">
           <div className="daily-evidence__header">
             <h2 id="daily-key-results-heading">当日 KR</h2>
             <button type="button" className="button button--secondary" onClick={addKeyResult}>添加 KR</button>
