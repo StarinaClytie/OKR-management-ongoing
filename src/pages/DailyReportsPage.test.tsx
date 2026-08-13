@@ -161,6 +161,19 @@ describe('DailyReportsPage', () => {
     expect(screen.queryByRole('button', { name: '添加评论' })).not.toBeInTheDocument();
   });
 
+  it('opens the selected own report in the real structured edit form and restores focus on cancel', async () => {
+    const user = userEvent.setup();
+    renderPageAs('user-employee');
+    const editButton = screen.getByRole('button', { name: '编辑我的日报' });
+    await user.click(editButton);
+    const heading = screen.getByRole('heading', { name: '编辑我的日报' });
+    expect(heading).toHaveFocus();
+    expect(screen.getByLabelText('当日 O')).not.toHaveValue('');
+    expect(screen.getByRole('button', { name: '保存日报修改' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(editButton).toHaveFocus();
+  });
+
   it('keeps HR on an hours-only view without confidential report fields', () => {
     renderPageAs('user-hr');
 

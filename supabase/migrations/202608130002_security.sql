@@ -647,3 +647,19 @@ end;
 $$;
 revoke all on function public.save_risk(uuid, text, integer, integer, text, text, date, public.classification) from public, anon;
 grant execute on function public.save_risk(uuid, text, integer, integer, text, text, date, public.classification) to authenticated;
+
+create or replace function public.list_report_revisions(p_report_id uuid)
+returns table(revision integer, created_at timestamptz, editor_name text)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select rr.revision_number, rr.created_at, p.display_name
+  from public.daily_report_revisions rr
+  join public.profiles p on p.id = rr.editor_id
+  where rr.report_id = p_report_id and private.can_read_report_detail(rr.report_id)
+  order by rr.revision_number desc
+$$;
+revoke all on function public.list_report_revisions(uuid) from public, anon;
+grant execute on function public.list_report_revisions(uuid) to authenticated;

@@ -96,7 +96,8 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
 
   async listReportRevisions(reportId: string): Promise<RepositoryResult<unknown[]>> {
-    return this.callRpc<unknown[]>('list_report_revisions', { p_report_id: reportId });
+    const result = await this.callRpc<Array<{ revision: number; created_at: string; editor_name: string }>>('list_report_revisions', { p_report_id: reportId });
+    return result.ok ? { ok: true, data: result.data.map((item) => ({ revision: item.revision, createdAt: item.created_at, editorName: item.editor_name })) } : result;
   }
   async saveProgressPlan(keyResultId: string, points: Array<{ date: string; value: number }>): Promise<RepositoryResult<void>> {
     const result = await this.callRpc<null>('save_progress_plan', { p_key_result_id: keyResultId, p_points: points });

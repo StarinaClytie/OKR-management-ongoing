@@ -63,6 +63,13 @@ async function completeQuantityForm(user: ReturnType<typeof userEvent.setup>, pr
 }
 
 describe('DailyReportForm', () => {
+  it('loads edit mode with the actual structured draft including zero progress', () => {
+    render(<DailyReportForm mode="edit" initialDraft={{ dailyObjective: '已有目标', objectiveProgress: 0, linkedObjectiveId: 'objective-orion', keyResults: [{ id: 'kr-edit', title: '已有 KR', type: 'quantity', hours: 0, progress: 0, workNote: '开始', targetValue: 10, actualValue: 0 }], evidence: [], classification: 'internal' }} objectives={objectives} keyResults={keyResults} onCancel={vi.fn()} onSubmit={vi.fn().mockResolvedValue({ ok: true })} />);
+    expect(screen.getByLabelText('当日 O')).toHaveValue('已有目标');
+    expect(screen.getByLabelText('当日 O 完成度')).toHaveValue(0);
+    expect(screen.getByLabelText('KR1 完成度')).toHaveValue(0);
+    expect(screen.getByRole('button', { name: '保存日报修改' })).toBeEnabled();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

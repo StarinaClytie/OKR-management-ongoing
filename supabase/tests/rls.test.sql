@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(28);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -160,6 +160,8 @@ select throws_ok(
   )$$,
   '40001', 'Daily report revision conflict', 'stale expected revision is rejected'
 );
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
+select is((select count(*) from public.list_report_revisions('50000000-0000-0000-0000-000000000001')), 1::bigint, 'authorized author lists immutable revision history');
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 select throws_ok(
   $$select public.update_daily_report(
