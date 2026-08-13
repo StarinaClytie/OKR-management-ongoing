@@ -76,4 +76,18 @@ describe('SupabaseOkrRepository', () => {
     });
     expect(result).toEqual({ ok: false, error: { code: 'conflict', message: '请求未完成，请稍后重试' } });
   });
+
+  it('saves progress plans and milestones only through restricted RPCs', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const repository = new SupabaseOkrRepository(client);
+
+    expect(await repository.saveProgressPlan('kr-1', [{ date: '2026-08-31', value: 100 }])).toEqual({ ok: true, data: undefined });
+    expect(await repository.saveMilestones('project-1', [{ title: '发布', plannedDate: '2026-08-31' }])).toEqual({ ok: true, data: undefined });
+    expect(rpc).toHaveBeenNthCalledWith(1, 'save_progress_plan', {
+      p_key_result_id: 'kr-1', p_points: [{ date: '2026-08-31', value: 100 }],
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'save_milestones', {
+      p_project_id: 'project-1', p_milestones: [{ title: '发布', plannedDate: '2026-08-31' }],
+    });
+  });
 });

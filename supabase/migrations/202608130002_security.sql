@@ -529,3 +529,87 @@ revoke all on function public.create_daily_report(uuid, uuid, date, public.repor
 revoke all on function public.update_daily_report(uuid, integer, public.report_status, public.classification, numeric, text, numeric, jsonb, jsonb) from public, anon;
 grant execute on function public.create_daily_report(uuid, uuid, date, public.report_status, public.classification, numeric, text, numeric, jsonb, jsonb) to authenticated;
 grant execute on function public.update_daily_report(uuid, integer, public.report_status, public.classification, numeric, text, numeric, jsonb, jsonb) to authenticated;
+
+create or replace function public.save_progress_plan(p_key_result_id uuid, p_points jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  target public.key_results%rowtype;
+  item jsonb;
+  point_date date;
+  point_value numeric;
+  previous_date date;
+  previous_value numeric;
+begin
+  select * into target from public.key_results kr
+  where kr.id = p_key_result_id
+    and kr.organization_id = private.current_organization_id()
+    and (kr.owner_id = auth.uid() or private.is_project_leader(kr.project_id));
+  if not found then
+    raise exception 'Progress plan is not editable by the current user' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_points) <> 'array' or jsonb_array_length(p_points) = 0 then
+    raise exception 'Progress plan requires at least one point' using errcode = '22023';
+  end if;
+  for item in select value from jsonb_array_elements(p_points) loop
+    point_date := (item->>'date')::date;
+    point_value := (item->>'value')::numeric;
+    if point_date < target.start_date or point_date > target.due_date
+      or point_value < 0 or point_value > 100
+      or (previous_date is not null and point_date <= previous_date)
+      or (previous_value is not null and point_value < previous_value) then
+      raise exception 'Progress plan points are invalid' using errcode = '22023';
+    end if;
+    previous_date := point_date;
+    previous_value := point_value;
+  end loop;
+  if previous_date <> target.due_date or previous_value <> coalesce(target.target_value, 100) then
+    raise exception 'Progress plan must end at the due-date target' using errcode = '22023';
+  end if;
+  delete from public.progress_baselines where key_result_id = target.id;
+  insert into public.progress_baselines (organization_id, key_result_id, planned_for, planned_value)
+  select target.organization_id, target.id, (value->>'date')::date, (value->>'value')::numeric
+  from jsonb_array_elements(p_points);
+end;
+$$;
+
+create or replace function public.save_milestones(p_project_id uuid, p_milestones jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  target public.projects%rowtype;
+  item jsonb;
+begin
+  select * into target from public.projects p
+  where p.id = p_project_id
+    and p.organization_id = private.current_organization_id()
+    and p.leader_id = auth.uid();
+  if not found then
+    raise exception 'Milestones are not editable by the current user' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_milestones) <> 'array' then
+    raise exception 'Milestones must be an array' using errcode = '22023';
+  end if;
+  delete from public.milestones where project_id = target.id;
+  for item in select value from jsonb_array_elements(p_milestones) loop
+    if length(trim(coalesce(item->>'title', ''))) = 0
+      or (item->>'plannedDate')::date < target.start_date
+      or (item->>'plannedDate')::date > target.due_date then
+      raise exception 'Milestone is outside the project plan' using errcode = '22023';
+    end if;
+    insert into public.milestones (organization_id, project_id, key_result_id, title, planned_date)
+    values (target.organization_id, target.id, nullif(item->>'keyResultId', '')::uuid, item->>'title', (item->>'plannedDate')::date);
+  end loop;
+end;
+$$;
+
+revoke all on function public.save_progress_plan(uuid, jsonb) from public, anon;
+revoke all on function public.save_milestones(uuid, jsonb) from public, anon;
+grant execute on function public.save_progress_plan(uuid, jsonb) to authenticated;
+grant execute on function public.save_milestones(uuid, jsonb) to authenticated;

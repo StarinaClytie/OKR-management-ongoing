@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(25);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -78,6 +78,8 @@ insert into public.collaboration_links (organization_id, grantor_id, grantee_id,
 
 insert into public.objectives (id, organization_id, project_id, owner_id, title, classification, start_date, due_date) values
   ('40000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'Confidential Objective', 'confidential', current_date - 1, current_date + 30);
+insert into public.key_results (id, organization_id, objective_id, project_id, owner_id, title, measurement_type, target_value, classification, start_date, due_date) values
+  ('41000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'Planned KR', 'percentage', 100, 'confidential', current_date - 1, current_date + 30);
 
 insert into public.daily_reports (id, organization_id, author_id, project_id, objective_id, report_date, status, classification, total_hours) values
   ('50000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', current_date, 'submitted', 'confidential', 7.5);
@@ -166,6 +168,23 @@ select throws_ok(
     'Leader update', 20, '[]'::jsonb, '[]'::jsonb
   )$$,
   '42501', 'Daily report is not editable by the current user', 'project leader cannot use RPC to edit member report'
+);
+
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
+select lives_ok(
+  $$select public.save_progress_plan('41000000-0000-0000-0000-000000000001', jsonb_build_array(jsonb_build_object('date', (current_date + 30)::text, 'value', 100)))$$,
+  'KR owner saves a validated progress plan'
+);
+select is((select count(*) from public.progress_baselines where key_result_id = '41000000-0000-0000-0000-000000000001'), 1::bigint, 'save progress plan replaces points atomically');
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
+select lives_ok(
+  $$select public.save_milestones('30000000-0000-0000-0000-000000000001', jsonb_build_array(jsonb_build_object('title', 'Release gate', 'plannedDate', (current_date + 10)::text, 'keyResultId', '41000000-0000-0000-0000-000000000001')))$$,
+  'project leader saves project milestones'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000007', true);
+select throws_ok(
+  $$select public.save_progress_plan('41000000-0000-0000-0000-000000000001', '[]'::jsonb)$$,
+  '42501', 'Progress plan is not editable by the current user', 'unrelated employee cannot replace a progress plan'
 );
 
 select * from finish();

@@ -24,6 +24,8 @@ export class DemoOkrRepository implements OkrRepository {
   async createDailyReport(_input: DailyReportInput) { return unsupported<{ id: string; revision: number }>(); }
   async updateDailyReport(_reportId: string, _expectedRevision: number, _input: DailyReportInput) { return unsupported<{ revision: number }>(); }
   async listReportRevisions(_reportId: string) { return unsupported<unknown[]>(); }
+  async saveProgressPlan(_keyResultId: string, _points: Array<{ date: string; value: number }>) { return unsupported<void>(); }
+  async saveMilestones(_projectId: string, _milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>) { return unsupported<void>(); }
   async beginAttachmentUpload(_input: Record<string, unknown>) { return unsupported<unknown>(); }
   async finalizeAttachmentUpload(_id: string, _checksum?: string) { return unsupported<unknown>(); }
   async replaceAttachment(_id: string, _input: Record<string, unknown>) { return unsupported<unknown>(); }

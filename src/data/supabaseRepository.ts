@@ -98,6 +98,14 @@ export class SupabaseOkrRepository implements OkrRepository {
   async listReportRevisions(reportId: string): Promise<RepositoryResult<unknown[]>> {
     return this.callRpc<unknown[]>('list_report_revisions', { p_report_id: reportId });
   }
+  async saveProgressPlan(keyResultId: string, points: Array<{ date: string; value: number }>): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('save_progress_plan', { p_key_result_id: keyResultId, p_points: points });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async saveMilestones(projectId: string, milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('save_milestones', { p_project_id: projectId, p_milestones: milestones });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
   async beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<unknown>> {
     return this.callRpc('begin_attachment_upload', input);
   }

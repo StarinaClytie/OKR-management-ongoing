@@ -268,8 +268,15 @@ describe('ProjectVisualizationsWidget', () => {
 
     expect(screen.getByText('12 个周度数据点')).toBeVisible();
     expect(screen.getByText('实际进度（实线）')).toBeVisible();
-    expect(screen.getByText('计划进度（虚线）')).toBeVisible();
+    expect(screen.getByText('计划进度（由负责人设置）')).toBeVisible();
     expect(screen.getByText('单位：完成度 %')).toBeVisible();
+    expect(screen.getByText('计算说明').tagName).toBe('SUMMARY');
+  });
+
+  it('labels Gantt baselines as owner-entered planned dates with an explanation disclosure', () => {
+    render(<GanttChartWidget data={leaderData} />);
+    expect(screen.getByText('基准计划（计划日期）')).toBeVisible();
+    expect(screen.getByText('计算说明').tagName).toBe('SUMMARY');
   });
 
   it('falls back to KPI comparison when fewer than eight authorized points remain', () => {

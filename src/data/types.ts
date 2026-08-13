@@ -50,6 +50,8 @@ export interface OkrRepository {
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
   updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>>;
   listReportRevisions(reportId: string): Promise<RepositoryResult<unknown[]>>;
+  saveProgressPlan(keyResultId: string, points: Array<{ date: string; value: number }>): Promise<RepositoryResult<void>>;
+  saveMilestones(projectId: string, milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>): Promise<RepositoryResult<void>>;
   beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<unknown>>;
   finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>>;
   replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>>;
