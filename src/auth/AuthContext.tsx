@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, type PropsWithChildren } from 'react';
 import type { User } from '../domain/types';
+import type { AppMode } from '../data/types';
 import { users } from '../mocks/users';
 
 const selectableUserIds = new Set([
@@ -13,12 +14,15 @@ const selectableUserIds = new Set([
 export const selectableUsers = users.filter((user) => selectableUserIds.has(user.id));
 
 export interface AuthContextValue {
+  status: 'loading' | 'signed_out' | 'unassigned' | 'ready';
+  mode: AppMode;
   currentUser: User | undefined;
   selectableUsers: readonly User[];
   selectUser: (userId: string) => void;
+  signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export interface AuthProviderProps extends PropsWithChildren {
   initialUserId?: string;
@@ -30,8 +34,11 @@ export function AuthProvider({ children, initialUserId = 'user-employee' }: Auth
   const value = useMemo<AuthContextValue>(
     () => ({
       currentUser,
+      status: currentUser ? 'ready' : 'unassigned',
+      mode: 'demo',
       selectableUsers,
       selectUser: setCurrentUserId,
+      signOut: async () => undefined,
     }),
     [currentUser],
   );
