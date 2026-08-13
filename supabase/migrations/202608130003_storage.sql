@@ -72,7 +72,7 @@ create or replace function public.begin_attachment_upload(
   p_byte_size integer,
   p_classification public.classification
 )
-returns uuid
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
@@ -117,12 +117,16 @@ begin
     p_classification,
     'pending'
   );
-  return attachment_id;
+  return jsonb_build_object(
+    'id', attachment_id,
+    'path', format('organization/%s/reports/%s/%s/%s', target_report.organization_id, target_report.id, attachment_id, safe_name),
+    'bucket', 'report-attachments'
+  );
 end;
 $$;
 
 create or replace function public.finalize_attachment_upload(p_attachment_id uuid, p_checksum text default null)
-returns uuid
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
@@ -159,7 +163,7 @@ begin
       and uploader_id = auth.uid()
       and state = 'uploaded';
   end if;
-  return target.id;
+  return jsonb_build_object('id', target.id);
 end;
 $$;
 
@@ -170,23 +174,23 @@ create or replace function public.replace_attachment(
   p_byte_size integer,
   p_classification public.classification
 )
-returns uuid
+returns jsonb
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
   old_attachment public.report_attachments%rowtype;
-  new_attachment_id uuid;
+  new_attachment jsonb;
 begin
   select * into old_attachment from public.report_attachments
   where id = p_attachment_id and uploader_id = auth.uid() and state = 'uploaded';
   if not found then
     raise exception 'Attachment is not available for replacement' using errcode = '42501';
   end if;
-  new_attachment_id := public.begin_attachment_upload(old_attachment.report_id, p_original_name, p_mime_type, p_byte_size, p_classification);
-  update public.report_attachments set replacement_for_id = old_attachment.id where id = new_attachment_id;
-  return new_attachment_id;
+  new_attachment := public.begin_attachment_upload(old_attachment.report_id, p_original_name, p_mime_type, p_byte_size, p_classification);
+  update public.report_attachments set replacement_for_id = old_attachment.id where id = (new_attachment->>'id')::uuid;
+  return new_attachment;
 end;
 $$;
 

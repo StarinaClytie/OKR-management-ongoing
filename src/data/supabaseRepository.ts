@@ -1,6 +1,6 @@
 import type { DashboardData } from '../mocks/repository';
 import type { DailyReport, Role, User } from '../domain/types';
-import type { DailyReportInput, OkrRepository, RepositoryErrorCode, RepositoryResult, SupabaseClientLike } from './types';
+import type { AttachmentUploadTarget, DailyReportInput, OkrRepository, RepositoryErrorCode, RepositoryResult, SupabaseClientLike } from './types';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
 interface ProfileQuery {
@@ -115,8 +115,8 @@ export class SupabaseOkrRepository implements OkrRepository {
     });
     return result.ok ? { ok: true, data: { id: result.data } } : result;
   }
-  async beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<unknown>> {
-    return this.callRpc('begin_attachment_upload', input);
+  async beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>> {
+    return this.callRpc<AttachmentUploadTarget>('begin_attachment_upload', input);
   }
   async finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>> {
     return this.callRpc('finalize_attachment_upload', { p_attachment_id: id, p_checksum: checksum ?? null });
@@ -127,7 +127,10 @@ export class SupabaseOkrRepository implements OkrRepository {
   async removeAttachment(id: string): Promise<RepositoryResult<void>> {
     return this.callRpc('soft_delete_attachment', { p_attachment_id: id });
   }
-  async createAttachmentDownload(id: string): Promise<RepositoryResult<unknown>> {
-    return this.callRpc('create_attachment_download', { p_attachment_id: id });
+  async createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>> {
+    const authorized = await this.callRpc<{ bucket: string; path: string; expiresIn: number }>('create_attachment_download', { p_attachment_id: id });
+    if (!authorized.ok) return authorized;
+    const signed = await this.client.storage.from(authorized.data.bucket).createSignedUrl(authorized.data.path, authorized.data.expiresIn);
+    return signed.error || !signed.data ? failure(signed.error) : { ok: true, data: { url: signed.data.signedUrl } };
   }
 }

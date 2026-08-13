@@ -26,8 +26,16 @@ export interface SupabaseClientLike {
   };
   from(table: string): unknown;
   rpc(functionName: string, args?: Record<string, unknown>): unknown;
-  storage: unknown;
+  storage: {
+    from(bucket: string): {
+      upload(path: string, file: File, options?: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
+      createSignedUrl(path: string, expiresIn: number): Promise<{ data: { signedUrl: string } | null; error: { message: string } | null }>;
+      remove(paths: string[]): Promise<{ data: unknown; error: { message: string } | null }>;
+    };
+  };
 }
+
+export interface AttachmentUploadTarget { id: string; path: string; bucket: 'report-attachments' }
 
 export interface DailyReportInput {
   projectId: string;
@@ -53,9 +61,9 @@ export interface OkrRepository {
   saveProgressPlan(keyResultId: string, points: Array<{ date: string; value: number }>): Promise<RepositoryResult<void>>;
   saveMilestones(projectId: string, milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>): Promise<RepositoryResult<void>>;
   saveRisk(input: { projectId: string; title: string; probability: 1 | 2 | 3; impact: 1 | 2 | 3; reason: string; mitigation: string; lastReviewedAt: string; classification: Classification }): Promise<RepositoryResult<{ id: string }>>;
-  beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<unknown>>;
+  beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>>;
   finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>>;
   replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>>;
   removeAttachment(id: string): Promise<RepositoryResult<void>>;
-  createAttachmentDownload(id: string): Promise<RepositoryResult<unknown>>;
+  createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>>;
 }

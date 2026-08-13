@@ -27,9 +27,9 @@ export class DemoOkrRepository implements OkrRepository {
   async saveProgressPlan(_keyResultId: string, _points: Array<{ date: string; value: number }>) { return unsupported<void>(); }
   async saveMilestones(_projectId: string, _milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>) { return unsupported<void>(); }
   async saveRisk(_input: { projectId: string; title: string; probability: 1 | 2 | 3; impact: 1 | 2 | 3; reason: string; mitigation: string; lastReviewedAt: string; classification: import('../domain/types').Classification }) { return unsupported<{ id: string }>(); }
-  async beginAttachmentUpload(_input: Record<string, unknown>) { return unsupported<unknown>(); }
+  async beginAttachmentUpload(_input: Record<string, unknown>) { return unsupported<import('./types').AttachmentUploadTarget>(); }
   async finalizeAttachmentUpload(_id: string, _checksum?: string) { return unsupported<unknown>(); }
   async replaceAttachment(_id: string, _input: Record<string, unknown>) { return unsupported<unknown>(); }
   async removeAttachment(_id: string) { return unsupported<void>(); }
-  async createAttachmentDownload(_id: string) { return unsupported<unknown>(); }
+  async createAttachmentDownload(_id: string) { return unsupported<{ url: string }>(); }
 }

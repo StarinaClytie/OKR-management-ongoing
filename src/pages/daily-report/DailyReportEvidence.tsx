@@ -1,5 +1,7 @@
 import type { DailyEvidenceDraft } from '../../domain/dailyEntry';
 import type { Classification, Objective } from '../../domain/types';
+import { validateAttachment } from '../../services/attachmentService';
+import { AttachmentList } from './AttachmentList';
 
 interface DailyReportEvidenceProps {
   objectives: readonly Objective[];
@@ -39,6 +41,16 @@ export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, o
         <h3>成果附件或链接</h3>
         <button type="button" className="button button--secondary" onClick={addEvidence}>添加成果附件或链接</button>
       </div>
+      <label className="button button--secondary">选择附件
+        <input className="sr-only" aria-label="选择成果附件" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.txt" onChange={(event) => {
+          const selected = Array.from(event.target.files ?? []).map((file, index): DailyEvidenceDraft => {
+            const error = validateAttachment(file);
+            return { id: `file-${Date.now()}-${index}`, label: file.name, kind: 'file', classification: 'internal', file, uploadState: error ? 'failed' : 'selected', uploadProgress: 0, error: error?.message };
+          });
+          onEvidenceChange([...evidence, ...selected]);
+        }} />
+      </label>
+      <AttachmentList items={evidence.filter((item) => item.kind === 'file')} onRemove={(id) => onEvidenceChange(evidence.filter((item) => item.id !== id))} />
       {evidence.map((item, index) => {
         const number = index + 1;
         const errorFor = (field: 'label' | 'kind' | 'classification') => errors[`evidence.${index}.${field}`];

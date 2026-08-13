@@ -37,7 +37,7 @@ describe('createRepository', () => {
       },
       from: vi.fn(),
       rpc: vi.fn(),
-      storage: {},
+      storage: { from: vi.fn(() => ({ upload: vi.fn(), createSignedUrl: vi.fn(), remove: vi.fn() })) },
     };
     const createSupabaseClient = vi.fn(() => client);
     const repository = createRepository({

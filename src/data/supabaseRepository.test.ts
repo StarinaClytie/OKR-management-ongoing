@@ -7,6 +7,7 @@ function createClient(options?: {
   profileError?: { code?: string; message: string } | null;
   rpcData?: unknown;
   rpcError?: { code?: string; message: string } | null;
+  signedUrl?: string;
 }) {
   const response = { data: options?.profile ?? null, error: options?.profileError ?? null };
   const builder = {
@@ -17,6 +18,8 @@ function createClient(options?: {
   builder.select.mockReturnValue(builder);
   builder.eq.mockReturnValue(builder);
   const rpc = vi.fn(async () => ({ data: options?.rpcData ?? null, error: options?.rpcError ?? null }));
+  const createSignedUrl = vi.fn(async () => ({ data: options?.signedUrl ? { signedUrl: options.signedUrl } : null, error: options?.signedUrl ? null : { message: 'not configured' } }));
+  const storageFrom = vi.fn(() => ({ upload: vi.fn(), createSignedUrl, remove: vi.fn() }));
   const client: SupabaseClientLike = {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: { user: { id: 'profile-1' } } }, error: null })),
@@ -25,9 +28,9 @@ function createClient(options?: {
     } as never,
     from: vi.fn(() => builder),
     rpc,
-    storage: {},
+    storage: { from: storageFrom },
   };
-  return { client, rpc };
+  return { client, rpc, storageFrom, createSignedUrl };
 }
 
 describe('SupabaseOkrRepository', () => {
@@ -100,5 +103,16 @@ describe('SupabaseOkrRepository', () => {
     });
     expect(result).toEqual({ ok: true, data: { id: 'risk-1' } });
     expect(rpc).toHaveBeenCalledWith('save_risk', expect.objectContaining({ p_probability: 2, p_impact: 3, p_reason: '依赖延期' }));
+  });
+
+  it('authorizes then creates a short-lived signed attachment URL', async () => {
+    const { client, storageFrom, createSignedUrl } = createClient({
+      rpcData: { bucket: 'report-attachments', path: 'organization/o/reports/r/a.pdf', expiresIn: 60 },
+      signedUrl: 'https://storage.example/signed',
+    });
+    const result = await new SupabaseOkrRepository(client).createAttachmentDownload('attachment-1');
+    expect(result).toEqual({ ok: true, data: { url: 'https://storage.example/signed' } });
+    expect(storageFrom).toHaveBeenCalledWith('report-attachments');
+    expect(createSignedUrl).toHaveBeenCalledWith('organization/o/reports/r/a.pdf', 60);
   });
 });
