@@ -82,4 +82,27 @@ describe('prepareVisualizationData', () => {
       ]),
     );
   });
+
+  it('derives an Objective status from its directly linked unresolved critical risk', () => {
+    const source = mockRepository.getDashboardData('user-project-leader');
+    const objective = source.objectives.find((candidate) => candidate.id === 'objective-orion-activation')!;
+    const criticalRisk = {
+      ...source.risks[0]!,
+      id: 'objective-critical-risk',
+      objectiveId: objective.id,
+      keyResultId: undefined,
+      probability: 3 as const,
+      impact: 3 as const,
+      resolved: false,
+    };
+    const prepared = prepareVisualizationData({
+      ...source,
+      objectives: source.objectives.map((candidate) => candidate.id === objective.id
+        ? { ...candidate, progress: 100, status: 'complete' as const }
+        : candidate),
+      risks: [criticalRisk],
+    });
+
+    expect(prepared.alignmentProjects[0]?.objectives[0]?.status).toBe('off_track');
+  });
 });

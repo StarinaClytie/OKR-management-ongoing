@@ -132,6 +132,58 @@ describe('business route frameworks', () => {
     expect(screen.queryByText('存在未解决的严重风险（风险分 9）')).not.toBeInTheDocument();
   });
 
+  it('uses one derived KR status in both the main table and detail explanation', async () => {
+    const employee = mockData.users.find((candidate) => candidate.id === 'user-employee')!;
+    const base = mockRepository.getDashboardData(employee.id);
+    const keyResult = base.keyResults.find((candidate) => candidate.id === 'kr-orion-onboarding')!;
+    const criticalRisk = {
+      ...mockData.risks[0]!,
+      id: 'kr-critical-risk',
+      keyResultId: keyResult.id,
+      objectiveId: undefined,
+      probability: 3 as const,
+      impact: 3 as const,
+      resolved: false,
+    };
+    const data = {
+      ...base,
+      keyResults: base.keyResults.map((candidate) => candidate.id === keyResult.id
+        ? { ...candidate, progress: 100, status: 'complete' as const }
+        : candidate),
+      risks: [criticalRisk],
+      progressSnapshots: [],
+    };
+    const dataRepository = { mode: 'supabase', getDashboardData: vi.fn().mockResolvedValue({ ok: true, data }) } as unknown as OkrRepository;
+    const authValue: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: employee, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(<AuthContext.Provider value={authValue}><MemoryRouter><OkrManagementPage dataRepository={dataRepository} /></MemoryRouter></AuthContext.Provider>);
+
+    const table = await screen.findByRole('table', { name: '授权关键结果' });
+    const row = within(table).getByText(keyResult.title).closest('tr');
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText('已偏离')).toBeVisible();
+    expect(screen.getAllByText('已偏离')).toHaveLength(2);
+    expect(screen.getByText('存在未解决的严重风险（风险分 9）')).toBeVisible();
+  });
+
+  it('reuses the explained risk matrix and limits it to the selected project', async () => {
+    const user = userEvent.setup();
+    const manager = mockData.users.find((candidate) => candidate.id === 'user-management')!;
+    const data = mockRepository.getDashboardData(manager.id);
+    const dataRepository = { mode: 'supabase', getDashboardData: vi.fn().mockResolvedValue({ ok: true, data }) } as unknown as OkrRepository;
+    const authValue: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: manager, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(<AuthContext.Provider value={authValue}><MemoryRouter><OkrManagementPage dataRepository={dataRepository} /></MemoryRouter></AuthContext.Provider>);
+
+    await user.click(await screen.findByRole('link', { name: '查看完整风险矩阵' }));
+    const matrix = screen.getByRole('region', { name: '完整风险矩阵' });
+    expect(await within(matrix).findByText('风险事件 ≠ 执行状态')).toBeVisible();
+    expect(within(matrix).getByText('实验样本量不足')).toBeVisible();
+    expect(within(matrix).queryByText('源系统字段缺失')).not.toBeInTheDocument();
+
+    await user.selectOptions(within(matrix).getByLabelText('矩阵项目'), 'project-nova');
+    expect(within(matrix).getByText('源系统字段缺失')).toBeVisible();
+    expect(within(matrix).queryByText('实验样本量不足')).not.toBeInTheDocument();
+  });
+
   it('keeps a confirmed KR write successful when the post-write refetch throws', async () => {
     const user = userEvent.setup();
     const employee = mockData.users.find((candidate) => candidate.id === 'user-employee')!;

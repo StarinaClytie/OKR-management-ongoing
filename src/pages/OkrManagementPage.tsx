@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
@@ -8,8 +8,8 @@ import { ProgressRing } from '../components/ProgressRing';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatusExplanation } from '../components/StatusExplanation';
 import type { OkrRepository, OwnedRiskInput, RepositoryResult } from '../data/types';
-import { deriveProgressStatus } from '../domain/progressStatus';
-import type { KeyResult, Risk } from '../domain/types';
+import { deriveExecutionStatuses } from '../domain/progressStatus';
+import type { Risk } from '../domain/types';
 import { repository } from '../lib/supabase';
 import { mockRepository, type DashboardData } from '../mocks/repository';
 import { KrProgressEditor } from './KrProgressEditor';
@@ -17,18 +17,15 @@ import { getEditableRiskSubjects, RiskEditor, type RiskEditorInput } from './Ris
 import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
 
+const RiskMatrixWidget = lazy(async () => {
+  const module = await import('../dashboard/widgets/RiskMatrixWidget');
+  return { default: module.RiskMatrixWidget };
+});
+
 function riskStatus(input: Pick<OwnedRiskInput, 'probability' | 'impact' | 'resolved'>): Risk['status'] {
   if (input.resolved) return 'on_track';
   const score = input.probability * input.impact;
   return score === 9 ? 'off_track' : score >= 6 ? 'at_risk' : 'on_track';
-}
-
-function businessDate(): string {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
-  return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
 export function OkrManagementPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
@@ -44,6 +41,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
   const [activeEditor, setActiveEditor] = useState<'progress' | 'risk' | null>(null);
   const [editingRisk, setEditingRisk] = useState<Risk | undefined>();
   const [resolvingRiskId, setResolvingRiskId] = useState<string>();
+  const [selectedMatrixProjectId, setSelectedMatrixProjectId] = useState('');
 
   const refresh = useCallback(async (): Promise<boolean> => {
     if (!currentUser) return false;
@@ -85,10 +83,18 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
   if (!data) return null;
   const dashboardData = data;
   const signedInUser = currentUser;
+  const readableRisks = mode === 'supabase'
+    ? dashboardData.risks
+    : dashboardData.risks.filter((risk) => can(signedInUser, 'risk.read', risk).allowed);
+  const executionStatuses = deriveExecutionStatuses({ ...dashboardData, risks: readableRisks });
+  const derivedKeyResults = dashboardData.keyResults.map((keyResult) => ({
+    ...keyResult,
+    status: executionStatuses.keyResults.get(keyResult.id)?.status ?? keyResult.status,
+  }));
 
   const keyResults = mode === 'supabase'
-    ? dashboardData.keyResults
-    : dashboardData.keyResults.filter((keyResult) => can(signedInUser, 'okr.read_detail', keyResult).allowed);
+    ? derivedKeyResults
+    : derivedKeyResults.filter((keyResult) => can(signedInUser, 'okr.read_detail', keyResult).allowed);
   const ownKeyResults = keyResults.filter((keyResult) => keyResult.ownerId === currentUser.id);
   const ledProjectIds = new Set(data.projects.filter((project) => project.leaderId === currentUser.id).map((project) => project.id));
   const editableSubjectKeys = new Set(editableRiskSubjects.map((subject) => `${subject.type}:${subject.id}`));
@@ -98,31 +104,17 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     return (risk.keyResultId && editableSubjectKeys.has(`key_result:${risk.keyResultId}`))
       || (risk.objectiveId && editableSubjectKeys.has(`objective:${risk.objectiveId}`));
   });
-  const visibleMatrixRisks = mode === 'supabase'
-    ? data.risks
-    : data.risks.filter((risk) => can(signedInUser, 'risk.read', risk).allowed);
+  const matrixProjects = dashboardData.projects.filter((project) => (
+    mode === 'supabase' || can(signedInUser, 'okr.read_summary', project).allowed
+  ));
+  const matrixProjectId = matrixProjects.some((project) => project.id === selectedMatrixProjectId)
+    ? selectedMatrixProjectId
+    : matrixProjects[0]?.id ?? '';
+  const selectedProjectMatrixData = {
+    ...dashboardData,
+    risks: readableRisks.filter((risk) => risk.projectId === matrixProjectId),
+  };
   const showFullMatrix = searchParams.get('view') === 'risk-matrix';
-
-  function statusFor(keyResult: KeyResult) {
-    const today = businessDate();
-    const plannedPoints = dashboardData.progressSnapshots
-      .filter((snapshot) => snapshot.keyResultId === keyResult.id && snapshot.weekOf <= today)
-      .sort((left, right) => left.weekOf.localeCompare(right.weekOf));
-    const latestPlan = plannedPoints.filter((snapshot) => snapshot.actual === undefined || snapshot.planned !== 0).at(-1);
-    const plannedProgress = latestPlan?.planned ?? keyResult.progress;
-    const attachedRisks = dashboardData.risks.filter((risk) => risk.keyResultId === keyResult.id);
-    return deriveProgressStatus({
-      actualProgress: keyResult.progress,
-      plannedProgress,
-      evaluationDate: today,
-      dueDate: keyResult.dueDate,
-      explicitlyComplete: keyResult.status === 'complete',
-      milestones: dashboardData.milestones
-        .filter((milestone) => milestone.dependencyIds.includes(keyResult.id))
-        .map((milestone) => ({ dueDate: milestone.dueDate, isComplete: milestone.status === 'complete' })),
-      risks: attachedRisks.map((risk) => ({ score: risk.probability * risk.impact, resolved: risk.resolved })),
-    });
-  }
 
   async function saveProgress(input: Parameters<OkrRepository['saveKrProgress']>[0]) {
     setNotice(null);
@@ -249,7 +241,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
           ) && (mode === 'supabase' || can(signedInUser, 'risk.read', risk).allowed));
           return <article className="form-card" key={keyResult.id}>
             <h3>{keyResult.title}</h3>
-            <StatusExplanation result={statusFor(keyResult)} />
+            <StatusExplanation result={executionStatuses.keyResults.get(keyResult.id) ?? { status: keyResult.status, reasons: [] }} />
             <section aria-label={t('okr.relatedRiskLabel', { title: keyResult.title })}>
               <h4>{t('okr.relatedRisks')}</h4>
               {attachedRisks.length > 0
@@ -263,18 +255,15 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
         <div className="filter-row"><h2>{t('okr.relatedEvents')}</h2><Link className="button button--secondary" to="/okrs?view=risk-matrix">{t('okr.viewFullMatrix')}</Link></div>
         {showFullMatrix && <section className="risk-matrix-wrap" role="region" aria-label={t('okr.fullMatrix')}>
           <h3>{t('okr.fullMatrix')}</h3>
-          <div className="risk-matrix" aria-label={t('okr.matrixLabel')}>
-            <span className="risk-matrix__axis risk-matrix__axis--y">{t('risk.probabilityAxis')}</span>
-            <div className="risk-matrix__grid">
-              {([3, 2, 1] as const).flatMap((probability) => ([1, 2, 3] as const).map((impact) => {
-                const cellRisks = visibleMatrixRisks.filter((risk) => risk.probability === probability && risk.impact === impact);
-                return <div className={`risk-cell risk-cell--level-${probability + impact}`} key={`${probability}-${impact}`} aria-label={t('okr.matrixCell', { probability, impact })}>
-                  {cellRisks.map((risk) => <span className="risk-marker" key={risk.id}><strong>{risk.title}</strong></span>)}
-                </div>;
-              }))}
-            </div>
-            <span className="risk-matrix__axis risk-matrix__axis--x">{t('risk.impactAxis')}</span>
-          </div>
+          {matrixProjects.length > 0 && <label className="filter-row">
+            <span>{t('okr.matrixProject')}</span>
+            <select aria-label={t('okr.matrixProject')} value={matrixProjectId} onChange={(event) => setSelectedMatrixProjectId(event.target.value)}>
+              {matrixProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </label>}
+          <Suspense fallback={<p role="status">{t('visualization.loading')}</p>}>
+            <RiskMatrixWidget data={selectedProjectMatrixData} />
+          </Suspense>
         </section>}
         <DataTable
           ariaLabel={t('okr.manageableRisks')}

@@ -5,6 +5,8 @@ import { ProgressRing } from '../../components/ProgressRing';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useLocale } from '../../i18n/LocaleProvider';
+import { can } from '../../auth/permissionService';
+import { deriveExecutionStatuses } from '../../domain/progressStatus';
 
 export interface MyKeyResultsWidgetProps {
   data: DashboardData;
@@ -14,6 +16,10 @@ export function MyKeyResultsWidget({ data }: MyKeyResultsWidgetProps) {
   const { t } = useLocale();
   const navigate = useNavigate();
   const ownedKeyResults = data.keyResults.filter((keyResult) => keyResult.ownerId === data.currentUser.id);
+  const executionStatuses = deriveExecutionStatuses({
+    ...data,
+    risks: data.risks.filter((risk) => can(data.currentUser, 'risk.read', risk).allowed),
+  });
 
   return (
     <section className="dashboard-widget" aria-labelledby="my-key-results-title">
@@ -40,7 +46,7 @@ export function MyKeyResultsWidget({ data }: MyKeyResultsWidgetProps) {
                 <strong>{keyResult.title}</strong>
                 <span>{t('myKr.due', { date: keyResult.dueDate })}</span>
               </div>
-              <StatusBadge status={keyResult.status} />
+              <StatusBadge status={executionStatuses.keyResults.get(keyResult.id)?.status ?? keyResult.status} />
             </article>
           </PermissionGate>
         ))}

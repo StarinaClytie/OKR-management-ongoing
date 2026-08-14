@@ -9,6 +9,7 @@ import type {
 } from '../../domain/types';
 import type { DashboardData } from '../../mocks/repository';
 import { scoreRisk } from '../../domain/riskScore';
+import { deriveExecutionStatuses } from '../../domain/progressStatus';
 
 export interface PreparedKeyResult {
   id: string;
@@ -103,14 +104,19 @@ function resolveUserName(data: DashboardData, userId: string, unknownMember: str
   return data.users.find((user) => user.id === userId)?.name ?? unknownMember;
 }
 
-function prepareKeyResult(data: DashboardData, keyResult: KeyResult, unknownMember: string): PreparedKeyResult {
+function prepareKeyResult(
+  data: DashboardData,
+  keyResult: KeyResult,
+  unknownMember: string,
+  status: ProgressStatus,
+): PreparedKeyResult {
   return {
     id: keyResult.id,
     title: keyResult.title,
     ownerName: resolveUserName(data, keyResult.ownerId, unknownMember),
     isCurrentUser: keyResult.ownerId === data.currentUser.id,
     progress: keyResult.progress,
-    status: keyResult.status,
+    status,
     startDate: keyResult.startDate,
     dueDate: keyResult.dueDate,
   };
@@ -146,8 +152,20 @@ export function prepareVisualizationData(data: DashboardData, fallbacks: Visuali
     (keyResult) => visibleObjectiveIds.has(keyResult.objectiveId) && canReadKeyResult(data, keyResult),
   );
   const visibleKeyResultIds = new Set(visibleKeyResults.map((keyResult) => keyResult.id));
+  const readableRisks = data.risks.filter((risk) => can(data.currentUser, 'risk.read', risk).allowed);
+  const readableMilestones = data.milestones.filter((milestone) => canReadMilestone(data, milestone));
+  const executionStatuses = deriveExecutionStatuses({
+    ...data,
+    risks: readableRisks,
+    milestones: readableMilestones,
+  });
 
-  const preparedKeyResults = visibleKeyResults.map((keyResult) => prepareKeyResult(data, keyResult, unknownMember));
+  const preparedKeyResults = visibleKeyResults.map((keyResult) => prepareKeyResult(
+    data,
+    keyResult,
+    unknownMember,
+    executionStatuses.keyResults.get(keyResult.id)?.status ?? keyResult.status,
+  ));
   const preparedKeyResultsById = new Map(preparedKeyResults.map((keyResult) => [keyResult.id, keyResult]));
 
   const alignmentProjects = visibleProjects.map((project): PreparedAlignmentProject => {
@@ -176,7 +194,7 @@ export function prepareVisualizationData(data: DashboardData, fallbacks: Visuali
           title: objective.title,
           ownerName: resolveUserName(data, objective.ownerId, unknownMember),
           progress: objective.progress,
-          status: objective.status,
+          status: executionStatuses.objectives.get(objective.id)?.status ?? objective.status,
           keyResults: objectiveKeyResults
             .filter((keyResult) => visibleKeyResultIds.has(keyResult.id))
             .map((keyResult) => preparedKeyResultsById.get(keyResult.id)!),
@@ -213,8 +231,7 @@ export function prepareVisualizationData(data: DashboardData, fallbacks: Visuali
         .sort((left, right) => left.weekOf.localeCompare(right.weekOf))
     : [];
 
-  const risks = data.risks
-    .filter((risk) => can(data.currentUser, 'risk.read', risk).allowed)
+  const risks = readableRisks
     .map((risk): PreparedRisk => ({
       id: risk.id,
       title: risk.title,

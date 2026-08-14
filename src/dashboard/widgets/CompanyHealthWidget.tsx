@@ -6,6 +6,7 @@ import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
 import type { DashboardData } from '../../mocks/repository';
 import { useLocale } from '../../i18n/LocaleProvider';
+import { deriveExecutionStatuses } from '../../domain/progressStatus';
 
 export interface CompanyHealthWidgetProps {
   data: DashboardData;
@@ -19,6 +20,7 @@ export function CompanyHealthWidget({ data }: CompanyHealthWidgetProps) {
   const visibleRisks = data.risks.filter(
     (risk) => risk.classification !== 'restricted' && visibleProjectIds.has(risk.projectId),
   );
+  const executionStatuses = deriveExecutionStatuses({ ...data, risks: visibleRisks });
   const averageProgress = visibleObjectives.length === 0
     ? 0
     : Math.round(visibleObjectives.reduce((total, objective) => total + objective.progress, 0) / visibleObjectives.length);
@@ -52,7 +54,7 @@ export function CompanyHealthWidget({ data }: CompanyHealthWidgetProps) {
               </div>
               <div className="objective-row__status">
                 <ConfidentialityBadge classification={objective.classification} />
-                <StatusBadge status={objective.status} />
+                <StatusBadge status={executionStatuses.objectives.get(objective.id)?.status ?? objective.status} />
               </div>
             </article>
           </PermissionGate>

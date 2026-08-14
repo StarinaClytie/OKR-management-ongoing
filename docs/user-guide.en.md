@@ -49,7 +49,7 @@ Event severity is: 1–2 low, 3–4 medium, 6 high, and 9 critical. For example,
 
 ## 5. Risk events and execution status: related, but different
 
-An event's matrix severity is not the same thing as the execution status shown for a KR or Objective (on track, at risk, off track, or complete). A medium event with a score of 1–4 stays visible and actionable in the matrix, but does not by itself make the OKR at risk.
+An event's matrix severity is not the same thing as the execution status shown for a KR or Objective (on track, at risk, off track, or complete). A low- or medium-severity event with a score of 1–4 stays visible and actionable in the matrix, but does not by itself make the OKR at risk.
 
 Execution status applies parallel rules and the **most severe** applicable outcome wins:
 

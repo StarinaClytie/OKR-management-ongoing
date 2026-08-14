@@ -190,6 +190,6 @@ describe('application locale', () => {
 
     await user.click(screen.getByRole('link', { name: 'View Full Risk Matrix' }));
     expect(screen.getByRole('region', { name: 'Full Risk Matrix' })).toBeVisible();
-    expect(screen.getByLabelText('Probability 3, impact 3')).toBeInTheDocument();
+    expect(await screen.findByLabelText('High probability, High impact, risk score 9')).toBeInTheDocument();
   });
 });
