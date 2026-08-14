@@ -71,7 +71,8 @@ describe('verify-supabase-config', () => {
     expect(packageManifest.scripts['build:production']).toBe('node scripts/build-production.mjs');
     expect(productionBuilder).toMatch(/verify-supabase-config\.mjs', '--production/);
     expect(productionBuilder).toMatch(/\['run', 'build'\]/);
-    expect(productionBuilder).toMatch(/env: process\.env/);
+    expect(productionBuilder).toMatch(/loadProductionEnv/);
+    expect(productionBuilder).toMatch(/env: productionEnv/);
   });
 
   test('provides a network-free Supabase-mode workflow smoke harness', () => {

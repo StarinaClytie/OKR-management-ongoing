@@ -51,7 +51,8 @@ npx supabase db lint --linked
 
 ```dotenv
 VITE_APP_MODE=supabase
-# 将下面两个变量从 Supabase Project Settings > API 注入受保护的构建环境：
+# 将下面两个变量从 Supabase Project Settings > API 注入受保护的构建环境，
+# 或只写入不提交 Git 的 .env.production.local：
 # VITE_SUPABASE_URL
 # VITE_SUPABASE_ANON_KEY
 ```
@@ -66,7 +67,7 @@ npm run build:production
 
 将 `dist/` 原子切换到 Nginx 站点目录；SPA 必须配置 `try_files $uri $uri/ /index.html`。保留上一个 release 目录和当前 commit SHA，失败时把软链接切回上一版本并 reload Nginx。不要在服务器直接 `git pull` 覆盖正在服务的目录。
 
-`build:production` 会在同一组构建环境变量下先调用 `--production`，再运行构建；它拒绝 `VITE_APP_MODE=demo`、首尾空白、示例/占位值、格式错误 key 和 service-role/secret-shaped key，并且不打印 publishable/anon key。它只验证前端变量和文档，不会连接或修改 Supabase。不要把 URL 或 key 的示例值复制到 shell 命令；从受保护的构建环境注入实际值。真实 KR 保存、风险事件保存和 RLS 需要在已经应用迁移的 Supabase 环境中验收。
+`build:production` 按 Vite 生产模式读取 `.env`、`.env.local`、`.env.production`、`.env.production.local`，后面的文件覆盖前面的文件，CI/服务器注入的同名变量优先级最高；它会在这一组变量下先调用 `--production`，再运行构建。它拒绝 `VITE_APP_MODE=demo`、首尾空白、示例/占位值、格式错误 key 和 service-role/secret-shaped key，并且不打印 publishable/anon key。它只验证前端变量和文档，不会连接或修改 Supabase。不要把 URL 或 key 的示例值复制到 shell 命令；从受保护的构建环境注入实际值。真实 KR 保存、风险事件保存和 RLS 需要在已经应用迁移的 Supabase 环境中验收。
 
 `npm run test:smoke:real` 是本地、无网络的 Supabase 模式 UI 测试装置。它以受控内存仓库验证员工 KR 保存、风险新增/编辑/解决和矩阵呈现、项目负责人全项目范围、员工/HR 项目非披露、通用直达拒绝页、中英文切换与响应式可达性。它不会连接 Supabase，不能替代迁移批准后的真实生产冒烟。
 

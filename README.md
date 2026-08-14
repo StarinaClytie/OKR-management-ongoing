@@ -34,6 +34,8 @@ VITE_SUPABASE_ANON_KEY=
 
 `demo` 不构造 Supabase 客户端，也不会上传数据；`supabase` 必须配置公开 URL 和 publishable/anon key。前端绝不能配置 service-role key 或数据库密码。
 
+`npm run build:production` 按 Vite 的生产模式读取 `.env`、`.env.local`、`.env.production` 和 `.env.production.local`，后面的文件覆盖前面的文件；由 CI 或服务器注入的同名环境变量优先级最高。生产密钥应由受保护的 CI/服务器环境注入，或仅放在不提交 Git 的 `.env.production.local`。
+
 ## 演示方式与真实写入
 
 顶栏的“演示角色”切换器仅在 `demo` 模式中可用，可在管理员、管理层、项目负责人、员工和 HR 五种模拟身份间切换。每种角色会看到其权限范围内的仪表盘和导航；当路由权限被拒绝时，应用会显示不泄露资源信息的通用访问受限页面。顶栏的“中文 / English”可即时切换界面语言，首次访问默认中文。
@@ -66,6 +68,6 @@ npx supabase db lint
 npm run build:production
 ```
 
-`build:production` 会在**同一组环境变量**下先运行 `--production` 配置校验，再构建 `dist/`；不要将示例、占位值或高权限密钥放入 shell 命令。生产构建输出到 `dist/`，可由 Nginx 作为 SPA 静态站点托管。未获明确批准前，不要执行 `supabase db push` 或覆盖线上站点。
+`build:production` 会在**同一组 Vite 生产环境变量**下先运行 `--production` 配置校验，再构建 `dist/`；不要将示例、占位值或高权限密钥放入 shell 命令。生产构建输出到 `dist/`，可由 Nginx 作为 SPA 静态站点托管。未获明确批准前，不要执行 `supabase db push` 或覆盖线上站点。
 
 `npm run test:smoke:real` 是一个无网络、无真实写入的 Supabase 模式交互测试装置。它以受控内存仓库验证 KR 保存、风险创建/编辑/解决与矩阵位置、负责人范围、权限非披露、语言切换和直达拒绝页；它不能替代已获批准后的真实 Supabase 验收。
