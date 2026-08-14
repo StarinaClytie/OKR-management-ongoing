@@ -1,6 +1,8 @@
 # Northstar OKR
 
-一个中文优先的企业 OKR 应用，提供角色化仪表盘、结构化日报、计划进度、风险解释、修订历史，以及由 Supabase RLS 和私有 Storage 保护的附件。
+一个中文优先、可即时切换 English 的企业 OKR 应用，提供角色化仪表盘、真实 KR 进度历史、风险事件矩阵与执行状态解释、结构化日报、修订历史，以及由 Supabase RLS 和私有 Storage 保护的附件。
+
+用户操作与权限说明见[中文用户指南](docs/user-guide.zh-CN.md)和[English user guide](docs/user-guide.en.md)。
 
 ## 本地运行
 
@@ -30,11 +32,11 @@ VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
 
 `demo` 不构造 Supabase 客户端，也不会上传数据；`supabase` 必须配置公开 URL 和 publishable/anon key。前端绝不能配置 service-role key 或数据库密码。
 
-## 演示方式
+## 演示方式与真实写入
 
-顶栏的“演示角色”切换器可在管理员、管理层、项目负责人、员工和 HR 五种模拟身份间切换。每种角色会看到其权限范围内的仪表盘和导航；当路由权限被拒绝时，应用会显示访问受限页面。
+顶栏的“演示角色”切换器仅在 `demo` 模式中可用，可在管理员、管理层、项目负责人、员工和 HR 五种模拟身份间切换。每种角色会看到其权限范围内的仪表盘和导航；当路由权限被拒绝时，应用会显示不泄露资源信息的通用访问受限页面。顶栏的“中文 / English”可即时切换界面语言，首次访问默认中文。
 
-项目负责人可以填写自己的结构化日报并审核成员日报；HR 只查看已授权工时字段，不展示日报正文或证据。项目视图提供对齐树、甘特图、进度趋势、风险矩阵和工作负载五个标签，支持键盘方向键切换。
+员工在 Supabase 模式可通过“更新我的 KR”写入自己负责 KR 的不可变实际进度记录；可通过“新增风险”把具体风险事件关联到自己负责的 KR 或目标。项目负责人可管理其项目中的风险。风险事件的矩阵严重度与 OKR 执行状态不同；详见用户指南的计算规则。HR 不具备通用风险管理权限，员工和 HR 的项目列表不会显示未授权项目的元数据。
 
 ## 安全边界
 
@@ -44,6 +46,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
 
 ```bash
 npm run verify:config
+npm test -- --run scripts/verify-supabase-config.test.mjs
 npm run test:run
 npm run typecheck
 npm run build
@@ -54,4 +57,13 @@ npx supabase db lint
 
 ## 数据与部署
 
-演示模式的数据只保存在当前页面内存。Supabase 与阿里云部署、备份、清理和上线闸门见 [Supabase 部署手册](docs/supabase-setup.md)。生产构建输出到 `dist/`，可由 Nginx 作为 SPA 静态站点托管。
+演示模式的数据只保存在当前页面内存；它不是对真实持久化的证明。Supabase 与阿里云部署、备份、清理和上线闸门见 [Supabase 部署手册](docs/supabase-setup.md)。生产构建必须使用 `VITE_APP_MODE=supabase` 并运行生产校验：
+
+```bash
+VITE_APP_MODE=supabase \
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
+VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY \
+node scripts/verify-supabase-config.mjs --production
+```
+
+生产构建输出到 `dist/`，可由 Nginx 作为 SPA 静态站点托管。未获明确批准前，不要执行 `supabase db push` 或覆盖线上站点。
