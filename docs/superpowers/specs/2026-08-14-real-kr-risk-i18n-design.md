@@ -11,7 +11,9 @@ The product has two distinct concepts:
 1. **Risk event / 风险事件**: a concrete event entered by an authorized person and plotted in the 3×3 risk matrix.
 2. **Execution status / 执行状态**: the computed health of a KR or Objective: on track, at risk, off track, or complete.
 
-An employee may create and update risks linked to a KR they own. A Project Leader may create and manage every risk in their project. Other project members may read only risks allowed by relationship and classification policies. HR has no general risk-management permission.
+An employee may create and update risks linked to a KR or Objective they own. A Project Leader may create and manage every risk in their project. Other project members may read only risks allowed by relationship and classification policies. HR has no general risk-management permission.
+
+Employees do not place the KR or Objective itself into the matrix. From their OKR page they use `新增风险 / Add Risk`, choose one of their owned KRs or Objectives, and describe a concrete risk event. After probability and impact are selected and the event is saved, the system places that event—not the OKR—into the matching matrix cell. The employee can edit or resolve their own event later. The employee view includes a list of risks attached to each owned OKR and a link to the complete project matrix.
 
 Risk placement uses independently selected, explained axes:
 
@@ -63,8 +65,8 @@ Use a type-safe in-application `zh-CN`/`en` dictionary and a small locale provid
 ## Data and Authorization Changes
 
 - Add immutable KR progress snapshot creation through a `save_kr_progress` security-definer RPC with owner, organization, range, date, and note validation.
-- Add risk-to-KR association so employee ownership can be authorized without broad project write access.
-- Split risk create/update authorization: KR owner for their linked KR; Project Leader for any risk in the led project.
+- Add risk-to-KR/Objective association so employee ownership can be authorized without broad project write access.
+- Split risk create/update authorization: KR or Objective owner for their linked item; Project Leader for any risk in the led project.
 - Add locale preference to profiles with `zh-CN` default and a restricted self-update RPC.
 - Repository reads must use Supabase-backed data in Supabase mode; mock data cannot silently supply production pages.
 - RLS/pgTAP tests cover owner/non-owner/leader/HR behavior, immutable snapshot history, project metadata non-disclosure, and locale self-update boundaries.
@@ -72,7 +74,8 @@ Use a type-safe in-application `zh-CN`/`en` dictionary and a small locale provid
 ## UI Components and Flows
 
 - `KrProgressEditor`: owned-KR selector, progress, effective date, note, submit status, and accessible errors.
-- `RiskEditor`: linked KR where applicable, probability and impact definitions, coordinate, live multiplication, severity, reason, mitigation, review date, resolution state.
+- `RiskEditor`: owned KR/Objective selector for employees, project-wide subject selector for leaders, probability and impact definitions, coordinate, live multiplication, severity, reason, mitigation, review date, and resolution state.
+- Employee OKR page: `新增风险 / Add Risk` action, attached-risk list per owned OKR, edit/resolve actions for self-created authorized events, and a route to the project matrix.
 - `RiskMatrixWidget`: visible axis definitions, formula, score-band legend, event/status distinction, and detailed status-impact explanation.
 - `LocaleProvider` and `LanguageSwitcher`: immediate update and preference persistence.
 - Project list: authorized rows only; no hidden-content placeholder.
