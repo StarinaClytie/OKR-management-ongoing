@@ -132,11 +132,21 @@ export class SupabaseOkrRepository implements OkrRepository {
         keyResultId: typeof row.key_result_id === 'string' ? row.key_result_id : undefined, objectiveId: typeof row.objective_id === 'string' ? row.objective_id : undefined, resolved,
       };
     });
-    const progressSnapshots = snapshotResult.data.map((row) => {
-      const keyResultId = String(row.key_result_id);
-      const weekOf = dateValue(row.effective_date);
-      return { id: String(row.id), projectId: projectIdByObjectiveId.get(keyResultsById.get(keyResultId)?.objectiveId ?? '') ?? '', keyResultId, weekOf, actual: numberValue(row.progress), planned: baselineByKeyAndDate.get(`${keyResultId}:${weekOf}`) ?? 0 };
-    });
+    const projectIdForKeyResult = (keyResultId: string) => projectIdByObjectiveId.get(keyResultsById.get(keyResultId)?.objectiveId ?? '') ?? '';
+    const actualSnapshotKeys = new Set(snapshotResult.data.map((row) => `${String(row.key_result_id)}:${dateValue(row.effective_date)}`));
+    const progressSnapshots: DashboardData['progressSnapshots'] = [
+      ...snapshotResult.data.map((row) => {
+        const keyResultId = String(row.key_result_id);
+        const weekOf = dateValue(row.effective_date);
+        return { id: String(row.id), projectId: projectIdForKeyResult(keyResultId), keyResultId, weekOf, actual: numberValue(row.progress), planned: baselineByKeyAndDate.get(`${keyResultId}:${weekOf}`) ?? 0 };
+      }),
+      ...baselineResult.data
+        .filter((row) => !actualSnapshotKeys.has(`${String(row.key_result_id)}:${dateValue(row.planned_for)}`))
+        .map((row) => {
+          const keyResultId = String(row.key_result_id);
+          return { id: String(row.id), projectId: projectIdForKeyResult(keyResultId), keyResultId, weekOf: dateValue(row.planned_for), actual: undefined, planned: numberValue(row.planned_value) };
+        }),
+    ];
     const companyObjectives = objectiveResult.data
       .filter((row) => row.project_id === null)
       .map((row) => { const progress = numberValue(row.progress); return { id: String(row.id), level: 'company' as const, title: String(row.title), progress, status: statusForProgress(progress), classification: row.classification as import('../domain/types').Classification }; });

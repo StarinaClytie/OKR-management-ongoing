@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { SupabaseOkrRepository } from './supabaseRepository';
 import type { SupabaseClientLike } from './types';
 
@@ -159,6 +159,17 @@ describe('SupabaseOkrRepository', () => {
     expect(rpc).toHaveBeenCalledWith('set_my_locale', { p_locale: 'en' });
   });
 
+  it('sanitizes protected owned-risk RPC errors', async () => {
+    const { client } = createClient({ rpcError: { code: '42501', message: 'Risk for Project Aurora is restricted' } });
+    const result = await new SupabaseOkrRepository(client).saveOwnedRisk({
+      projectId: 'project-1', objectiveId: 'objective-1', title: '风险', probability: 2, impact: 3,
+      reason: '原因', mitigation: '措施', lastReviewedAt: '2026-08-14', classification: 'internal', resolved: false,
+    });
+
+    expect(result).toEqual({ ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } });
+    expect(JSON.stringify(result)).not.toContain('Project Aurora');
+  });
+
   it('maps only rows returned under RLS into dashboard domain data without mock fallback', async () => {
     const { client, from } = createDashboardClient({
       profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
@@ -185,6 +196,25 @@ describe('SupabaseOkrRepository', () => {
     expect(from.mock.calls.map(([table]) => table)).toEqual([
       'profiles', 'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots',
     ]);
+    if (!result.ok) throw new Error('Expected dashboard data');
+    expectTypeOf(result.data.risks[0]).toMatchTypeOf<{ keyResultId?: string; objectiveId?: string; resolved: boolean } | undefined>();
+  });
+
+  it('retains future baseline-only plan points without inventing actual progress', async () => {
+    const { client } = createDashboardClient({
+      profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      projects: [{ id: 'project-1', name: '项目一', description: '描述', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
+      objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '目标', description: '目标描述', progress: 40, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 40, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      progress_baselines: [{ id: 'baseline-future', key_result_id: 'kr-1', planned_for: '2026-08-31', planned_value: 80 }],
+      milestones: [], risks: [], progress_snapshots: [],
+    });
+
+    const result = await new SupabaseOkrRepository(client).getDashboardData();
+
+    expect(result).toEqual({ ok: true, data: expect.objectContaining({
+      progressSnapshots: [{ id: 'baseline-future', projectId: 'project-1', keyResultId: 'kr-1', weekOf: '2026-08-31', actual: undefined, planned: 80 }],
+    }) });
   });
 
   it('authorizes then creates a short-lived signed attachment URL', async () => {
