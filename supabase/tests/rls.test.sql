@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(28);
+select plan(43);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -80,6 +80,8 @@ insert into public.objectives (id, organization_id, project_id, owner_id, title,
   ('40000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'Confidential Objective', 'confidential', current_date - 1, current_date + 30);
 insert into public.key_results (id, organization_id, objective_id, project_id, owner_id, title, measurement_type, target_value, classification, start_date, due_date) values
   ('41000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'Planned KR', 'percentage', 100, 'confidential', current_date - 1, current_date + 30);
+insert into public.key_results (id, organization_id, objective_id, project_id, owner_id, title, measurement_type, target_value, classification, start_date, due_date) values
+  ('41000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'Restricted KR', 'percentage', 100, 'restricted', current_date - 1, current_date + 30);
 
 insert into public.daily_reports (id, organization_id, author_id, project_id, objective_id, report_date, status, classification, total_hours) values
   ('50000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', current_date, 'submitted', 'confidential', 7.5);
@@ -178,6 +180,11 @@ select lives_ok(
   'KR owner saves a validated progress plan'
 );
 select is((select count(*) from public.progress_baselines where key_result_id = '41000000-0000-0000-0000-000000000001'), 1::bigint, 'save progress plan replaces points atomically');
+select lives_ok(
+  $$select public.save_kr_progress('41000000-0000-0000-0000-000000000001', 40, current_date, 'Completed the first integration milestone')$$,
+  'KR owner appends actual progress through the restricted RPC'
+);
+select is((select count(*) from public.progress_snapshots where key_result_id = '41000000-0000-0000-0000-000000000001'), 1::bigint, 'KR progress RPC appends one immutable snapshot');
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 select lives_ok(
   $$select public.save_milestones('30000000-0000-0000-0000-000000000001', jsonb_build_array(jsonb_build_object('title', 'Release gate', 'plannedDate', (current_date + 10)::text, 'keyResultId', '41000000-0000-0000-0000-000000000001')))$$,
@@ -188,15 +195,67 @@ select throws_ok(
   $$select public.save_progress_plan('41000000-0000-0000-0000-000000000001', '[]'::jsonb)$$,
   '42501', 'Progress plan is not editable by the current user', 'unrelated employee cannot replace a progress plan'
 );
+select throws_ok(
+  $$select public.save_kr_progress('41000000-0000-0000-0000-000000000001', 50, current_date, 'Attempted peer update')$$,
+  '42501', 'KR progress is not editable by the current user', 'non-owner employee cannot append KR progress'
+);
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 select lives_ok(
-  $$select public.save_risk('30000000-0000-0000-0000-000000000001', 'Delivery risk', 2, 3, 'Dependency delay', 'Fallback', current_date, 'confidential')$$,
-  'project leader saves an explained calculated risk'
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Delivery risk', 2::smallint, 3::smallint, 'Dependency delay', 'Fallback', current_date, 'confidential'::public.classification, false)$$,
+  'project leader saves a risk for any subject in their project'
 );
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000007', true);
 select throws_ok(
-  $$select public.save_risk('30000000-0000-0000-0000-000000000001', 'Unauthorized', 1, 1, 'No access', 'None', current_date, 'internal')$$,
-  '42501', 'Risk is not editable by the current user', 'unrelated employee cannot save project risk'
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Unauthorized', 1::smallint, 1::smallint, 'No access', 'None', current_date, 'internal'::public.classification, false)$$,
+  '42501', 'Risk is not editable by the current user', 'non-owner employee cannot save a risk against another employee KR'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
+select lives_ok(
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'KR risk', 1::smallint, 1::smallint, 'A local dependency is delayed', 'Coordinate the dependency', current_date, 'confidential'::public.classification, false)$$,
+  'employee saves a risk against their owned KR'
+);
+select lives_ok(
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, null::uuid, '40000000-0000-0000-0000-000000000001'::uuid, 'Objective risk', 1::smallint, 2::smallint, 'Scope uncertainty', 'Clarify scope', current_date, 'confidential'::public.classification, false)$$,
+  'employee saves a risk against their owned objective'
+);
+select lives_ok(
+  $$select public.set_my_locale('en')$$,
+  'profile owner saves their locale through the restricted RPC'
+);
+select is((select preferred_locale from public.profiles where id = '10000000-0000-0000-0000-000000000004'), 'en', 'locale RPC only changes the signed-in profile preference');
+select ok(
+  not has_table_privilege('authenticated', 'public.progress_snapshots', 'UPDATE')
+    and not has_table_privilege('authenticated', 'public.progress_snapshots', 'DELETE')
+    and not has_table_privilege('authenticated', 'public.progress_snapshots', 'INSERT'),
+  'employees have no direct progress snapshot mutation privileges'
+);
+select lives_ok(
+  $$select public.save_owned_risk((select id from public.risks where title = 'KR risk'), '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Resolved KR risk', 1::smallint, 1::smallint, 'The dependency is available', 'No further action needed', current_date, 'confidential'::public.classification, true)$$,
+  'employee resolves their own risk event'
+);
+select ok((select resolved_at is not null from public.risks where title = 'Resolved KR risk'), 'resolving a risk records its resolution time');
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000005', true);
+select throws_ok(
+  $$select public.save_owned_risk((select id from public.risks where title = 'Resolved KR risk'), '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Peer overwrite', 1::smallint, 1::smallint, 'No access', 'None', current_date, 'confidential'::public.classification, false)$$,
+  '42501', 'Risk is not editable by the current user', 'a peer cannot update another employee risk event'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
+select lives_ok(
+  $$select public.save_owned_risk((select id from public.risks where title = 'Resolved KR risk'), '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Leader-reviewed risk', 1::smallint, 1::smallint, 'Leader verified the mitigation', 'Continue monitoring', current_date, 'confidential'::public.classification, false)$$,
+  'project leader updates a member risk event in their project'
+);
+select throws_ok(
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000002'::uuid, null::uuid, 'Restricted subject', 1::smallint, 1::smallint, 'Known restricted subject', 'No action', current_date, 'confidential'::public.classification, false)$$,
+  '42501', 'Risk subject exceeds user clearance', 'project leader cannot save a risk against a subject above their clearance'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000009', true);
+select throws_ok(
+  $$select public.save_kr_progress('41000000-0000-0000-0000-000000000001', 60, current_date, 'HR attempted update')$$,
+  '42501', 'KR progress is not editable by the current user', 'HR cannot append employee KR progress'
+);
+select throws_ok(
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, null::uuid, '40000000-0000-0000-0000-000000000001'::uuid, 'HR risk', 1::smallint, 1::smallint, 'No permission', 'None', current_date, 'internal'::public.classification, false)$$,
+  '42501', 'Risk is not editable by the current user', 'HR cannot save project risks'
 );
 
 select * from finish();
