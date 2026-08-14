@@ -52,6 +52,28 @@ export interface DailyReportInput {
 
 export interface ClassifiedAttachmentInput { file: File; classification: Classification }
 
+export interface KrProgressInput {
+  keyResultId: string;
+  progress: number;
+  effectiveDate: string;
+  note: string;
+}
+
+export interface OwnedRiskInput {
+  id?: string;
+  projectId: string;
+  keyResultId?: string | null;
+  objectiveId?: string | null;
+  title: string;
+  probability: 1 | 2 | 3;
+  impact: 1 | 2 | 3;
+  reason: string;
+  mitigation: string;
+  lastReviewedAt: string;
+  classification: Classification;
+  resolved: boolean;
+}
+
 export interface OkrRepository {
   readonly mode: AppMode;
   getCurrentProfile(): Promise<RepositoryResult<User | null>>;
@@ -65,6 +87,9 @@ export interface OkrRepository {
   saveProgressPlan(keyResultId: string, points: Array<{ date: string; value: number }>): Promise<RepositoryResult<void>>;
   saveMilestones(projectId: string, milestones: Array<{ title: string; plannedDate: string; keyResultId?: string }>): Promise<RepositoryResult<void>>;
   saveRisk(input: { projectId: string; title: string; probability: 1 | 2 | 3; impact: 1 | 2 | 3; reason: string; mitigation: string; lastReviewedAt: string; classification: Classification }): Promise<RepositoryResult<{ id: string }>>;
+  saveKrProgress(input: KrProgressInput): Promise<RepositoryResult<{ snapshotId: string }>>;
+  saveOwnedRisk(input: OwnedRiskInput): Promise<RepositoryResult<{ id: string }>>;
+  setMyLocale(locale: 'zh-CN' | 'en'): Promise<RepositoryResult<void>>;
   beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>>;
   finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>>;
   replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>>;
