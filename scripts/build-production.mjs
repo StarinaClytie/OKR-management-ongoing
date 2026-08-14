@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { loadProductionEnv } from './production-env.mjs';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const productionEnv = loadProductionEnv();
+const productionEnv = await loadProductionEnv();
 const commands = [
   [process.execPath, ['scripts/verify-supabase-config.mjs', '--production']],
   [npmCommand, ['run', 'build']],
