@@ -6,6 +6,9 @@ import { GanttChartWidget } from './GanttChartWidget';
 import { ProgressTrendWidget } from './ProgressTrendWidget';
 import { ProjectVisualizationsWidget, VisualizationLoadingFallback } from './ProjectVisualizationsWidget';
 import { RiskMatrixWidget } from './RiskMatrixWidget';
+import { AuthProvider } from '../../auth/AuthContext';
+import { DemoOkrRepository } from '../../data/demoRepository';
+import { LocaleProvider } from '../../i18n/LocaleProvider';
 
 const leaderData = mockRepository.getDashboardData('user-project-leader');
 
@@ -248,6 +251,16 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.getByText(/6：高风险事件，执行状态升级为需关注/)).toBeVisible();
     expect(screen.getByText(/9：严重风险事件，执行状态升级为已偏离/)).toBeVisible();
     expect(screen.getByText('示例：概率 1 × 影响 3 = 3，为中风险事件，不自动升级执行状态。')).toBeVisible();
+  });
+
+  it('uses locale-appropriate punctuation in the English risk explanation', () => {
+    window.localStorage.setItem('northstar.locale', 'en');
+    render(<AuthProvider><LocaleProvider repository={new DemoOkrRepository()}><RiskMatrixWidget data={leaderData} /></LocaleProvider></AuthProvider>);
+
+    const explanation = screen.getByText(/Risk event ≠ execution status/).closest('p');
+    expect(explanation).toHaveTextContent('Risk event ≠ execution status: The matrix assesses');
+    expect(explanation).not.toHaveTextContent('status：');
+    window.localStorage.clear();
   });
 
   it('never leaves denied labels in text, accessible names, or hidden panels', async () => {

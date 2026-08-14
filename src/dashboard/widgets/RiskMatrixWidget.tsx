@@ -36,7 +36,7 @@ export function RiskMatrixWidget({ data }: RiskMatrixWidgetProps) {
       <p className="visualization-description">{t('risk.description')}</p>
       <details open>
         <summary>{t('risk.calculation')}</summary>
-        <p><strong>{t('risk.eventVsStatus')}</strong>：{t('risk.eventVsStatusDetail')}</p>
+        <p><strong>{t('risk.eventVsStatus')}</strong>{t('risk.eventVsStatusSeparator')}{t('risk.eventVsStatusDetail')}</p>
         <p>{t('risk.probabilityDefinitions')}</p>
         <p>{t('risk.impactDefinitions')}</p>
         <p>{t('risk.formula')}</p>

@@ -1,5 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { DemoOkrRepository } from '../data/demoRepository';
+import { LocaleProvider } from '../i18n/LocaleProvider';
 import { SettingsPage } from './SettingsPage';
 
 function RoleControls() {
@@ -59,5 +62,16 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('checkbox')).toBeChecked();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '个人偏好' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('retranslates a visible saved notice when the locale changes', () => {
+    window.localStorage.clear();
+    render(<AuthProvider><LocaleProvider repository={new DemoOkrRepository()}><LanguageSwitcher /><SettingsPage /></LocaleProvider></AuthProvider>);
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
+    expect(screen.getByRole('status')).toHaveTextContent('设置已保存到此设备。');
+
+    fireEvent.click(screen.getByRole('button', { name: '切换为英文' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Settings saved on this device.');
   });
 });

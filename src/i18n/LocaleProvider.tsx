@@ -46,8 +46,28 @@ export interface LocaleProviderProps extends PropsWithChildren {
 
 export function LocaleProvider({ children, repository }: LocaleProviderProps) {
   const { currentUser, mode, status } = useAuth();
-  const [locale, setLocaleState] = useState<Locale>(readStoredLocale);
+  const [locale, setLocaleState] = useState<Locale>(() => status === 'ready' && isLocale(currentUser?.preferredLocale)
+    ? currentUser.preferredLocale
+    : readStoredLocale());
   const persistenceQueue = useRef<Promise<void>>(Promise.resolve());
+  const identity = status === 'ready' ? currentUser?.id ?? null : null;
+  const scope = useRef({ identity, generation: 0, mounted: true });
+
+  useLayoutEffect(() => {
+    if (scope.current.identity === identity) return;
+    scope.current.identity = identity;
+    scope.current.generation += 1;
+    persistenceQueue.current = Promise.resolve();
+  }, [identity]);
+
+  useEffect(() => {
+    scope.current.mounted = true;
+    return () => {
+      scope.current.mounted = false;
+      scope.current.generation += 1;
+      persistenceQueue.current = Promise.resolve();
+    };
+  }, []);
 
   useLayoutEffect(() => {
     document.documentElement.lang = locale;
@@ -63,7 +83,10 @@ export function LocaleProvider({ children, repository }: LocaleProviderProps) {
     setLocaleState(nextLocale);
     storeLocale(nextLocale);
     if (mode === 'supabase' && status === 'ready' && currentUser) {
+      const queuedIdentity = currentUser.id;
+      const queuedGeneration = scope.current.generation;
       const write = persistenceQueue.current.then(async () => {
+        if (!scope.current.mounted || scope.current.identity !== queuedIdentity || scope.current.generation !== queuedGeneration) return;
         try {
           await repository.setMyLocale(nextLocale);
         } catch {

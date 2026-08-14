@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { startTransition, useContext } from 'react';
 import { App } from '../app/App';
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import type { OkrRepository, RepositoryResult } from '../data/types';
@@ -11,19 +12,20 @@ const profile: User = {
   id: 'profile-1', name: 'Taylor', role: 'employee', title: 'Engineer', department: 'Product', projectIds: [], preferredLocale: 'zh-CN',
 };
 
-function renderAuthenticated(repository: OkrRepository, currentUser = profile) {
+function renderAuthenticated(repository: OkrRepository, currentUser = profile, onRender?: (locale: string) => void) {
   const auth: AuthContextValue = {
     status: 'ready', mode: 'supabase', currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn(),
   };
   function LocaleProbe() {
     const { locale } = useLocale();
+    onRender?.(locale);
     return <><span>{locale}</span><LanguageSwitcher /></>;
   }
-  return render(
-    <AuthContext.Provider value={auth}>
+  const renderTree = (user: User) => <AuthContext.Provider value={{ ...auth, currentUser: user }}>
       <LocaleProvider repository={repository}><LocaleProbe /></LocaleProvider>
-    </AuthContext.Provider>,
-  );
+    </AuthContext.Provider>;
+  const view = render(renderTree(currentUser));
+  return { ...view, rerenderUser: (user: User) => view.rerender(renderTree(user)) };
 }
 
 describe('application locale', () => {
@@ -66,10 +68,12 @@ describe('application locale', () => {
     const user = userEvent.setup();
     const repository = { setMyLocale: vi.fn().mockResolvedValue({ ok: true, data: undefined }) } as unknown as OkrRepository;
     window.localStorage.setItem('northstar.locale', 'en');
+    const renderedLocales: string[] = [];
 
-    renderAuthenticated(repository);
+    renderAuthenticated(repository, profile, (locale) => renderedLocales.push(locale));
 
-    await waitFor(() => expect(screen.getByText('zh-CN')).toBeVisible());
+    expect(renderedLocales[0]).toBe('zh-CN');
+    expect(screen.getByText('zh-CN')).toBeVisible();
     expect(window.localStorage.getItem('northstar.locale')).toBe('zh-CN');
     await user.click(screen.getByRole('button', { name: '切换为英文' }));
     expect(screen.getByText('en')).toBeVisible();
@@ -107,6 +111,64 @@ describe('application locale', () => {
     finishFirst();
     await waitFor(() => expect(repository.setMyLocale).toHaveBeenCalledTimes(2));
     expect(repository.setMyLocale).toHaveBeenNthCalledWith(1, 'en');
+    expect(repository.setMyLocale).toHaveBeenNthCalledWith(2, 'zh-CN');
+  });
+
+  it('discards queued writes when the authenticated profile changes', async () => {
+    const user = userEvent.setup();
+    let finishFirst!: () => void;
+    const firstWrite = new Promise<RepositoryResult<void>>((resolve) => { finishFirst = () => resolve({ ok: true, data: undefined }); });
+    const repository = { setMyLocale: vi.fn().mockImplementationOnce(() => firstWrite).mockResolvedValue({ ok: true, data: undefined }) } as unknown as OkrRepository;
+    const view = renderAuthenticated(repository);
+
+    await user.click(screen.getByRole('button', { name: '切换为英文' }));
+    await user.click(screen.getByRole('button', { name: 'Switch to Chinese' }));
+    view.rerenderUser({ ...profile, id: 'profile-2' });
+    finishFirst();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(repository.setMyLocale).toHaveBeenCalledTimes(1);
+    expect(repository.setMyLocale).toHaveBeenCalledWith('en');
+  });
+
+  it('discards queued writes after the provider unmounts', async () => {
+    const user = userEvent.setup();
+    let finishFirst!: () => void;
+    const firstWrite = new Promise<RepositoryResult<void>>((resolve) => { finishFirst = () => resolve({ ok: true, data: undefined }); });
+    const repository = { setMyLocale: vi.fn().mockImplementationOnce(() => firstWrite).mockResolvedValue({ ok: true, data: undefined }) } as unknown as OkrRepository;
+    const view = renderAuthenticated(repository);
+
+    await user.click(screen.getByRole('button', { name: '切换为英文' }));
+    await user.click(screen.getByRole('button', { name: 'Switch to Chinese' }));
+    view.unmount();
+    finishFirst();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(repository.setMyLocale).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the committed identity queue during an abandoned identity render', async () => {
+    const user = userEvent.setup();
+    let finishFirst!: () => void;
+    const suspended = new Promise<never>(() => undefined);
+    const firstWrite = new Promise<RepositoryResult<void>>((resolve) => { finishFirst = () => resolve({ ok: true, data: undefined }); });
+    const repository = { setMyLocale: vi.fn().mockImplementationOnce(() => firstWrite).mockResolvedValue({ ok: true, data: undefined }) } as unknown as OkrRepository;
+    const auth = (currentUser: User): AuthContextValue => ({ status: 'ready', mode: 'supabase', currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() });
+    function Probe() {
+      const current = useLocale();
+      const authContext = useContext(AuthContext);
+      if (authContext?.currentUser?.id === 'profile-2') throw suspended;
+      return <><span>{current.locale}</span><LanguageSwitcher /></>;
+    }
+    const tree = (currentUser: User) => <AuthContext.Provider value={auth(currentUser)}><LocaleProvider repository={repository}><Probe /></LocaleProvider></AuthContext.Provider>;
+    const view = render(tree(profile));
+    await user.click(screen.getByRole('button', { name: '切换为英文' }));
+    await user.click(screen.getByRole('button', { name: 'Switch to Chinese' }));
+
+    act(() => startTransition(() => view.rerender(tree({ ...profile, id: 'profile-2' }))));
+    finishFirst();
+
+    await waitFor(() => expect(repository.setMyLocale).toHaveBeenCalledTimes(2));
     expect(repository.setMyLocale).toHaveBeenNthCalledWith(2, 'zh-CN');
   });
 

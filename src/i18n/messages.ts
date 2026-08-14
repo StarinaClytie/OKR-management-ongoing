@@ -251,6 +251,7 @@ const zhCN = {
   'risk.calculation': '风险矩阵计算说明',
   'risk.eventVsStatus': '风险事件 ≠ 执行状态',
   'risk.eventVsStatusDetail': '矩阵用于评估单个风险事件的严重程度；执行状态还会并行评估进度与日期规则，并采用最严重结果。',
+  'risk.eventVsStatusSeparator': '：',
   'risk.probabilityDefinitions': '纵轴：发生概率（1=不太可能（<30%）；2=可能（30–69%）；3=很可能（>=70%））。',
   'risk.impactDefinitions': '横轴：业务影响（1=低影响（局部且可恢复）；2=中影响（影响里程碑或跨团队协作）；3=高影响（影响目标、截止日期、合规或重大业务））。',
   'risk.formula': '风险分 = 概率 × 影响',
@@ -806,6 +807,7 @@ const en = {
   'risk.calculation': 'Risk matrix calculation details',
   'risk.eventVsStatus': 'Risk event ≠ execution status',
   'risk.eventVsStatusDetail': 'The matrix assesses the severity of each risk event. Execution status also evaluates progress and date rules, then uses the most severe result.',
+  'risk.eventVsStatusSeparator': ': ',
   'risk.probabilityDefinitions': 'Vertical axis: probability (1=unlikely (<30%); 2=possible (30–69%); 3=likely (>=70%)).',
   'risk.impactDefinitions': 'Horizontal axis: business impact (1=low, local and recoverable; 2=medium, affects a milestone or cross-team work; 3=high, affects an objective, deadline, compliance, or major business outcome).',
   'risk.formula': 'Risk score = probability × impact',
@@ -1112,6 +1114,11 @@ export const messages: Readonly<Record<Locale, Readonly<Record<MessageKey, strin
   'zh-CN': zhCN,
   en,
 };
+
+export interface LocalizedMessage {
+  key: MessageKey;
+  values?: Record<string, string | number>;
+}
 
 export function translate(locale: Locale, key: MessageKey, values?: Record<string, string | number>): string {
   const template = messages[locale][key];

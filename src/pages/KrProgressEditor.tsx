@@ -3,6 +3,7 @@ import type { KeyResult } from '../domain/types';
 import type { KrProgressInput, RepositoryResult } from '../data/types';
 import { useLocale } from '../i18n/LocaleProvider';
 import { repositoryErrorKey } from '../i18n/repositoryErrors';
+import type { MessageKey } from '../i18n/messages';
 
 interface KrProgressEditorProps {
   ownerId: string;
@@ -18,7 +19,7 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
   const [progress, setProgress] = useState(ownedKeyResults[0] ? String(ownedKeyResults[0].progress) : '');
   const [effectiveDate, setEffectiveDate] = useState('');
   const [note, setNote] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<MessageKey | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submissionPending = useRef(false);
 
@@ -29,14 +30,14 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submissionPending.current) return;
-    setError('');
+    setError(null);
     const numericProgress = Number(progress);
     if (progress.trim() === '' || !Number.isFinite(numericProgress) || numericProgress < 0 || numericProgress > 100) {
-      setError(t('kr.progressRange'));
+      setError('kr.progressRange');
       return;
     }
     if (!effectiveDate || !note.trim()) {
-      setError(t('kr.dateNoteRequired'));
+      setError('kr.dateNoteRequired');
       return;
     }
 
@@ -44,9 +45,9 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
     setSubmitting(true);
     try {
       const result = await onSave({ keyResultId, progress: numericProgress, effectiveDate, note: note.trim() });
-      if (!result.ok) setError(t(repositoryErrorKey(result.error.code)));
+      if (!result.ok) setError(repositoryErrorKey(result.error.code));
     } catch {
-      setError(t('common.requestFailed'));
+      setError('common.requestFailed');
     } finally {
       submissionPending.current = false;
       setSubmitting(false);
@@ -74,7 +75,7 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
       <label>{t('kr.note')}
         <textarea value={note} onChange={(event) => setNote(event.target.value)} />
       </label>
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{t(error)}</p>}
       <div className="inline-actions">
         <button className="button button--primary" type="submit" disabled={submitting}>{submitting ? t('common.saving') : t('kr.saveProgress')}</button>
         {onCancel && <button className="button button--secondary" type="button" onClick={onCancel} disabled={submitting}>{t('common.cancel')}</button>}

@@ -6,11 +6,11 @@ import { DailyKrHelp } from './DailyKrHelp';
 import { DailyObjectiveField } from './DailyObjectiveField';
 import { DailyReportEvidence } from './DailyReportEvidence';
 import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';
-import type { MessageKey } from '../../i18n/messages';
+import type { LocalizedMessage, MessageKey } from '../../i18n/messages';
 
 export type DailyReportSubmitResult =
   | { ok: true }
-  | { ok: false; error: string };
+  | { ok: false; error: LocalizedMessage };
 
 interface DailyReportFormProps {
   mode?: 'create' | 'edit';
@@ -87,7 +87,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
   }));
   const [activeKrId, setActiveKrId] = useState(initialDraft?.keyResults[0]?.id ?? 'daily-kr-1');
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<LocalizedMessage | null>(null);
   const nextKrId = useRef(2);
   const narrow = useNarrowDailyForm();
   const averageReference = useMemo(() => getKrAverageReference(draft.keyResults), [draft.keyResults]);
@@ -147,15 +147,15 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
     }));
   };
 
-  const saveDraft = () => setStatus(t('daily.draftSaved'));
+  const saveDraft = () => setStatus({ key: 'daily.draftSaved' });
   const submit = async () => {
     setShowSubmitErrors(true);
     if (validateDailyReportDraft(draft).length > 0) {
-      setStatus(t('daily.fixRequired'));
+      setStatus({ key: 'daily.fixRequired' });
       return;
     }
     const result = await onSubmit(draft);
-    setStatus(result.ok ? (mode === 'edit' ? t('daily.editSaved') : t('daily.submitted')) : result.error);
+    setStatus(result.ok ? { key: mode === 'edit' ? 'daily.editSaved' : 'daily.submitted' } : result.error);
   };
 
   return (
@@ -210,7 +210,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
           <button type="button" className="button button--secondary" onClick={saveDraft}>{t('daily.saveDraft')}</button>
           <button type="submit" className="button button--primary">{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
         </div>
-        {status && <p className="page-notice" role="status">{status}</p>}
+        {status && <p className="page-notice" role="status">{t(status.key, status.values)}</p>}
       </div>
       {!narrow && activeKr && <aside className="daily-entry-help-shell" aria-label={t('daily.help')}><DailyKrHelp type={activeKr.type} /></aside>}
     </form>

@@ -15,6 +15,7 @@ import { mockRepository, type DashboardData } from '../mocks/repository';
 import { KrProgressEditor } from './KrProgressEditor';
 import { getEditableRiskSubjects, RiskEditor, type RiskEditorInput } from './RiskEditor';
 import { useLocale } from '../i18n/LocaleProvider';
+import type { MessageKey } from '../i18n/messages';
 
 function riskStatus(input: Pick<OwnedRiskInput, 'probability' | 'impact' | 'resolved'>): Risk['status'] {
   if (input.resolved) return 'on_track';
@@ -38,8 +39,8 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     ? mockRepository.getDashboardData(currentUser.id)
     : null);
   const [loading, setLoading] = useState(mode === 'supabase');
-  const [loadError, setLoadError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [loadError, setLoadError] = useState<MessageKey | null>(null);
+  const [notice, setNotice] = useState<MessageKey | null>(null);
   const [activeEditor, setActiveEditor] = useState<'progress' | 'risk' | null>(null);
   const [editingRisk, setEditingRisk] = useState<Risk | undefined>();
   const [resolvingRiskId, setResolvingRiskId] = useState<string>();
@@ -50,19 +51,19 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     try {
       const result = await dataRepository.getDashboardData(currentUser.id);
       if (!result.ok) {
-        setLoadError(t('common.requestFailed'));
+        setLoadError('common.requestFailed');
         return false;
       }
-      setLoadError('');
+      setLoadError(null);
       setData(result.data);
       return true;
     } catch {
-      setLoadError(t('common.requestFailed'));
+      setLoadError('common.requestFailed');
       return false;
     } finally {
       setLoading(false);
     }
-  }, [currentUser, dataRepository, t]);
+  }, [currentUser, dataRepository]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -80,7 +81,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
 
   if (!currentUser) return null;
   if (loading && !data) return <p role="status">{t('okr.loading')}</p>;
-  if (loadError && !data) return <p role="alert">{loadError}</p>;
+  if (loadError && !data) return <p role="alert">{t(loadError)}</p>;
   if (!data) return null;
   const dashboardData = data;
   const signedInUser = currentUser;
@@ -124,7 +125,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
   }
 
   async function saveProgress(input: Parameters<OkrRepository['saveKrProgress']>[0]) {
-    setNotice('');
+    setNotice(null);
     if (mode === 'demo') {
       setData((current) => current ? {
         ...current,
@@ -140,21 +141,21 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
           planned: current.progressSnapshots.filter((item) => item.keyResultId === input.keyResultId).at(-1)?.planned ?? input.progress,
         }],
       } : current);
-      setNotice(t('okr.previewUpdated'));
+      setNotice('okr.previewUpdated');
       setActiveEditor(null);
       return { ok: true, data: { snapshotId: 'demo-preview' } } as const;
     }
     const result = await dataRepository.saveKrProgress(input);
     if (result.ok) {
       const reloaded = await refresh();
-      setNotice(reloaded ? t('okr.progressSaved') : t('okr.progressSavedStale'));
+      setNotice(reloaded ? 'okr.progressSaved' : 'okr.progressSavedStale');
       setActiveEditor(null);
     }
     return result;
   }
 
   async function saveRisk(input: RiskEditorInput): Promise<RepositoryResult<{ id: string }>> {
-    setNotice('');
+    setNotice(null);
     if (mode === 'demo') {
       const previewId = input.id ?? `preview-risk-${Date.now()}`;
       setData((current) => current ? {
@@ -169,7 +170,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
           },
         ],
       } : current);
-      setNotice(t('okr.previewUpdated'));
+      setNotice('okr.previewUpdated');
       setActiveEditor(null);
       setEditingRisk(undefined);
       return { ok: true, data: { id: previewId } };
@@ -177,7 +178,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     const result = await dataRepository.saveOwnedRisk(input);
     if (result.ok) {
       const reloaded = await refresh();
-      setNotice(reloaded ? t('okr.riskSaved') : t('okr.riskSavedStale'));
+      setNotice(reloaded ? 'okr.riskSaved' : 'okr.riskSavedStale');
       setActiveEditor(null);
       setEditingRisk(undefined);
     }
@@ -196,16 +197,16 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     try {
       if (mode === 'demo') {
         setData((current) => current ? { ...current, risks: current.risks.map((item) => item.id === risk.id ? { ...item, resolved: true, status: 'on_track' } : item) } : current);
-        setNotice(t('okr.previewUpdated'));
+        setNotice('okr.previewUpdated');
       } else {
         const result = await dataRepository.saveOwnedRisk(input);
         if (result.ok) {
           const reloaded = await refresh();
-          setNotice(reloaded ? t('okr.riskResolvedNotice') : t('okr.riskResolvedStale'));
-        } else setNotice(t('common.requestFailed'));
+          setNotice(reloaded ? 'okr.riskResolvedNotice' : 'okr.riskResolvedStale');
+        } else setNotice('common.requestFailed');
       }
     } catch {
-      setNotice(t('common.requestFailed'));
+      setNotice('common.requestFailed');
     } finally {
       setResolvingRiskId(undefined);
     }
@@ -220,8 +221,8 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
       >
         {editableRiskSubjects.length > 0 && <button className="button button--secondary" type="button" onClick={() => { setEditingRisk(undefined); setActiveEditor('risk'); }}>{t('okr.newRisk')}</button>}
       </PageHeader>
-      {notice && <p className="page-notice" role="status">{notice}</p>}
-      {loadError && <p role="alert">{loadError}</p>}
+      {notice && <p className="page-notice" role="status">{t(notice)}</p>}
+      {loadError && <p role="alert">{t(loadError)}</p>}
       {activeEditor === 'progress' && <KrProgressEditor ownerId={currentUser.id} keyResults={keyResults} onSave={saveProgress} onCancel={() => setActiveEditor(null)} />}
       {activeEditor === 'risk' && <RiskEditor
         key={editingRisk?.id ?? 'new-risk'} currentUser={currentUser} projects={data.projects} objectives={data.objectives} keyResults={data.keyResults}

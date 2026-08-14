@@ -81,7 +81,7 @@ export function RiskEditor({ currentUser, projects, objectives, keyResults, risk
   const [mitigation, setMitigation] = useState(risk?.mitigation ?? '');
   const [lastReviewedAt, setLastReviewedAt] = useState(risk?.lastReviewedAt ?? risk?.identifiedAt ?? '');
   const [resolved, setResolved] = useState(risk?.resolved ?? false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<MessageKey | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submissionPending = useRef(false);
   const scored = scoreRisk(probability, impact);
@@ -91,14 +91,14 @@ export function RiskEditor({ currentUser, projects, objectives, keyResults, risk
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (submissionPending.current) return;
-    setError('');
+    setError(null);
     const subject = subjects.find((item) => subjectValue(item.type, item.id) === selectedSubjectValue);
     if (!subject) {
-      setError(t('riskEditor.subjectRequired'));
+      setError('riskEditor.subjectRequired');
       return;
     }
     if (!title.trim() || !reason.trim() || !mitigation.trim() || !lastReviewedAt) {
-      setError(t('riskEditor.fieldsRequired'));
+      setError('riskEditor.fieldsRequired');
       return;
     }
 
@@ -113,9 +113,9 @@ export function RiskEditor({ currentUser, projects, objectives, keyResults, risk
         title: title.trim(), probability, impact, level: scored.level, reason: reason.trim(), mitigation: mitigation.trim(),
         lastReviewedAt, classification: risk?.classification ?? subject.classification, resolved,
       });
-      if (!result.ok) setError(t(repositoryErrorKey(result.error.code)));
+      if (!result.ok) setError(repositoryErrorKey(result.error.code));
     } catch {
-      setError(t('common.requestFailed'));
+      setError('common.requestFailed');
     } finally {
       submissionPending.current = false;
       setSubmitting(false);
@@ -141,7 +141,7 @@ export function RiskEditor({ currentUser, projects, objectives, keyResults, risk
       <label>{t('risk.mitigation')}<textarea value={mitigation} onChange={(event) => setMitigation(event.target.value)} /></label>
       <label>{t('riskEditor.reviewDate')}<input type="date" value={lastReviewedAt} onChange={(event) => setLastReviewedAt(event.target.value)} /></label>
       {risk && <label className="settings-toggle"><input type="checkbox" checked={resolved} onChange={(event) => setResolved(event.target.checked)} />{t('riskEditor.resolved')}</label>}
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{t(error)}</p>}
       <div className="inline-actions">
         <button className="button button--primary" type="submit" disabled={submitting}>{submitting ? t('common.saving') : t('riskEditor.save')}</button>
         {onCancel && <button className="button button--secondary" type="button" onClick={onCancel} disabled={submitting}>{t('common.cancel')}</button>}

@@ -14,7 +14,7 @@ import { appMode, repository } from '../lib/supabase';
 import { RevisionHistory, type RevisionSummary } from './daily-report/RevisionHistory';
 import { DailyReportEvidenceDetails } from './DailyReportEvidenceDetails';
 import { useLocale } from '../i18n/LocaleProvider';
-import type { MessageKey } from '../i18n/messages';
+import type { LocalizedMessage, MessageKey } from '../i18n/messages';
 
 function authorName(authorId: string, users: ReturnType<typeof mockRepository.getDashboardData>['users'], fallback: string) {
   return users.find((user) => user.id === authorId)?.name ?? fallback;
@@ -76,7 +76,7 @@ export function resolveDailyAuthoringContext(
 export function DailyReportsPage() {
   const { t } = useLocale();
   const { currentUser } = useAuth();
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<MessageKey | null>(null);
   const [isAuthoring, setIsAuthoring] = useState(false);
   const [editingReport, setEditingReport] = useState<DailyReport>();
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
@@ -90,7 +90,7 @@ export function DailyReportsPage() {
     setEditingReport(undefined);
     setRevisions([]);
     setLocalReports({ ownerId: currentUser?.id, reports: [] });
-    setNotice('');
+    setNotice(null);
     nextLocalSubmissionNonce.current = 1;
   }, [currentUser?.id]);
   useEffect(() => {
@@ -145,7 +145,7 @@ export function DailyReportsPage() {
 
   async function handleSubmit(draft: DailyReportDraft) {
     if (!authoringContext) {
-      return { ok: false as const, error: t('daily.noAuthoringProject') };
+      return { ok: false as const, error: { key: 'daily.noAuthoringProject' } satisfies LocalizedMessage };
     }
 
     const conversion = toLocalDailyReport(draft, {
@@ -163,7 +163,7 @@ export function DailyReportsPage() {
         : conversion.error.code === 'KEY_RESULT_NOT_IN_OBJECTIVE'
           ? 'daily.krMismatch'
           : 'daily.fixRequired';
-      return { ok: false as const, error: t(errorKey) };
+      return { ok: false as const, error: { key: errorKey } satisfies LocalizedMessage };
     }
 
     if (appMode === 'supabase') {
@@ -179,13 +179,13 @@ export function DailyReportsPage() {
       const persisted = editingReport
         ? (files.length ? await repository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await repository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
         : (files.length ? await repository.createDailyReportWithAttachments(input, files) : await repository.createDailyReport(input));
-      if (!persisted.ok) return { ok: false as const, error: persisted.error.code === 'conflict' ? t('daily.conflict') : t('common.requestFailed') };
+      if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
     }
 
     nextLocalSubmissionNonce.current += 1;
     const saved = { ...conversion.report, id: editingReport?.id ?? conversion.report.id, currentRevision: (editingReport?.currentRevision ?? 0) + 1, updatedAt: new Date().toISOString() };
     setLocalReports((bucket) => ({ ownerId: currentUserId, reports: editingReport ? [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : []).filter((item) => item.id !== editingReport.id)] : [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : [])] }));
-    setNotice(t('daily.saved'));
+    setNotice('daily.saved');
     setEditingReport(undefined);
     restoreAuthoringFocus.current = true;
     setIsAuthoring(false);
@@ -217,8 +217,8 @@ export function DailyReportsPage() {
     },
     { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
     { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
-    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(''); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (appMode === 'supabase') { const history = await repository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
-    ...(showReviewActions ? [{ key: 'actions', label: t('daily.review'), render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice(t('daily.confirmedNotice'))}>{t('daily.confirm')}</button><button type="button" className="text-button" onClick={() => setNotice(t('daily.returnedNotice'))}>{t('daily.return')}</button><button type="button" className="text-button" onClick={() => setNotice(t('daily.commentedNotice'))}>{t('daily.comment')}</button></span> }] : []),
+    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (appMode === 'supabase') { const history = await repository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
+    ...(showReviewActions ? [{ key: 'actions', label: t('daily.review'), render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice('daily.confirmedNotice')}>{t('daily.confirm')}</button><button type="button" className="text-button" onClick={() => setNotice('daily.returnedNotice')}>{t('daily.return')}</button><button type="button" className="text-button" onClick={() => setNotice('daily.commentedNotice')}>{t('daily.comment')}</button></span> }] : []),
   ];
 
   return (
@@ -226,9 +226,9 @@ export function DailyReportsPage() {
       <PageHeader
         title={t('daily.title')}
         description={t('daily.description')}
-        primaryAction={authoringContext ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { setNotice(''); setIsAuthoring(true); } } : undefined}
+        primaryAction={authoringContext ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { setNotice(null); setIsAuthoring(true); } } : undefined}
       />
-      {notice && <p className="page-notice" role="status">{notice}</p>}
+      {notice && <p className="page-notice" role="status">{t(notice)}</p>}
       {isAuthoring && authoringContext && (
         <section className="page-section" aria-labelledby="daily-report-authoring">
           <h2 id="daily-report-authoring" ref={authoringHeadingRef} tabIndex={-1}>{editingReport ? t('daily.editMine') : t('daily.fillToday')}</h2>
