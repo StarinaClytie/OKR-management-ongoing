@@ -3,7 +3,6 @@ import { can } from '../auth/permissionService';
 import { ConfidentialityBadge } from '../components/ConfidentialityBadge';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
-import { RestrictedContent } from '../components/RestrictedContent';
 import { StatusBadge } from '../components/StatusBadge';
 import { mockRepository } from '../mocks/repository';
 
@@ -12,7 +11,6 @@ export function ProjectsPage() {
   if (!currentUser) return null;
   const data = mockRepository.getDashboardData(currentUser.id);
   const visibleProjects = data.projects.filter((project) => can(currentUser, 'okr.read_detail', project).allowed);
-  const hiddenProjectCount = data.projects.length - visibleProjects.length;
   const canManageProject = visibleProjects.some((project) => can(currentUser, 'project.manage', project).allowed);
 
   return (
@@ -35,7 +33,6 @@ export function ProjectsPage() {
           { key: 'status', label: '状态', render: (project) => <StatusBadge status={project.status} /> },
         ]}
       />
-      {hiddenProjectCount > 0 && <RestrictedContent classification="confidential" />}
     </section>
   );
 }

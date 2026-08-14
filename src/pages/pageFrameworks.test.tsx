@@ -33,12 +33,16 @@ describe('business route frameworks', () => {
     expect(screen.queryByText('页面框架将在后续迭代中补充。')).not.toBeInTheDocument();
   });
 
-  it('does not leak an inaccessible project name in the project list', () => {
-    renderRoute('user-employee', '/projects');
+  it.each(['user-employee', 'user-hr'])('does not expose inaccessible project metadata to %s', (userId) => {
+    renderRoute(userId, '/projects');
 
     expect(screen.getByRole('heading', { name: '项目' })).toBeVisible();
     expect(screen.queryByText('新星数据平台')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('受限内容')).toBeVisible();
+    expect(screen.queryByText('为经营团队提供统一、可追溯的指标数据。')).not.toBeInTheDocument();
+    expect(screen.queryByText('机密')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('受限内容')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('严格机密内容')).not.toBeInTheDocument();
+    expect(screen.queryByText(/隐藏.*项目|项目.*隐藏/)).not.toBeInTheDocument();
   });
 
   it('gives a project leader their own KR update action only for an owned key result', () => {
