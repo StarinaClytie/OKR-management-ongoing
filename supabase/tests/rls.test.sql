@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(43);
+select plan(45);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -97,6 +97,10 @@ select is(private.current_profile_id(), '10000000-0000-0000-0000-000000000004'::
 select ok(private.has_role('employee'), 'active role is recognized');
 select ok(private.has_clearance('confidential'), 'owner has clearance to own confidential content');
 select is((select count(*) from public.daily_report_revisions), 1::bigint, 'author reads own report detail');
+select throws_ok(
+  $$update public.key_results set progress = 40 where id = '41000000-0000-0000-0000-000000000001'$$,
+  '42501', 'permission denied for table key_results', 'KR owner cannot directly overwrite actual progress'
+);
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000002', true);
 select is((select count(*) from public.daily_report_revisions), 1::bigint, 'management reads organization report detail');
@@ -106,6 +110,10 @@ select is((select count(*) from public.daily_report_revisions), 1::bigint, 'proj
 select is_empty(
   $$update public.daily_report_revisions set daily_objective = 'leader edit' where id = '60000000-0000-0000-0000-000000000001' returning id$$,
   'project leader cannot edit member report body'
+);
+select throws_ok(
+  $$update public.key_results set progress = 60 where id = '41000000-0000-0000-0000-000000000001'$$,
+  '42501', 'permission denied for table key_results', 'project leader cannot directly overwrite employee actual progress'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000005', true);

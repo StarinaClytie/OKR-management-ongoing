@@ -1,6 +1,6 @@
 begin;
 
-select plan(88);
+select plan(90);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -184,6 +184,14 @@ select throws_ok(
   '23514',
   'Risk subject must belong to the risk project',
   'risks reject subjects from another project'
+);
+select ok(
+  (select convalidated from pg_constraint where conname = 'risks_exactly_one_subject'),
+  'risk subject constraint is validated after legacy-risk backfill'
+);
+select is_empty(
+  $$select id from public.risks where num_nonnulls(key_result_id, objective_id) <> 1$$,
+  'no subjectless or ambiguous risks remain after the migration'
 );
 select ok(to_regprocedure('public.save_kr_progress(uuid,numeric,date,text)') is not null, 'save KR progress RPC has the required signature');
 select ok(to_regprocedure('public.save_owned_risk(uuid,uuid,uuid,uuid,text,smallint,smallint,text,text,date,public.classification,boolean)') is not null, 'save owned risk RPC has the required signature');

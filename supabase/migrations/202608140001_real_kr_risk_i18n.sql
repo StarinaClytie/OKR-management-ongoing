@@ -79,6 +79,60 @@ create trigger assert_risk_subject_project
 before insert or update on public.risks
 for each row execute function public.assert_risk_subject_project();
 
+-- Legacy risks were project-only. Preserve them by selecting the lowest UUID KR
+-- in their project, falling back to the lowest UUID Objective when no KR exists.
+-- A project with neither subject cannot be migrated safely and aborts the migration.
+do $$
+begin
+  if exists (
+    select 1
+    from public.risks r
+    where num_nonnulls(r.key_result_id, r.objective_id) <> 1
+      and not exists (
+        select 1 from public.key_results kr
+        where kr.organization_id = r.organization_id and kr.project_id = r.project_id
+      )
+      and not exists (
+        select 1 from public.objectives o
+        where o.organization_id = r.organization_id and o.project_id = r.project_id
+      )
+  ) then
+    raise exception 'Legacy risk subject cannot be backfilled because its project has no KR or Objective'
+      using errcode = '23514';
+  end if;
+end;
+$$;
+
+with legacy_subjects as (
+  select
+    r.id,
+    (
+      select kr.id
+      from public.key_results kr
+      where kr.organization_id = r.organization_id and kr.project_id = r.project_id
+      order by kr.id
+      limit 1
+    ) as key_result_id,
+    (
+      select o.id
+      from public.objectives o
+      where o.organization_id = r.organization_id and o.project_id = r.project_id
+      order by o.id
+      limit 1
+    ) as objective_id
+  from public.risks r
+  where num_nonnulls(r.key_result_id, r.objective_id) <> 1
+)
+update public.risks r
+set key_result_id = legacy_subjects.key_result_id,
+    objective_id = case when legacy_subjects.key_result_id is null then legacy_subjects.objective_id else null end
+from legacy_subjects
+where r.id = legacy_subjects.id;
+
+alter table public.risks validate constraint risks_exactly_one_subject;
+comment on constraint risks_exactly_one_subject on public.risks is
+  'Each risk references exactly one KR or Objective. Legacy project-only risks were backfilled to the lowest UUID KR in their project, falling back to the lowest UUID Objective.';
+
 alter table public.progress_snapshots enable row level security;
 alter table public.progress_snapshots force row level security;
 
@@ -101,6 +155,10 @@ grant select on table public.progress_snapshots to authenticated;
 
 revoke update on table public.profiles from authenticated;
 grant update (organization_id, display_name, is_active, clearance) on table public.profiles to authenticated;
+
+revoke update on table public.key_results from authenticated;
+grant update (objective_id, project_id, owner_id, title, measurement_type, target_value, current_value, classification, start_date, due_date)
+  on table public.key_results to authenticated;
 
 revoke insert, update, delete on table public.risks from authenticated;
 revoke execute on function public.save_risk(uuid, text, integer, integer, text, text, date, public.classification) from authenticated;
