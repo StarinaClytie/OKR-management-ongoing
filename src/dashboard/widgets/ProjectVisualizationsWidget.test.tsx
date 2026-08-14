@@ -299,6 +299,19 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.queryByText('12 个周度数据点')).not.toBeInTheDocument();
   });
 
+  it('shows unavailable actual progress for a sparse baseline-only series', () => {
+    const planOnlyData = {
+      ...leaderData,
+      progressSnapshots: leaderData.progressSnapshots.slice(0, 2).map((point) => ({ ...point, actual: undefined })),
+    };
+
+    render(<ProgressTrendWidget data={planOnlyData} />);
+
+    expect(screen.getByLabelText('最新实际进度')).toHaveTextContent('—');
+    expect(screen.getByLabelText('最新实际进度')).toHaveTextContent('尚无实际填报');
+    expect(screen.getByLabelText('最新实际进度')).not.toHaveTextContent('0%');
+  });
+
   it('shows HR workload fields without ever rendering report bodies', () => {
     const hrData = mockRepository.getDashboardData('user-hr');
     const secretReportBody = hrData.dailyReports[0].content;

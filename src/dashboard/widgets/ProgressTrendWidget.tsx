@@ -10,13 +10,14 @@ export interface ProgressTrendWidgetProps {
 export function ProgressTrendWidget({ data }: ProgressTrendWidgetProps) {
   const { trendPoints } = prepareVisualizationData(data);
   const latest = trendPoints.at(-1);
+  const latestActual = latest?.actual;
 
   if (trendPoints.length < 8) {
     return (
       <div className="trend-fallback">
         <p className="visualization-empty">数据不足，暂不绘制趋势线</p>
         <div className="dashboard-metrics">
-          <MetricCard label="最新实际进度" value={`${latest?.actual ?? 0}%`} detail="授权范围内最近一周" />
+          <MetricCard label="最新实际进度" value={latestActual === undefined ? '—' : `${latestActual}%`} detail={latestActual === undefined ? '尚无实际填报' : '授权范围内最近一周'} />
           <MetricCard label="最新计划进度" value={`${latest?.planned ?? 0}%`} detail="授权范围内最近一周" />
         </div>
       </div>
