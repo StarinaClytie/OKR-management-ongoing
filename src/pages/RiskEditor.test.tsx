@@ -21,14 +21,15 @@ const keyResults: KeyResult[] = [
   { id: 'kr-outside', objectiveId: 'objective-outside', title: '其他项目 KR', ownerId: employee.id, progress: 40, status: 'on_track', startDate: '2026-08-01', dueDate: '2026-09-01', classification: 'internal' },
 ];
 
-it('offers employees only their owned KR and Objective subjects', () => {
+it('offers employees every owned KR and Objective even when profile project membership is stale', () => {
   render(<RiskEditor currentUser={employee} projects={projects} objectives={objectives} keyResults={keyResults} onSave={vi.fn()} />);
 
   expect(screen.getByRole('option', { name: 'KR · 我负责的 KR' })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: '目标 · 我负责的目标' })).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'KR · 项目内他人 KR' })).not.toBeInTheDocument();
   expect(screen.queryByRole('option', { name: '目标 · 项目内他人目标' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('option', { name: /其他项目/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'KR · 其他项目 KR' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: '目标 · 其他项目目标' })).toBeInTheDocument();
 });
 
 it('offers project leaders every KR and Objective in projects they lead', () => {

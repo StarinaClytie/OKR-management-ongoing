@@ -1,6 +1,6 @@
 begin;
 
-select plan(90);
+select plan(92);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -84,6 +84,7 @@ select has_column('public', 'progress_snapshots', 'note', 'progress snapshots re
 select has_column('public', 'progress_snapshots', 'effective_date', 'progress snapshots retain an effective date');
 select has_table('public', 'milestones', 'milestones table exists');
 select has_table('public', 'risks', 'risks table exists');
+select has_table('public', 'legacy_project_risks', 'legacy project-level risks have a lossless quarantine table');
 select has_table('public', 'daily_reports', 'daily_reports table exists');
 select has_table('public', 'daily_report_revisions', 'daily_report_revisions table exists');
 select has_table('public', 'daily_report_revision_krs', 'daily_report_revision_krs table exists');
@@ -187,11 +188,18 @@ select throws_ok(
 );
 select ok(
   (select convalidated from pg_constraint where conname = 'risks_exactly_one_subject'),
-  'risk subject constraint is validated after legacy-risk backfill'
+  'active risk subject constraint is validated after legacy-risk quarantine'
 );
 select is_empty(
   $$select id from public.risks where num_nonnulls(key_result_id, objective_id) <> 1$$,
   'no subjectless or ambiguous risks remain after the migration'
+);
+select is(
+  (select array_agg(column_name::text order by ordinal_position)
+   from information_schema.columns
+   where table_schema = 'public' and table_name = 'legacy_project_risks'),
+  array['id','organization_id','project_id','owner_id','title','reason','mitigation','probability','impact','level','classification','last_reviewed_at','created_at','updated_at','archived_at']::text[],
+  'legacy project risks preserve their original fields without inventing a KR or objective subject'
 );
 select ok(to_regprocedure('public.save_kr_progress(uuid,numeric,date,text)') is not null, 'save KR progress RPC has the required signature');
 select ok(to_regprocedure('public.save_owned_risk(uuid,uuid,uuid,uuid,text,smallint,smallint,text,text,date,public.classification,boolean)') is not null, 'save owned risk RPC has the required signature');

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
@@ -7,16 +7,18 @@ import { StatusBadge } from '../components/StatusBadge';
 import { toLocalDailyReport, type DailyEvidenceDraft, type DailyReportDraft } from '../domain/dailyEntry';
 import { getDailyEvidencePermissionScope, getDailyReportBodyPermissionScope } from '../domain/permissions';
 import type { Classification, DailyReport, Objective, User } from '../domain/types';
-import { mockRepository } from '../mocks/repository';
 import { DailyReportForm } from './daily-report/DailyReportForm';
 import { dailyReportToDraft } from '../data/dailyReportMapper';
-import { appMode, repository } from '../lib/supabase';
+import { repository } from '../lib/supabase';
 import { RevisionHistory, type RevisionSummary } from './daily-report/RevisionHistory';
 import { DailyReportEvidenceDetails } from './DailyReportEvidenceDetails';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { LocalizedMessage, MessageKey } from '../i18n/messages';
+import type { OkrRepository } from '../data/types';
+import { useDashboardData } from '../data/useDashboardData';
+import { RepositoryDataState } from '../components/RepositoryDataState';
 
-function authorName(authorId: string, users: ReturnType<typeof mockRepository.getDashboardData>['users'], fallback: string) {
+function authorName(authorId: string, users: User[], fallback: string) {
   return users.find((user) => user.id === authorId)?.name ?? fallback;
 }
 
@@ -73,7 +75,7 @@ export function resolveDailyAuthoringContext(
     .find((candidate) => can(currentUser, 'daily_report.create', candidate.report).allowed);
 }
 
-export function DailyReportsPage() {
+export function DailyReportsPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
   const [notice, setNotice] = useState<MessageKey | null>(null);
@@ -85,6 +87,7 @@ export function DailyReportsPage() {
   const authoringButtonRef = useRef<HTMLButtonElement>(null);
   const authoringHeadingRef = useRef<HTMLHeadingElement>(null);
   const restoreAuthoringFocus = useRef(false);
+  const dashboard = useDashboardData(dataRepository, currentUser?.id);
   useEffect(() => {
     setIsAuthoring(false);
     setEditingReport(undefined);
@@ -103,13 +106,13 @@ export function DailyReportsPage() {
     if (isAuthoring && editingReport) authoringHeadingRef.current?.focus();
   }, [editingReport, isAuthoring]);
   if (!currentUser) return null;
+  if (dashboard.status !== 'ready') {
+    return <section className="business-page" aria-labelledby="daily-reports-page-title"><PageHeader title={t('daily.title')} description={t('daily.description')} /><RepositoryDataState state={dashboard} /></section>;
+  }
   const currentUserId = currentUser.id;
-  const data = mockRepository.getDashboardData(currentUser.id);
+  const data = dashboard.data;
   const currentLocalReports = localReports.ownerId === currentUser.id ? localReports.reports : [];
-  const readableReports = useMemo(
-    () => [...currentLocalReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed),
-    [currentUser, data.dailyReports, currentLocalReports],
-  );
+  const readableReports = [...currentLocalReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
 
   if (currentUser.role === 'hr') {
     const hoursRows = data.workloads.filter((workload) => can(currentUser, 'worklog.read_hours', workload).allowed);
@@ -166,7 +169,7 @@ export function DailyReportsPage() {
       return { ok: false as const, error: { key: errorKey } satisfies LocalizedMessage };
     }
 
-    if (appMode === 'supabase') {
+    if (dataRepository.mode === 'supabase') {
       const input = {
         projectId: conversion.report.projectId, objectiveId: conversion.report.objectiveId,
         reportDate: conversion.report.date, status: conversion.report.status,
@@ -177,8 +180,8 @@ export function DailyReportsPage() {
       };
       const files = draft.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []);
       const persisted = editingReport
-        ? (files.length ? await repository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await repository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
-        : (files.length ? await repository.createDailyReportWithAttachments(input, files) : await repository.createDailyReport(input));
+        ? (files.length ? await dataRepository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await dataRepository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
+        : (files.length ? await dataRepository.createDailyReportWithAttachments(input, files) : await dataRepository.createDailyReport(input));
       if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
     }
 
@@ -217,7 +220,7 @@ export function DailyReportsPage() {
     },
     { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
     { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
-    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (appMode === 'supabase') { const history = await repository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
+    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (dataRepository.mode === 'supabase') { const history = await dataRepository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
     ...(showReviewActions ? [{ key: 'actions', label: t('daily.review'), render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice('daily.confirmedNotice')}>{t('daily.confirm')}</button><button type="button" className="text-button" onClick={() => setNotice('daily.returnedNotice')}>{t('daily.return')}</button><button type="button" className="text-button" onClick={() => setNotice('daily.commentedNotice')}>{t('daily.comment')}</button></span> }] : []),
   ];
 

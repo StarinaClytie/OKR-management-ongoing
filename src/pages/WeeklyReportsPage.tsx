@@ -3,14 +3,21 @@ import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { mockData } from '../mocks/repository';
 import { useLocale } from '../i18n/LocaleProvider';
+import type { OkrRepository } from '../data/types';
+import { useDashboardData } from '../data/useDashboardData';
+import { repository } from '../lib/supabase';
+import { RepositoryDataState } from '../components/RepositoryDataState';
 
-export function WeeklyReportsPage() {
+export function WeeklyReportsPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
+  const dashboard = useDashboardData(dataRepository, currentUser?.id);
   if (!currentUser) return null;
-  const reports = mockData.weeklyReports.filter(
+  if (dashboard.status !== 'ready') {
+    return <section className="business-page" aria-labelledby="weekly-reports-page-title"><PageHeader title={t('weekly.title')} description={t('weekly.description')} /><RepositoryDataState state={dashboard} /></section>;
+  }
+  const reports = (dashboard.data.weeklyReports ?? []).filter(
     (report) =>
       can(currentUser, 'weekly_report.read', report).allowed &&
       can(currentUser, 'weekly_report.read_body', report).allowed,

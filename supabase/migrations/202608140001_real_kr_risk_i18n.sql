@@ -79,62 +79,49 @@ create trigger assert_risk_subject_project
 before insert or update on public.risks
 for each row execute function public.assert_risk_subject_project();
 
--- Legacy risks were project-only. Preserve them by selecting the lowest UUID KR
--- in their project, falling back to the lowest UUID Objective when no KR exists.
--- A project with neither subject cannot be migrated safely and aborts the migration.
-do $$
-begin
-  if exists (
-    select 1
-    from public.risks r
-    where num_nonnulls(r.key_result_id, r.objective_id) <> 1
-      and not exists (
-        select 1 from public.key_results kr
-        where kr.organization_id = r.organization_id and kr.project_id = r.project_id
-      )
-      and not exists (
-        select 1 from public.objectives o
-        where o.organization_id = r.organization_id and o.project_id = r.project_id
-      )
-  ) then
-    raise exception 'Legacy risk subject cannot be backfilled because its project has no KR or Objective'
-      using errcode = '23514';
-  end if;
-end;
-$$;
+-- Legacy risks were project-level records and did not identify a KR or Objective.
+-- Quarantine them losslessly instead of inventing an arbitrary subject association.
+-- Administrators can later classify and re-enter each record through an explicit
+-- remediation workflow; application roles receive no access to this archive.
+create table public.legacy_project_risks (
+  id uuid primary key,
+  organization_id uuid not null,
+  project_id uuid not null,
+  owner_id uuid not null,
+  title text not null,
+  reason text not null,
+  mitigation text not null,
+  probability smallint not null,
+  impact smallint not null,
+  level public.risk_level not null,
+  classification public.classification not null,
+  last_reviewed_at timestamptz not null,
+  created_at timestamptz not null,
+  updated_at timestamptz not null,
+  archived_at timestamptz not null default timezone('utc', now())
+);
 
-with legacy_subjects as (
-  select
-    r.id,
-    (
-      select kr.id
-      from public.key_results kr
-      where kr.organization_id = r.organization_id and kr.project_id = r.project_id
-      order by kr.id
-      limit 1
-    ) as key_result_id,
-    (
-      select o.id
-      from public.objectives o
-      where o.organization_id = r.organization_id and o.project_id = r.project_id
-      order by o.id
-      limit 1
-    ) as objective_id
-  from public.risks r
-  where num_nonnulls(r.key_result_id, r.objective_id) <> 1
+insert into public.legacy_project_risks (
+  id, organization_id, project_id, owner_id, title, reason, mitigation,
+  probability, impact, level, classification, last_reviewed_at, created_at, updated_at
 )
-update public.risks r
-set key_result_id = legacy_subjects.key_result_id,
-    objective_id = case when legacy_subjects.key_result_id is null then legacy_subjects.objective_id else null end
-from legacy_subjects
-where r.id = legacy_subjects.id;
+select
+  id, organization_id, project_id, owner_id, title, reason, mitigation,
+  probability, impact, level, classification, last_reviewed_at, created_at, updated_at
+from public.risks
+where num_nonnulls(key_result_id, objective_id) <> 1;
+
+delete from public.risks
+where num_nonnulls(key_result_id, objective_id) <> 1;
 
 alter table public.risks validate constraint risks_exactly_one_subject;
 comment on constraint risks_exactly_one_subject on public.risks is
-  'Each risk references exactly one KR or Objective. Legacy project-only risks were backfilled to the lowest UUID KR in their project, falling back to the lowest UUID Objective.';
+  'Each active risk references exactly one explicitly selected KR or Objective. Legacy project-level risks are preserved without an invented subject in public.legacy_project_risks.';
 
 alter table public.progress_snapshots enable row level security;
 alter table public.progress_snapshots force row level security;
+alter table public.legacy_project_risks enable row level security;
+alter table public.legacy_project_risks force row level security;
 
 create policy progress_snapshots_read on public.progress_snapshots for select to authenticated
 using (
@@ -151,7 +138,28 @@ using (
 revoke all on function public.reject_progress_snapshot_mutation() from public, anon, authenticated;
 revoke all on function public.assert_risk_subject_project() from public, anon, authenticated;
 revoke all on table public.progress_snapshots from public, anon, authenticated;
+revoke all on table public.legacy_project_risks from public, anon, authenticated;
 grant select on table public.progress_snapshots to authenticated;
+
+-- HR receives workload totals by person and day only. Grouping removes any
+-- project/report fan-out and the view deliberately exposes no project identifier.
+drop view public.hr_workload;
+create view public.hr_workload
+with (security_barrier = true)
+as
+select
+  dr.author_id as user_id,
+  dr.report_date,
+  sum(dr.total_hours) as total_hours,
+  null::numeric as planned_hours,
+  8::numeric as capacity_hours
+from public.daily_reports dr
+where dr.organization_id = private.current_organization_id()
+  and private.has_role('hr')
+group by dr.author_id, dr.report_date;
+
+revoke all on public.hr_workload from public, anon;
+grant select on public.hr_workload to authenticated;
 
 revoke update on table public.profiles from authenticated;
 grant update (organization_id, display_name, is_active, clearance) on table public.profiles to authenticated;
@@ -182,7 +190,8 @@ begin
   from public.key_results kr
   where kr.id = p_key_result_id
     and kr.organization_id = private.current_organization_id()
-    and kr.owner_id = auth.uid();
+    and kr.owner_id = auth.uid()
+  for update;
 
   if not found then
     raise exception 'KR progress is not editable by the current user' using errcode = '42501';
@@ -191,6 +200,10 @@ begin
   if p_progress is null or p_progress < 0 or p_progress > 100
     or p_effective_date is null or length(trim(coalesce(p_note, ''))) = 0 then
     raise exception 'KR progress fields are invalid' using errcode = '22023';
+  end if;
+
+  if p_effective_date > current_date then
+    raise exception 'KR progress effective date cannot be in the future' using errcode = '22023';
   end if;
 
   if not private.has_clearance(target.classification) then
@@ -205,7 +218,15 @@ begin
 
   update public.key_results
   set progress = p_progress
-  where id = target.id and organization_id = target.organization_id;
+  where id = target.id
+    and organization_id = target.organization_id
+    and p_effective_date = (
+      select max(ps.effective_date)
+      from public.progress_snapshots ps
+      where ps.key_result_id = target.id
+        and ps.organization_id = target.organization_id
+        and ps.effective_date <= current_date
+    );
 
   return snapshot_id;
 end;
@@ -234,9 +255,9 @@ declare
   target_project public.projects%rowtype;
   existing_risk public.risks%rowtype;
   risk_id uuid := coalesce(p_risk_id, gen_random_uuid());
-  subject_is_authorized boolean := false;
   subject_classification public.classification;
   is_project_leader boolean := false;
+  minimum_classification_rank integer;
   score integer;
   calculated_level public.risk_level;
 begin
@@ -245,6 +266,10 @@ begin
   where p.id = p_project_id
     and p.organization_id = private.current_organization_id();
   if not found or private.has_role('hr') then
+    raise exception 'Risk is not editable by the current user' using errcode = '42501';
+  end if;
+
+  if not private.has_clearance(target_project.classification) then
     raise exception 'Risk is not editable by the current user' using errcode = '42501';
   end if;
 
@@ -273,22 +298,20 @@ begin
     where kr.id = p_key_result_id
       and kr.organization_id = target_project.organization_id
       and kr.project_id = target_project.id
-      and (is_project_leader or kr.owner_id = auth.uid());
+      and (is_project_leader or kr.owner_id = auth.uid())
+      and private.has_clearance(kr.classification);
   else
     select o.classification into subject_classification
     from public.objectives o
     where o.id = p_objective_id
       and o.organization_id = target_project.organization_id
       and o.project_id = target_project.id
-      and (is_project_leader or o.owner_id = auth.uid());
+      and (is_project_leader or o.owner_id = auth.uid())
+      and private.has_clearance(o.classification);
   end if;
 
-  subject_is_authorized := found;
-  if coalesce(subject_is_authorized, false) is not true then
+  if not found then
     raise exception 'Risk is not editable by the current user' using errcode = '42501';
-  end if;
-  if not private.has_clearance(subject_classification) then
-    raise exception 'Risk subject exceeds user clearance' using errcode = '42501';
   end if;
 
   if p_risk_id is not null then
@@ -297,13 +320,21 @@ begin
     where r.id = p_risk_id
       and r.organization_id = target_project.organization_id
       and r.project_id = target_project.id
+      and (is_project_leader or r.owner_id = auth.uid())
+      and private.has_clearance(r.classification)
     for update;
-    if not found or (not is_project_leader and existing_risk.owner_id <> auth.uid()) then
+    if not found then
       raise exception 'Risk is not editable by the current user' using errcode = '42501';
     end if;
-    if not private.has_clearance(existing_risk.classification) then
-      raise exception 'Risk classification exceeds user clearance' using errcode = '42501';
-    end if;
+  end if;
+
+  minimum_classification_rank := greatest(
+    private.classification_rank(target_project.classification),
+    private.classification_rank(subject_classification),
+    coalesce(private.classification_rank(existing_risk.classification), 0)
+  );
+  if private.classification_rank(p_classification) < minimum_classification_rank then
+    raise exception 'Risk classification cannot be lower than its protected context' using errcode = '42501';
   end if;
 
   score := p_probability * p_impact;

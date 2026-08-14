@@ -76,6 +76,7 @@ export interface OwnedRiskInput {
 
 export interface OkrRepository {
   readonly mode: AppMode;
+  getCachedDashboardData?(userId: string): DashboardData | undefined;
   getCurrentProfile(): Promise<RepositoryResult<User | null>>;
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;

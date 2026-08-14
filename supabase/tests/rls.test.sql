@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(45);
+select plan(54);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -128,8 +128,10 @@ select is((select count(*) from public.daily_report_revisions), 0::bigint, 'subo
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000009', true);
 select is((select count(*) from public.daily_report_revisions), 0::bigint, 'HR cannot read report body');
+select is((select count(*) from public.daily_reports), 0::bigint, 'HR cannot count hidden project reports directly');
+select is((select count(*) from public.projects), 0::bigint, 'HR cannot count hidden projects directly');
 select is((select count(*) from public.hr_workload), 1::bigint, 'HR reads workload-only view');
-select is((select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'hr_workload'), array['user_id','report_date','project_id','total_hours','planned_hours','capacity_hours']::text[], 'HR view exposes only approved workload fields');
+select is((select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'hr_workload'), array['user_id','report_date','total_hours','planned_hours','capacity_hours']::text[], 'HR workload view exposes neither project IDs nor project/report counts');
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 select is((select count(*) from public.daily_report_revisions), 0::bigint, 'administrator role alone cannot read confidential business body');
@@ -193,6 +195,20 @@ select lives_ok(
   'KR owner appends actual progress through the restricted RPC'
 );
 select is((select count(*) from public.progress_snapshots where key_result_id = '41000000-0000-0000-0000-000000000001'), 1::bigint, 'KR progress RPC appends one immutable snapshot');
+select lives_ok(
+  $$select public.save_kr_progress('41000000-0000-0000-0000-000000000001', 90, current_date - 1, 'Recorded an older effective update')$$,
+  'KR owner may append a backdated immutable progress record'
+);
+select is(
+  (select progress from public.key_results where id = '41000000-0000-0000-0000-000000000001'),
+  40.00::numeric,
+  'a backdated progress record does not replace the current effective progress'
+);
+select throws_ok(
+  $$select public.save_kr_progress('41000000-0000-0000-0000-000000000001', 100, current_date + 1, 'Attempted future actual progress')$$,
+  '22023', 'KR progress effective date cannot be in the future', 'future actual progress is rejected instead of overwriting current progress'
+);
+select is((select count(*) from public.progress_snapshots where key_result_id = '41000000-0000-0000-0000-000000000001'), 2::bigint, 'rejected future progress does not append a snapshot');
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 select lives_ok(
   $$select public.save_milestones('30000000-0000-0000-0000-000000000001', jsonb_build_array(jsonb_build_object('title', 'Release gate', 'plannedDate', (current_date + 10)::text, 'keyResultId', '41000000-0000-0000-0000-000000000001')))$$,
@@ -218,6 +234,10 @@ select throws_ok(
   '42501', 'Risk is not editable by the current user', 'non-owner employee cannot save a risk against another employee KR'
 );
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
+select throws_ok(
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Downgraded subject risk', 1::smallint, 1::smallint, 'Classification mismatch', 'Use the subject classification', current_date, 'internal'::public.classification, false)$$,
+  '42501', 'Risk classification cannot be lower than its protected context', 'employee cannot classify a risk below its confidential subject or project'
+);
 select lives_ok(
   $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'KR risk', 1::smallint, 1::smallint, 'A local dependency is delayed', 'Coordinate the dependency', current_date, 'confidential'::public.classification, false)$$,
   'employee saves a risk against their owned KR'
@@ -248,13 +268,21 @@ select throws_ok(
   '42501', 'Risk is not editable by the current user', 'a peer cannot update another employee risk event'
 );
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
+select throws_ok(
+  $$select public.save_owned_risk((select id from public.risks where title = 'Resolved KR risk'), '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Downgraded existing risk', 1::smallint, 1::smallint, 'Classification downgrade', 'Keep the original classification', current_date, 'internal'::public.classification, false)$$,
+  '42501', 'Risk classification cannot be lower than its protected context', 'project leader cannot downgrade an existing confidential risk'
+);
 select lives_ok(
   $$select public.save_owned_risk((select id from public.risks where title = 'Resolved KR risk'), '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000001'::uuid, null::uuid, 'Leader-reviewed risk', 1::smallint, 1::smallint, 'Leader verified the mitigation', 'Continue monitoring', current_date, 'confidential'::public.classification, false)$$,
   'project leader updates a member risk event in their project'
 );
 select throws_ok(
   $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000002'::uuid, null::uuid, 'Restricted subject', 1::smallint, 1::smallint, 'Known restricted subject', 'No action', current_date, 'confidential'::public.classification, false)$$,
-  '42501', 'Risk subject exceeds user clearance', 'project leader cannot save a risk against a subject above their clearance'
+  '42501', 'Risk is not editable by the current user', 'a hidden subject UUID is indistinguishable from an unauthorized subject'
+);
+select throws_ok(
+  $$select public.save_owned_risk(null::uuid, '30000000-0000-0000-0000-000000000001'::uuid, '41000000-0000-0000-0000-000000000099'::uuid, null::uuid, 'Unknown subject', 1::smallint, 1::smallint, 'Unknown subject', 'No action', current_date, 'confidential'::public.classification, false)$$,
+  '42501', 'Risk is not editable by the current user', 'a nonexistent subject UUID returns the same response as a hidden subject UUID'
 );
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000009', true);
 select throws_ok(

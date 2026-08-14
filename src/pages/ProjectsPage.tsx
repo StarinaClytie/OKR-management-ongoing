@@ -4,14 +4,21 @@ import { ConfidentialityBadge } from '../components/ConfidentialityBadge';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { mockRepository } from '../mocks/repository';
 import { useLocale } from '../i18n/LocaleProvider';
+import type { OkrRepository } from '../data/types';
+import { useDashboardData } from '../data/useDashboardData';
+import { repository } from '../lib/supabase';
+import { RepositoryDataState } from '../components/RepositoryDataState';
 
-export function ProjectsPage() {
+export function ProjectsPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
+  const dashboard = useDashboardData(dataRepository, currentUser?.id);
   if (!currentUser) return null;
-  const data = mockRepository.getDashboardData(currentUser.id);
+  if (dashboard.status !== 'ready') {
+    return <section className="business-page" aria-labelledby="projects-page-title"><PageHeader title={t('projects.title')} description={t('projects.description')} /><RepositoryDataState state={dashboard} /></section>;
+  }
+  const data = dashboard.data;
   const visibleProjects = data.projects.filter((project) => can(currentUser, 'okr.read_detail', project).allowed);
   const canManageProject = visibleProjects.some((project) => can(currentUser, 'project.manage', project).allowed);
 

@@ -9,6 +9,10 @@ function unsupported<T>(): RepositoryResult<T> {
 export class DemoOkrRepository implements OkrRepository {
   readonly mode = 'demo' as const;
 
+  getCachedDashboardData(userId: string) {
+    return mockRepository.getDashboardData(userId);
+  }
+
   async getCurrentProfile(): Promise<RepositoryResult<User | null>> {
     return { ok: true, data: null };
   }

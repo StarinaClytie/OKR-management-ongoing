@@ -2,14 +2,21 @@ import { useAuth } from '../auth/AuthContext';
 import { can, getUserPermissionScope } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
-import { mockRepository } from '../mocks/repository';
 import { useLocale } from '../i18n/LocaleProvider';
+import type { OkrRepository } from '../data/types';
+import { useDashboardData } from '../data/useDashboardData';
+import { repository } from '../lib/supabase';
+import { RepositoryDataState } from '../components/RepositoryDataState';
 
-export function TeamPage() {
+export function TeamPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
+  const dashboard = useDashboardData(dataRepository, currentUser?.id);
   if (!currentUser) return null;
-  const data = mockRepository.getDashboardData(currentUser.id);
+  if (dashboard.status !== 'ready') {
+    return <section className="business-page" aria-labelledby="team-page-title"><PageHeader title={t('team.title')} description={t('team.description')} /><RepositoryDataState state={dashboard} /></section>;
+  }
+  const data = dashboard.data;
   const teamMembers = data.users.filter((user) => can(currentUser, 'user.read', getUserPermissionScope(user)).allowed);
 
   return (

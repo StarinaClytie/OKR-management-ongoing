@@ -1,12 +1,16 @@
 import { useAuth } from '../auth/AuthContext';
-import { mockRepository } from '../mocks/repository';
+import type { OkrRepository } from '../data/types';
+import { useDashboardData } from '../data/useDashboardData';
+import { repository } from '../lib/supabase';
+import { RepositoryDataState } from '../components/RepositoryDataState';
 import { DashboardGrid } from './DashboardGrid';
 import { getDashboardConfig } from './dashboardRegistry';
 import { useLocale } from '../i18n/LocaleProvider';
 
-export function DashboardPage() {
+export function DashboardPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
+  const dashboard = useDashboardData(dataRepository, currentUser?.id);
 
   if (!currentUser) {
     return (
@@ -18,7 +22,6 @@ export function DashboardPage() {
   }
 
   const config = getDashboardConfig(currentUser.role);
-  const data = mockRepository.getDashboardData(currentUser.id);
 
   return (
     <section className={`dashboard-page dashboard-page--${currentUser.role}`} aria-labelledby="dashboard-title">
@@ -29,7 +32,9 @@ export function DashboardPage() {
           <p>{t(config.descriptionKey)}</p>
         </div>
       </header>
-      <DashboardGrid data={data} widgetIds={config.widgetIds} />
+      {dashboard.status === 'ready'
+        ? <DashboardGrid data={dashboard.data} widgetIds={config.widgetIds} />
+        : <RepositoryDataState state={dashboard} />}
     </section>
   );
 }

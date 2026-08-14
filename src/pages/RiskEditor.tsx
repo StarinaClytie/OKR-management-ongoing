@@ -28,7 +28,7 @@ export function getEditableRiskSubjects(
   const ledProjectIds = new Set(projects.filter((project) => project.leaderId === currentUser.id).map((project) => project.id));
   const projectIdByObjectiveId = new Map(objectives.map((objective) => [objective.id, objective.projectId]));
   const mayManage = (ownerId: string, projectId: string) => (
-    ownerId === currentUser.id && currentUser.projectIds.includes(projectId)
+    ownerId === currentUser.id
   ) || (currentUser.role !== 'hr' && ledProjectIds.has(projectId));
 
   return [

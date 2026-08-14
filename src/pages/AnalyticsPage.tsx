@@ -3,14 +3,21 @@ import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { MetricCard } from '../components/MetricCard';
 import { PageHeader } from '../components/PageHeader';
-import { mockRepository } from '../mocks/repository';
 import { useLocale } from '../i18n/LocaleProvider';
+import type { OkrRepository } from '../data/types';
+import { useDashboardData } from '../data/useDashboardData';
+import { repository } from '../lib/supabase';
+import { RepositoryDataState } from '../components/RepositoryDataState';
 
-export function AnalyticsPage() {
+export function AnalyticsPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
+  const dashboard = useDashboardData(dataRepository, currentUser?.id);
   if (!currentUser) return null;
-  const data = mockRepository.getDashboardData(currentUser.id);
+  if (dashboard.status !== 'ready') {
+    return <section className="business-page" aria-labelledby="analytics-page-title"><PageHeader title={t('analytics.title')} description={t('analytics.description')} /><RepositoryDataState state={dashboard} /></section>;
+  }
+  const data = dashboard.data;
   const workloads = data.workloads.filter((workload) => can(currentUser, 'worklog.read_hours', workload).allowed);
   const totalLoggedHours = workloads.reduce((total, workload) => total + workload.loggedHours, 0);
   const totalCapacity = workloads.reduce((total, workload) => total + workload.capacityHours, 0);
