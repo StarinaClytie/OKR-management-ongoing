@@ -34,6 +34,24 @@ describe('deriveProgressStatus', () => {
     expect(deriveProgressStatus({ ...base, risks: [{ score: 9, resolved: false }] }).status).toBe('off_track');
   });
 
+  it('keeps low and medium events separate from status escalation while evaluating every rule in parallel', () => {
+    for (const score of [1, 2, 3, 4]) {
+      expect(deriveProgressStatus({ ...base, risks: [{ score, resolved: false }] }).status).toBe('on_track');
+    }
+    expect(deriveProgressStatus({ ...base, risks: [{ score: 6, resolved: false }] }).status).toBe('at_risk');
+    expect(deriveProgressStatus({ ...base, risks: [{ score: 9, resolved: false }] }).status).toBe('off_track');
+
+    const result = deriveProgressStatus({
+      ...base,
+      actualProgress: 49,
+      milestones: [{ dueDate: '2026-08-12', isComplete: false }],
+      risks: [{ score: 9, resolved: false }],
+    });
+
+    expect(result.status).toBe('off_track');
+    expect(result.reasons.map((reason) => reason.code)).toEqual(['behind_plan', 'overdue_milestone', 'critical_risk']);
+  });
+
   it('returns all explanations while the most severe status wins', () => {
     const result = deriveProgressStatus({
       ...base,

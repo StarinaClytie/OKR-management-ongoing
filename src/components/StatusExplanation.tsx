@@ -17,6 +17,7 @@ export function StatusExplanation({ result }: { result: { status: ProgressStatus
   return (
     <section className="status-explanation" aria-label="状态计算说明">
       <StatusBadge status={result.status} />
+      <p>执行状态会并行评估进度差距、逾期里程碑、截止日期和未解决风险事件，并采用最严重的结果。</p>
       {result.reasons.length > 0
         ? <ul>{result.reasons.map((reason, index) => <li key={`${reason.code}-${index}`}>{reasonText(reason)}</li>)}</ul>
         : <p>实际进度与计划差距不超过 10 个百分点，且没有逾期里程碑或未解决高风险。</p>}
