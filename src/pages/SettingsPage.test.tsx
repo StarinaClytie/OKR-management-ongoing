@@ -51,7 +51,7 @@ describe('SettingsPage', () => {
   it('does not carry checkbox, notice, or personal-tab state to another user', () => {
     render(<AuthProvider initialUserId="user-project-leader"><RoleControls /><SettingsPage /></AuthProvider>);
     fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: '保存模拟设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
     expect(screen.getByRole('checkbox')).not.toBeChecked();
     expect(screen.getByRole('status')).toBeVisible();
 

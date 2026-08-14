@@ -29,7 +29,8 @@ describe('business route frameworks', () => {
     renderRoute(userId, path);
 
     expect(screen.getByRole('heading', { name: title })).toBeVisible();
-    expect(screen.getByText('模拟数据')).toBeVisible();
+    expect(screen.queryByText('模拟数据')).not.toBeInTheDocument();
+    expect(screen.getByText('工作区')).toBeVisible();
     expect(screen.queryByText('页面框架将在后续迭代中补充。')).not.toBeInTheDocument();
   });
 

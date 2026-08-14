@@ -1,6 +1,8 @@
 import { useRef, useState, type FormEvent } from 'react';
 import type { KeyResult } from '../domain/types';
 import type { KrProgressInput, RepositoryResult } from '../data/types';
+import { useLocale } from '../i18n/LocaleProvider';
+import { repositoryErrorKey } from '../i18n/repositoryErrors';
 
 interface KrProgressEditorProps {
   ownerId: string;
@@ -10,6 +12,7 @@ interface KrProgressEditorProps {
 }
 
 export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrProgressEditorProps) {
+  const { t } = useLocale();
   const ownedKeyResults = keyResults.filter((keyResult) => keyResult.ownerId === ownerId);
   const [keyResultId, setKeyResultId] = useState(ownedKeyResults[0]?.id ?? '');
   const [progress, setProgress] = useState(ownedKeyResults[0] ? String(ownedKeyResults[0].progress) : '');
@@ -20,7 +23,7 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
   const submissionPending = useRef(false);
 
   if (ownedKeyResults.length === 0) {
-    return <p role="status">当前没有由你负责、可更新的关键结果。</p>;
+    return <p role="status">{t('kr.noneOwned')}</p>;
   }
 
   async function submit(event: FormEvent) {
@@ -29,11 +32,11 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
     setError('');
     const numericProgress = Number(progress);
     if (progress.trim() === '' || !Number.isFinite(numericProgress) || numericProgress < 0 || numericProgress > 100) {
-      setError('实际进度必须在 0 到 100 之间。');
+      setError(t('kr.progressRange'));
       return;
     }
     if (!effectiveDate || !note.trim()) {
-      setError('请填写生效日期和更新说明。');
+      setError(t('kr.dateNoteRequired'));
       return;
     }
 
@@ -41,9 +44,9 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
     setSubmitting(true);
     try {
       const result = await onSave({ keyResultId, progress: numericProgress, effectiveDate, note: note.trim() });
-      if (!result.ok) setError(result.error.message);
+      if (!result.ok) setError(t(repositoryErrorKey(result.error.code)));
     } catch {
-      setError('请求未完成，请稍后重试。');
+      setError(t('common.requestFailed'));
     } finally {
       submissionPending.current = false;
       setSubmitting(false);
@@ -52,8 +55,8 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
 
   return (
     <form className="form-card form-section" onSubmit={submit} noValidate>
-      <h2>更新我的 KR</h2>
-      <label>关键结果
+      <h2>{t('okr.updateMine')}</h2>
+      <label>{t('okr.keyResult')}
         <select value={keyResultId} onChange={(event) => {
           const nextId = event.target.value;
           setKeyResultId(nextId);
@@ -62,19 +65,19 @@ export function KrProgressEditor({ ownerId, keyResults, onSave, onCancel }: KrPr
           {ownedKeyResults.map((keyResult) => <option key={keyResult.id} value={keyResult.id}>{keyResult.title}</option>)}
         </select>
       </label>
-      <label>实际进度（0–100）
+      <label>{t('kr.actualProgress')}
         <input type="number" min="0" max="100" step="0.01" value={progress} onChange={(event) => setProgress(event.target.value)} />
       </label>
-      <label>生效日期
+      <label>{t('kr.effectiveDate')}
         <input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} />
       </label>
-      <label>更新说明
+      <label>{t('kr.note')}
         <textarea value={note} onChange={(event) => setNote(event.target.value)} />
       </label>
       {error && <p role="alert">{error}</p>}
       <div className="inline-actions">
-        <button className="button button--primary" type="submit" disabled={submitting}>{submitting ? '保存中…' : '保存 KR 进度'}</button>
-        {onCancel && <button className="button button--secondary" type="button" onClick={onCancel} disabled={submitting}>取消</button>}
+        <button className="button button--primary" type="submit" disabled={submitting}>{submitting ? t('common.saving') : t('kr.saveProgress')}</button>
+        {onCancel && <button className="button button--secondary" type="button" onClick={onCancel} disabled={submitting}>{t('common.cancel')}</button>}
       </div>
     </form>
   );

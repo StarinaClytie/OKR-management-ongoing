@@ -1,4 +1,5 @@
 import type { ReactNode, Ref } from 'react';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export interface PageHeaderProps {
   title: string;
@@ -8,10 +9,11 @@ export interface PageHeaderProps {
 }
 
 export function PageHeader({ title, description, primaryAction, children }: PageHeaderProps) {
+  const { t } = useLocale();
   return (
     <header className="page-header">
       <div>
-        <p className="page-header__eyebrow">工作区 · <span className="mock-data-badge">模拟数据</span></p>
+        <p className="page-header__eyebrow">{t('common.workspace')}</p>
         <h1>{title}</h1>
         <p>{description}</p>
       </div>

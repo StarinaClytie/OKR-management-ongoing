@@ -41,7 +41,7 @@ describe('application routes', () => {
     );
 
     expect(screen.getByRole('heading', { name: '访问受限' })).toBeVisible();
-    expect(screen.getByText('当前演示角色没有访问此页面的权限。')).toBeVisible();
+    expect(screen.getByText('当前账户没有访问此页面的权限。')).toBeVisible();
     expect(screen.queryByText('新星数据平台')).not.toBeInTheDocument();
     expect(screen.queryByText('为经营团队提供统一、可追溯的指标数据。')).not.toBeInTheDocument();
     expect(screen.queryByText('机密')).not.toBeInTheDocument();

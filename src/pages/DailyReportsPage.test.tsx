@@ -61,7 +61,7 @@ describe('DailyReportsPage', () => {
     expect(screen.getByText('75%')).toBeVisible();
     expect(screen.getByText('3.5 小时')).toBeVisible();
     expect(screen.getAllByText('成果密级：机密').length).toBeGreaterThan(0);
-    expect(screen.getByText('日报已保存到当前演示页面，尚未连接后端。')).toBeVisible();
+    expect(screen.getByText('日报已保存。')).toBeVisible();
     expect(mockData.dailyReports).toHaveLength(repositoryReportCount);
   });
 
@@ -130,7 +130,7 @@ describe('DailyReportsPage', () => {
       expect(screen.getByLabelText('当日 O')).toBeVisible();
       expect(screen.getAllByRole('status')).toHaveLength(1);
       expect(screen.getByRole('status')).toHaveTextContent('所关联的 KR 不属于最终 O');
-      expect(screen.queryByText('日报已保存到当前演示页面，尚未连接后端。')).not.toBeInTheDocument();
+      expect(screen.queryByText('日报已保存。')).not.toBeInTheDocument();
     } finally {
       linkedKeyResult.objectiveId = originalObjectiveId;
     }

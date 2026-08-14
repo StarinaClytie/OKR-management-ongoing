@@ -3,12 +3,14 @@ import { can } from '../../auth/permissionService';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
 import type { DashboardData } from '../../mocks/repository';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 export interface ReportReviewWidgetProps {
   data: DashboardData;
 }
 
 export function ReportReviewWidget({ data }: ReportReviewWidgetProps) {
+  const { t } = useLocale();
   const projectIds = new Set(data.currentUser.projectIds);
   const memberReports = data.dailyReports.filter(
     (report) =>
@@ -22,10 +24,10 @@ export function ReportReviewWidget({ data }: ReportReviewWidgetProps) {
     <section className="dashboard-widget" aria-labelledby="report-review-title">
       <div className="dashboard-widget__header">
         <div>
-          <p className="dashboard-widget__eyebrow">项目协作</p>
-          <h2 id="report-review-title">成员日报待审核</h2>
+          <p className="dashboard-widget__eyebrow">{t('review.eyebrow')}</p>
+          <h2 id="report-review-title">{t('review.title')}</h2>
         </div>
-        <span className="dashboard-widget__count">{memberReports.length} 份</span>
+        <span className="dashboard-widget__count">{t('review.count', { count: memberReports.length })}</span>
       </div>
       <div className="dashboard-list">
         {memberReports.map((report) => {
@@ -40,7 +42,7 @@ export function ReportReviewWidget({ data }: ReportReviewWidgetProps) {
             >
               <article className="report-row">
                 <div>
-                  <strong>{author?.name ?? '项目成员'} · {report.date}</strong>
+                  <strong>{author?.name ?? t('review.projectMember')} · {report.date}</strong>
                   <p>{report.content}</p>
                 </div>
                 <StatusBadge status={report.status} />

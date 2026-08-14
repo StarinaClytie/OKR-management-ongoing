@@ -58,11 +58,12 @@ describe('SupabaseOkrRepository', () => {
     const { client } = createClient({ profile: {
       id: 'profile-1',
       display_name: '员工一',
+      preferred_locale: 'en',
       user_roles: [{ role: 'employee' }],
       project_members: [{ project_id: 'project-1' }],
     } });
     const result = await new SupabaseOkrRepository(client).getCurrentProfile();
-    expect(result).toEqual({ ok: true, data: expect.objectContaining({ id: 'profile-1', role: 'employee', projectIds: ['project-1'] }) });
+    expect(result).toEqual({ ok: true, data: expect.objectContaining({ id: 'profile-1', role: 'employee', projectIds: ['project-1'], preferredLocale: 'en' }) });
   });
 
   it('rejects an unknown role instead of widening it into the domain', async () => {

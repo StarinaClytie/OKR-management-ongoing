@@ -1,26 +1,29 @@
 import { StatusBadge } from './StatusBadge';
 import type { StatusReason } from '../domain/progressStatus';
 import type { ProgressStatus } from '../domain/types';
+import { useLocale } from '../i18n/LocaleProvider';
+import type { LocaleContextValue } from '../i18n/LocaleProvider';
 
-function reasonText(reason: StatusReason): string {
+function reasonText(reason: StatusReason, t: LocaleContextValue['t']): string {
   switch (reason.code) {
-    case 'behind_plan': return `实际 ${reason.actual}%，计划 ${reason.planned}%，落后 ${Math.abs(reason.gap)} 个百分点`;
-    case 'overdue_milestone': return `存在逾期未完成里程碑（计划日期 ${reason.dueDate}）`;
-    case 'overdue_due_date': return `目标已超过截止日期 ${reason.dueDate}，但尚未完成`;
-    case 'high_risk': return '存在未解决的高风险（风险分 6）';
-    case 'critical_risk': return '存在未解决的严重风险（风险分 9）';
-    case 'complete': return `实际完成度 ${reason.actual}%，目标已完成`;
+    case 'behind_plan': return t('statusExplanation.behindPlan', { actual: reason.actual, planned: reason.planned, gap: Math.abs(reason.gap) });
+    case 'overdue_milestone': return t('statusExplanation.overdueMilestone', { date: reason.dueDate });
+    case 'overdue_due_date': return t('statusExplanation.overdueDueDate', { date: reason.dueDate });
+    case 'high_risk': return t('statusExplanation.highRisk');
+    case 'critical_risk': return t('statusExplanation.criticalRisk');
+    case 'complete': return t('statusExplanation.completed', { actual: reason.actual });
   }
 }
 
 export function StatusExplanation({ result }: { result: { status: ProgressStatus; reasons: StatusReason[] } }) {
+  const { t } = useLocale();
   return (
-    <section className="status-explanation" aria-label="状态计算说明">
+    <section className="status-explanation" aria-label={t('statusExplanation.label')}>
       <StatusBadge status={result.status} />
-      <p>执行状态会并行评估进度差距、逾期里程碑、截止日期和未解决风险事件，并采用最严重的结果。</p>
+      <p>{t('statusExplanation.summary')}</p>
       {result.reasons.length > 0
-        ? <ul>{result.reasons.map((reason, index) => <li key={`${reason.code}-${index}`}>{reasonText(reason)}</li>)}</ul>
-        : <p>实际进度与计划差距不超过 10 个百分点，且没有逾期里程碑或未解决高风险。</p>}
+        ? <ul>{result.reasons.map((reason, index) => <li key={`${reason.code}-${index}`}>{reasonText(reason, t)}</li>)}</ul>
+        : <p>{t('statusExplanation.healthy')}</p>}
     </section>
   );
 }

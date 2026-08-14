@@ -1,36 +1,34 @@
-import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { mockData } from '../mocks/repository';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export function WeeklyReportsPage() {
+  const { t } = useLocale();
   const { currentUser } = useAuth();
-  const [notice, setNotice] = useState('');
   if (!currentUser) return null;
   const reports = mockData.weeklyReports.filter(
     (report) =>
       can(currentUser, 'weekly_report.read', report).allowed &&
       can(currentUser, 'weekly_report.read_body', report).allowed,
   );
-  const canCreate = currentUser.role === 'project_leader' || currentUser.role === 'management';
 
   return (
     <section className="business-page" aria-labelledby="weekly-reports-page-title">
-      <PageHeader title="周报" description="汇总当前授权项目的进展、风险与下一步计划。" primaryAction={canCreate ? { label: '新建项目周报', onClick: () => setNotice('已打开模拟周报草稿，数据不会保存。') } : undefined} />
-      {notice && <p className="page-notice" role="status">{notice}</p>}
+      <PageHeader title={t('weekly.title')} description={t('weekly.description')} />
       <DataTable
-        ariaLabel="授权周报"
+        ariaLabel={t('weekly.authorized')}
         rows={reports}
         getRowKey={(report) => report.id}
-        emptyMessage="当前没有可查看的周报。"
+        emptyMessage={t('weekly.empty')}
         columns={[
-          { key: 'week', label: '截止日期', render: (report) => report.weekEnding },
-          { key: 'summary', label: '本周摘要', render: (report) => report.summary },
-          { key: 'plan', label: '下周计划', render: (report) => report.nextWeekPlan },
-          { key: 'status', label: '状态', render: (report) => <StatusBadge status={report.status} /> },
+          { key: 'week', label: t('weekly.date'), render: (report) => report.weekEnding },
+          { key: 'summary', label: t('weekly.summary'), render: (report) => report.summary },
+          { key: 'plan', label: t('weekly.nextPlan'), render: (report) => report.nextWeekPlan },
+          { key: 'status', label: t('table.status'), render: (report) => <StatusBadge status={report.status} /> },
         ]}
       />
     </section>

@@ -4,6 +4,7 @@ import { useMediaQuery } from '../../layout/useMediaQuery';
 import type { DashboardData } from '../../mocks/repository';
 import { WidgetTabs, type WidgetTab } from './WidgetTabs';
 import { prepareVisualizationData } from './visualizationData';
+import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';
 
 const AlignmentTreeWidget = lazy(async () => {
   const module = await import('./AlignmentTreeWidget');
@@ -28,14 +29,6 @@ const WorkloadWidget = lazy(async () => {
 
 type VisualizationId = 'alignment' | 'gantt' | 'trend' | 'risk' | 'workload';
 
-const tabs: readonly WidgetTab<VisualizationId>[] = [
-  { id: 'alignment', label: '对齐树' },
-  { id: 'gantt', label: '甘特图' },
-  { id: 'trend', label: '进度趋势' },
-  { id: 'risk', label: '风险矩阵' },
-  { id: 'workload', label: '工作负载' },
-];
-
 function defaultTab(role: Role): VisualizationId {
   if (role === 'employee') return 'trend';
   if (role === 'hr') return 'workload';
@@ -52,20 +45,20 @@ function renderPanel(activeTab: VisualizationId, data: DashboardData) {
   }
 }
 
-function renderResponsivePanel(activeTab: VisualizationId, data: DashboardData, isMobile: boolean) {
+function renderResponsivePanel(activeTab: VisualizationId, data: DashboardData, isMobile: boolean, t: LocaleContextValue['t']) {
   const panel = renderPanel(activeTab, data);
   if (!isMobile) return panel;
 
   const visualizationData = prepareVisualizationData(data);
   const summary = activeTab === 'alignment'
     ? {
-        title: 'OKR 对齐摘要',
-        description: `已整理 ${visualizationData.alignmentProjects.length} 个授权项目的 Objective 与 KR 关系。`,
+        title: t('visualization.alignmentSummary'),
+        description: t('visualization.alignmentSummaryDetail', { projects: visualizationData.alignmentProjects.length }),
       }
     : activeTab === 'gantt'
       ? {
-          title: '项目计划摘要',
-          description: `已纳入 ${visualizationData.keyResults.length} 个 KR 和 ${visualizationData.milestones.length} 个里程碑。`,
+          title: t('visualization.ganttSummary'),
+          description: t('visualization.ganttSummaryDetail', { krs: visualizationData.keyResults.length, milestones: visualizationData.milestones.length }),
         }
       : undefined;
 
@@ -78,7 +71,7 @@ function renderResponsivePanel(activeTab: VisualizationId, data: DashboardData, 
           <strong>{summary.title}</strong>
           <span>{summary.description}</span>
         </span>
-        <span className="visualization-mobile-details__affordance">查看详情</span>
+        <span className="visualization-mobile-details__affordance">{t('visualization.details')}</span>
       </summary>
       <div className="visualization-mobile-details__content">{panel}</div>
     </details>
@@ -90,14 +83,23 @@ export interface ProjectVisualizationsWidgetProps {
 }
 
 export function VisualizationLoadingFallback() {
-  return <p className="visualization-loading" role="status" aria-live="polite">正在加载项目视图</p>;
+  const { t } = useLocale();
+  return <p className="visualization-loading" role="status" aria-live="polite">{t('visualization.loading')}</p>;
 }
 
 export function ProjectVisualizationsWidget({ data }: ProjectVisualizationsWidgetProps) {
+  const { t } = useLocale();
   const titleId = useId();
   const tabsId = useId();
   const isMobile = useMediaQuery('(max-width: 767px)');
   const [activeTab, setActiveTab] = useState<VisualizationId>(() => defaultTab(data.currentUser.role));
+  const tabs: readonly WidgetTab<VisualizationId>[] = [
+    { id: 'alignment', label: t('visualization.alignment') },
+    { id: 'gantt', label: t('visualization.gantt') },
+    { id: 'trend', label: t('visualization.trend') },
+    { id: 'risk', label: t('visualization.risk') },
+    { id: 'workload', label: t('visualization.workload') },
+  ];
   const activeDefinition = tabs.find((tab) => tab.id === activeTab)!;
 
   useEffect(() => {
@@ -108,10 +110,10 @@ export function ProjectVisualizationsWidget({ data }: ProjectVisualizationsWidge
     <section className="dashboard-widget dashboard-widget--wide visualization-widget" aria-labelledby={titleId}>
       <div className="dashboard-widget__header visualization-widget__header">
         <div>
-          <p className="dashboard-widget__eyebrow">按需查看</p>
-          <h2 id={titleId}>项目专业视图</h2>
+          <p className="dashboard-widget__eyebrow">{t('visualization.eyebrow')}</p>
+          <h2 id={titleId}>{t('visualization.title')}</h2>
         </div>
-        <p className="dashboard-widget__muted">一次只显示一种视图，选择标签即可切换。</p>
+        <p className="dashboard-widget__muted">{t('visualization.description')}</p>
       </div>
       <WidgetTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} idBase={tabsId} />
       <div
@@ -121,7 +123,7 @@ export function ProjectVisualizationsWidget({ data }: ProjectVisualizationsWidge
         aria-label={activeDefinition.label}
       >
         <Suspense fallback={<VisualizationLoadingFallback />}>
-          {renderResponsivePanel(activeTab, data, isMobile)}
+          {renderResponsivePanel(activeTab, data, isMobile, t)}
         </Suspense>
       </div>
     </section>

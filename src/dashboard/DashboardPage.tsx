@@ -2,15 +2,17 @@ import { useAuth } from '../auth/AuthContext';
 import { mockRepository } from '../mocks/repository';
 import { DashboardGrid } from './DashboardGrid';
 import { getDashboardConfig } from './dashboardRegistry';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export function DashboardPage() {
+  const { t } = useLocale();
   const { currentUser } = useAuth();
 
   if (!currentUser) {
     return (
       <section className="status-page" role="status">
-        <h1>无法加载仪表盘</h1>
-        <p>当前身份不可用，请重新选择角色。</p>
+        <h1>{t('dashboard.loadError')}</h1>
+        <p>{t('dashboard.identityUnavailable')}</p>
       </section>
     );
   }
@@ -23,8 +25,8 @@ export function DashboardPage() {
       <header className="dashboard-page__header">
         <div>
           <p className="dashboard-page__eyebrow">{currentUser.name} · {currentUser.department}</p>
-          <h1 id="dashboard-title">{config.title}</h1>
-          <p>{config.description}</p>
+          <h1 id="dashboard-title">{t(config.titleKey)}</h1>
+          <p>{t(config.descriptionKey)}</p>
         </div>
       </header>
       <DashboardGrid data={data} widgetIds={config.widgetIds} />

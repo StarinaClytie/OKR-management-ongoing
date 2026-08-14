@@ -12,6 +12,7 @@ export interface User {
   title: string;
   department: string;
   projectIds: string[];
+  preferredLocale?: 'zh-CN' | 'en';
 }
 
 export interface OrganizationRelation {

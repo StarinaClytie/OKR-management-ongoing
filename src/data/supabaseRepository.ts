@@ -40,6 +40,7 @@ function mapProfile(row: Record<string, unknown>): User | null {
     title: typeof row.title === 'string' ? row.title : '',
     department: typeof row.department === 'string' ? row.department : '',
     projectIds: Array.isArray(row.project_members) ? row.project_members.map((item) => String((item as Record<string, unknown>).project_id)) : [],
+    preferredLocale: row.preferred_locale === 'en' ? 'en' : 'zh-CN',
   };
 }
 
@@ -62,7 +63,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (!session.data.session) return { ok: true, data: null };
     const query = this.client.from('profiles') as ProfileQuery;
     const { data, error } = await query
-      .select('id,display_name,user_roles(role),project_members(project_id)')
+      .select('id,display_name,preferred_locale,user_roles(role),project_members(project_id)')
       .eq('id', session.data.session.user.id)
       .maybeSingle();
     if (error) return failure(error);
@@ -80,7 +81,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (!session.data.session) return failure({ code: '42501', message: 'No active session' });
 
     const results = await Promise.all([
-      this.selectRows('profiles', 'id,display_name,user_roles(role),project_members(project_id)'),
+      this.selectRows('profiles', 'id,display_name,preferred_locale,user_roles(role),project_members(project_id)'),
       this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,project_members(profile_id)'),
       this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date'),
       this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date'),

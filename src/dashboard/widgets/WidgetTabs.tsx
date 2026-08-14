@@ -1,4 +1,5 @@
 import { useId, useRef, type KeyboardEvent } from 'react';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 export interface WidgetTab<T extends string> {
   id: T;
@@ -13,6 +14,7 @@ export interface WidgetTabsProps<T extends string> {
 }
 
 export function WidgetTabs<T extends string>({ tabs, activeTab, onChange, idBase }: WidgetTabsProps<T>) {
+  const { t } = useLocale();
   const generatedId = useId();
   const instanceId = idBase ?? generatedId;
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -38,7 +40,7 @@ export function WidgetTabs<T extends string>({ tabs, activeTab, onChange, idBase
   }
 
   return (
-    <div className="widget-tabs" role="tablist" aria-label="项目可视化视图">
+    <div className="widget-tabs" role="tablist" aria-label={t('visualization.tablist')}>
       {tabs.map((tab, index) => {
         const selected = tab.id === activeTab;
         return (

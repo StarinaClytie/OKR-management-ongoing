@@ -14,6 +14,7 @@ import { repository } from '../lib/supabase';
 import { mockRepository, type DashboardData } from '../mocks/repository';
 import { KrProgressEditor } from './KrProgressEditor';
 import { getEditableRiskSubjects, RiskEditor, type RiskEditorInput } from './RiskEditor';
+import { useLocale } from '../i18n/LocaleProvider';
 
 function riskStatus(input: Pick<OwnedRiskInput, 'probability' | 'impact' | 'resolved'>): Risk['status'] {
   if (input.resolved) return 'on_track';
@@ -30,6 +31,7 @@ function businessDate(): string {
 }
 
 export function OkrManagementPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
+  const { t } = useLocale();
   const { currentUser, mode } = useAuth();
   const [searchParams] = useSearchParams();
   const [data, setData] = useState<DashboardData | null>(() => currentUser && mode === 'demo'
@@ -48,19 +50,19 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     try {
       const result = await dataRepository.getDashboardData(currentUser.id);
       if (!result.ok) {
-        setLoadError(result.error.message);
+        setLoadError(t('common.requestFailed'));
         return false;
       }
       setLoadError('');
       setData(result.data);
       return true;
     } catch {
-      setLoadError('请求未完成，请稍后重试');
+      setLoadError(t('common.requestFailed'));
       return false;
     } finally {
       setLoading(false);
     }
-  }, [currentUser, dataRepository]);
+  }, [currentUser, dataRepository, t]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -77,7 +79,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     : [], [currentUser, data]);
 
   if (!currentUser) return null;
-  if (loading && !data) return <p role="status">正在加载 OKR…</p>;
+  if (loading && !data) return <p role="status">{t('okr.loading')}</p>;
   if (loadError && !data) return <p role="alert">{loadError}</p>;
   if (!data) return null;
   const dashboardData = data;
@@ -138,14 +140,14 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
           planned: current.progressSnapshots.filter((item) => item.keyResultId === input.keyResultId).at(-1)?.planned ?? input.progress,
         }],
       } : current);
-      setNotice('演示预览：此更改只在当前页面显示，不会持久保存。');
+      setNotice(t('okr.previewUpdated'));
       setActiveEditor(null);
       return { ok: true, data: { snapshotId: 'demo-preview' } } as const;
     }
     const result = await dataRepository.saveKrProgress(input);
     if (result.ok) {
       const reloaded = await refresh();
-      setNotice(reloaded ? 'KR 进度已保存，状态已重新计算。' : 'KR 进度已保存，但最新数据暂时无法加载。');
+      setNotice(reloaded ? t('okr.progressSaved') : t('okr.progressSavedStale'));
       setActiveEditor(null);
     }
     return result;
@@ -167,7 +169,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
           },
         ],
       } : current);
-      setNotice('演示预览：此风险只在当前页面显示，不会持久保存。');
+      setNotice(t('okr.previewUpdated'));
       setActiveEditor(null);
       setEditingRisk(undefined);
       return { ok: true, data: { id: previewId } };
@@ -175,7 +177,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     const result = await dataRepository.saveOwnedRisk(input);
     if (result.ok) {
       const reloaded = await refresh();
-      setNotice(reloaded ? '风险事件已保存，相关状态已重新计算。' : '风险事件已保存，但最新数据暂时无法加载。');
+      setNotice(reloaded ? t('okr.riskSaved') : t('okr.riskSavedStale'));
       setActiveEditor(null);
       setEditingRisk(undefined);
     }
@@ -194,16 +196,16 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     try {
       if (mode === 'demo') {
         setData((current) => current ? { ...current, risks: current.risks.map((item) => item.id === risk.id ? { ...item, resolved: true, status: 'on_track' } : item) } : current);
-        setNotice('演示预览：解决状态只在当前页面显示，不会持久保存。');
+        setNotice(t('okr.previewUpdated'));
       } else {
         const result = await dataRepository.saveOwnedRisk(input);
         if (result.ok) {
           const reloaded = await refresh();
-          setNotice(reloaded ? '风险事件已解决，相关状态已重新计算。' : '风险事件已解决，但最新数据暂时无法加载。');
-        } else setNotice(result.error.message);
+          setNotice(reloaded ? t('okr.riskResolvedNotice') : t('okr.riskResolvedStale'));
+        } else setNotice(t('common.requestFailed'));
       }
     } catch {
-      setNotice('请求未完成，请稍后重试');
+      setNotice(t('common.requestFailed'));
     } finally {
       setResolvingRiskId(undefined);
     }
@@ -212,11 +214,11 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
   return (
     <section className="business-page" aria-labelledby="okr-page-title">
       <PageHeader
-        title="OKR 管理"
-        description="查看当前授权范围内的目标与关键结果；进度更新仅开放给实际负责人。"
-        primaryAction={ownKeyResults.length > 0 ? { label: '更新我的 KR', onClick: () => { setEditingRisk(undefined); setActiveEditor('progress'); } } : undefined}
+        title={t('okr.title')}
+        description={t('okr.description')}
+        primaryAction={ownKeyResults.length > 0 ? { label: t('okr.updateMine'), onClick: () => { setEditingRisk(undefined); setActiveEditor('progress'); } } : undefined}
       >
-        {editableRiskSubjects.length > 0 && <button className="button button--secondary" type="button" onClick={() => { setEditingRisk(undefined); setActiveEditor('risk'); }}>新增风险</button>}
+        {editableRiskSubjects.length > 0 && <button className="button button--secondary" type="button" onClick={() => { setEditingRisk(undefined); setActiveEditor('risk'); }}>{t('okr.newRisk')}</button>}
       </PageHeader>
       {notice && <p className="page-notice" role="status">{notice}</p>}
       {loadError && <p role="alert">{loadError}</p>}
@@ -225,21 +227,21 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
         key={editingRisk?.id ?? 'new-risk'} currentUser={currentUser} projects={data.projects} objectives={data.objectives} keyResults={data.keyResults}
         risk={editingRisk} onSave={saveRisk} onCancel={() => { setActiveEditor(null); setEditingRisk(undefined); }}
       />}
-      <div className="filter-row"><span>当前范围</span><strong>{currentUser.department}</strong><button className="button button--secondary" type="button">更多筛选</button></div>
+      <div className="filter-row"><span>{t('okr.currentScope')}</span><strong>{currentUser.department}</strong><button className="button button--secondary" type="button">{t('projects.moreFilters')}</button></div>
       <DataTable
-        ariaLabel="授权关键结果"
+        ariaLabel={t('okr.authorizedKrs')}
         rows={keyResults}
         getRowKey={(keyResult) => keyResult.id}
-        emptyMessage="当前没有可查看的关键结果。"
+        emptyMessage={t('okr.empty')}
         columns={[
-          { key: 'title', label: '关键结果', render: (keyResult) => keyResult.title },
-          { key: 'progress', label: '进度', render: (keyResult) => <ProgressRing value={keyResult.progress} size="small" /> },
-          { key: 'status', label: '状态', render: (keyResult) => <StatusBadge status={keyResult.status} /> },
-          { key: 'owner', label: '负责人', render: (keyResult) => data.users.find((user) => user.id === keyResult.ownerId)?.name ?? '—' },
+          { key: 'title', label: t('okr.keyResult'), render: (keyResult) => keyResult.title },
+          { key: 'progress', label: t('okr.progress'), render: (keyResult) => <ProgressRing value={keyResult.progress} size="small" /> },
+          { key: 'status', label: t('table.status'), render: (keyResult) => <StatusBadge status={keyResult.status} /> },
+          { key: 'owner', label: t('table.owner'), render: (keyResult) => data.users.find((user) => user.id === keyResult.ownerId)?.name ?? '—' },
         ]}
       />
-      {ownKeyResults.length > 0 && <section className="page-section" aria-label="我的 KR 状态说明">
-        <h2>我的 KR 状态说明</h2>
+      {ownKeyResults.length > 0 && <section className="page-section" aria-label={t('okr.myStatus')}>
+        <h2>{t('okr.myStatus')}</h2>
         {ownKeyResults.map((keyResult) => {
           const attachedRisks = dashboardData.risks.filter((risk) => (
             risk.keyResultId === keyResult.id || risk.objectiveId === keyResult.objectiveId
@@ -247,44 +249,44 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
           return <article className="form-card" key={keyResult.id}>
             <h3>{keyResult.title}</h3>
             <StatusExplanation result={statusFor(keyResult)} />
-            <section aria-label={`${keyResult.title}的关联风险`}>
-              <h4>关联风险</h4>
+            <section aria-label={t('okr.relatedRiskLabel', { title: keyResult.title })}>
+              <h4>{t('okr.relatedRisks')}</h4>
               {attachedRisks.length > 0
-                ? <ul>{attachedRisks.map((risk) => <li key={risk.id}><strong>{risk.title}</strong> · {risk.resolved ? '已解决' : `${risk.probability} × ${risk.impact} = ${risk.probability * risk.impact}`}</li>)}</ul>
-                : <p>当前没有关联风险。</p>}
+                ? <ul>{attachedRisks.map((risk) => <li key={risk.id}><strong>{risk.title}</strong> · {risk.resolved ? t('okr.riskResolved') : `${risk.probability} × ${risk.impact} = ${risk.probability * risk.impact}`}</li>)}</ul>
+                : <p>{t('okr.noRelatedRisk')}</p>}
             </section>
           </article>;
         })}
       </section>}
-      <section className="page-section" aria-label="关联风险事件">
-        <div className="filter-row"><h2>关联风险事件</h2><Link className="button button--secondary" to="/okrs?view=risk-matrix">查看完整风险矩阵</Link></div>
-        {showFullMatrix && <section className="risk-matrix-wrap" role="region" aria-label="完整风险矩阵">
-          <h3>完整风险矩阵</h3>
-          <div className="risk-matrix" aria-label="风险矩阵，纵轴为概率，横轴为影响">
-            <span className="risk-matrix__axis risk-matrix__axis--y">发生概率 ↑</span>
+      <section className="page-section" aria-label={t('okr.relatedEvents')}>
+        <div className="filter-row"><h2>{t('okr.relatedEvents')}</h2><Link className="button button--secondary" to="/okrs?view=risk-matrix">{t('okr.viewFullMatrix')}</Link></div>
+        {showFullMatrix && <section className="risk-matrix-wrap" role="region" aria-label={t('okr.fullMatrix')}>
+          <h3>{t('okr.fullMatrix')}</h3>
+          <div className="risk-matrix" aria-label={t('okr.matrixLabel')}>
+            <span className="risk-matrix__axis risk-matrix__axis--y">{t('risk.probabilityAxis')}</span>
             <div className="risk-matrix__grid">
               {([3, 2, 1] as const).flatMap((probability) => ([1, 2, 3] as const).map((impact) => {
                 const cellRisks = visibleMatrixRisks.filter((risk) => risk.probability === probability && risk.impact === impact);
-                return <div className={`risk-cell risk-cell--level-${probability + impact}`} key={`${probability}-${impact}`} aria-label={`概率 ${probability}，影响 ${impact}`}>
+                return <div className={`risk-cell risk-cell--level-${probability + impact}`} key={`${probability}-${impact}`} aria-label={t('okr.matrixCell', { probability, impact })}>
                   {cellRisks.map((risk) => <span className="risk-marker" key={risk.id}><strong>{risk.title}</strong></span>)}
                 </div>;
               }))}
             </div>
-            <span className="risk-matrix__axis risk-matrix__axis--x">业务影响 →</span>
+            <span className="risk-matrix__axis risk-matrix__axis--x">{t('risk.impactAxis')}</span>
           </div>
         </section>}
         <DataTable
-          ariaLabel="可管理的关联风险事件"
+          ariaLabel={t('okr.manageableRisks')}
           rows={manageableRisks}
           getRowKey={(risk) => risk.id}
-          emptyMessage="当前没有与你负责的 OKR 关联的风险事件。"
+          emptyMessage={t('okr.noManageableRisks')}
           columns={[
-            { key: 'title', label: '风险事件', render: (risk) => risk.title },
-            { key: 'score', label: '坐标与评分', render: (risk) => `影响 ${risk.impact}，概率 ${risk.probability} · ${risk.probability} × ${risk.impact} = ${risk.probability * risk.impact}` },
-            { key: 'state', label: '状态', render: (risk) => risk.resolved ? '已解决' : '未解决' },
-            { key: 'actions', label: '操作', render: (risk) => <div className="inline-actions">
-              <button className="button button--secondary" type="button" onClick={() => { setEditingRisk(risk); setActiveEditor('risk'); }} aria-label={`编辑 ${risk.title}`}>编辑</button>
-              {!risk.resolved && <button className="button button--secondary" type="button" disabled={resolvingRiskId === risk.id} onClick={() => void resolveRisk(risk)} aria-label={`解决 ${risk.title}`}>{resolvingRiskId === risk.id ? '处理中…' : '解决'}</button>}
+            { key: 'title', label: t('okr.riskEvent'), render: (risk) => risk.title },
+            { key: 'score', label: t('okr.coordinateScore'), render: (risk) => t('okr.coordinateScoreValue', { impact: risk.impact, probability: risk.probability, score: risk.probability * risk.impact }) },
+            { key: 'state', label: t('table.status'), render: (risk) => risk.resolved ? t('okr.riskResolved') : t('okr.unresolved') },
+            { key: 'actions', label: t('okr.actions'), render: (risk) => <div className="inline-actions">
+              <button className="button button--secondary" type="button" onClick={() => { setEditingRisk(risk); setActiveEditor('risk'); }} aria-label={t('okr.editLabel', { title: risk.title })}>{t('okr.edit')}</button>
+              {!risk.resolved && <button className="button button--secondary" type="button" disabled={resolvingRiskId === risk.id} onClick={() => void resolveRisk(risk)} aria-label={t('okr.resolveLabel', { title: risk.title })}>{resolvingRiskId === risk.id ? t('okr.processing') : t('okr.resolve')}</button>}
             </div> },
           ]}
         />

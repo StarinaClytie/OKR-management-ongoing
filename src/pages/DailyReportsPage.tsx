@@ -13,16 +13,18 @@ import { dailyReportToDraft } from '../data/dailyReportMapper';
 import { appMode, repository } from '../lib/supabase';
 import { RevisionHistory, type RevisionSummary } from './daily-report/RevisionHistory';
 import { DailyReportEvidenceDetails } from './DailyReportEvidenceDetails';
+import { useLocale } from '../i18n/LocaleProvider';
+import type { MessageKey } from '../i18n/messages';
 
-function authorName(authorId: string, users: ReturnType<typeof mockRepository.getDashboardData>['users']) {
-  return users.find((user) => user.id === authorId)?.name ?? '未知成员';
+function authorName(authorId: string, users: ReturnType<typeof mockRepository.getDashboardData>['users'], fallback: string) {
+  return users.find((user) => user.id === authorId)?.name ?? fallback;
 }
 
-const classificationLabels: Record<Classification, string> = {
-  public: '公开',
-  internal: '内部',
-  confidential: '机密',
-  restricted: '受限',
+const classificationLabels: Record<Classification, MessageKey> = {
+  public: 'classification.public',
+  internal: 'classification.internal',
+  confidential: 'classification.confidential',
+  restricted: 'classification.restricted',
 };
 const classificationRank: Record<Classification, number> = { public: 0, internal: 1, confidential: 2, restricted: 3 };
 
@@ -72,6 +74,7 @@ export function resolveDailyAuthoringContext(
 }
 
 export function DailyReportsPage() {
+  const { t } = useLocale();
   const { currentUser } = useAuth();
   const [notice, setNotice] = useState('');
   const [isAuthoring, setIsAuthoring] = useState(false);
@@ -112,17 +115,17 @@ export function DailyReportsPage() {
     const hoursRows = data.workloads.filter((workload) => can(currentUser, 'worklog.read_hours', workload).allowed);
     return (
       <section className="business-page" aria-labelledby="daily-reports-page-title">
-        <PageHeader title="日报" description="HR 视图只展示已授权的工时字段，不包含日报原文、证据或附件。" />
+        <PageHeader title={t('daily.title')} description={t('daily.hrDescription')} />
         <DataTable
-          ariaLabel="授权工时日报"
+          ariaLabel={t('daily.authorizedHours')}
           rows={hoursRows}
           getRowKey={(workload) => workload.id}
-          emptyMessage="当前没有可查看的授权工时。"
+          emptyMessage={t('daily.noHours')}
           columns={[
-            { key: 'member', label: '成员', render: (workload) => authorName(workload.userId, data.users) },
-            { key: 'period', label: '周期', render: (workload) => `${workload.periodStart} 至 ${workload.periodEnd}` },
-            { key: 'hours', label: '工时', render: (workload) => `${workload.loggedHours} 小时` },
-            { key: 'capacity', label: '容量', render: (workload) => `${workload.capacityHours} 小时` },
+            { key: 'member', label: t('table.member'), render: (workload) => authorName(workload.userId, data.users, t('daily.unknownMember')) },
+            { key: 'period', label: t('daily.period'), render: (workload) => t('hr.period', { start: workload.periodStart, end: workload.periodEnd }) },
+            { key: 'hours', label: t('daily.hours'), render: (workload) => t('common.hours', { count: workload.loggedHours }) },
+            { key: 'capacity', label: t('daily.capacity'), render: (workload) => t('common.hours', { count: workload.capacityHours }) },
           ]}
         />
       </section>
@@ -142,7 +145,7 @@ export function DailyReportsPage() {
 
   async function handleSubmit(draft: DailyReportDraft) {
     if (!authoringContext) {
-      return { ok: false as const, error: '当前没有可授权的项目可用于填写日报。' };
+      return { ok: false as const, error: t('daily.noAuthoringProject') };
     }
 
     const conversion = toLocalDailyReport(draft, {
@@ -155,7 +158,12 @@ export function DailyReportsPage() {
       keyResults: authoringKeyResults,
     });
     if (!conversion.ok) {
-      return { ok: false as const, error: conversion.error.message };
+      const errorKey = conversion.error.code === 'OBJECTIVE_NOT_IN_PROJECT'
+        ? 'daily.objectiveMismatch'
+        : conversion.error.code === 'KEY_RESULT_NOT_IN_OBJECTIVE'
+          ? 'daily.krMismatch'
+          : 'daily.fixRequired';
+      return { ok: false as const, error: t(errorKey) };
     }
 
     if (appMode === 'supabase') {
@@ -171,13 +179,13 @@ export function DailyReportsPage() {
       const persisted = editingReport
         ? (files.length ? await repository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await repository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
         : (files.length ? await repository.createDailyReportWithAttachments(input, files) : await repository.createDailyReport(input));
-      if (!persisted.ok) return { ok: false as const, error: persisted.error.code === 'conflict' ? '日报已被更新，请刷新后重试。' : persisted.error.message };
+      if (!persisted.ok) return { ok: false as const, error: persisted.error.code === 'conflict' ? t('daily.conflict') : t('common.requestFailed') };
     }
 
     nextLocalSubmissionNonce.current += 1;
     const saved = { ...conversion.report, id: editingReport?.id ?? conversion.report.id, currentRevision: (editingReport?.currentRevision ?? 0) + 1, updatedAt: new Date().toISOString() };
     setLocalReports((bucket) => ({ ownerId: currentUserId, reports: editingReport ? [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : []).filter((item) => item.id !== editingReport.id)] : [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : [])] }));
-    setNotice(appMode === 'demo' ? '日报已保存到当前演示页面，尚未连接后端。' : '日报已安全保存。');
+    setNotice(t('daily.saved'));
     setEditingReport(undefined);
     restoreAuthoringFocus.current = true;
     setIsAuthoring(false);
@@ -185,41 +193,45 @@ export function DailyReportsPage() {
   }
 
   const reportColumns = (showReviewActions: boolean, showOwnActions: boolean) => [
-    { key: 'author', label: '填写人', render: (report: DailyReport) => authorName(report.authorId, data.users) },
-    { key: 'date', label: '日期', render: (report: DailyReport) => report.date },
+    { key: 'author', label: t('daily.author'), render: (report: DailyReport) => authorName(report.authorId, data.users, t('daily.unknownMember')) },
+    { key: 'date', label: t('daily.date'), render: (report: DailyReport) => report.date },
     {
       key: 'content',
-      label: '日报内容',
+      label: t('daily.content'),
       render: (report: DailyReport) => {
         const visibleEvidence = authorizedEvidence(currentUser, report);
         const evidenceClassification = visibleEvidence.reduce<Classification>((highest, item) => classificationRank[item.classification] > classificationRank[highest] ? item.classification : highest, 'public');
         return <div>
           <p>{report.dailyObjective ?? report.content}</p>
           {report.dailyKeyResults?.map((keyResult, index) => (
-            <p key={keyResult.id}>KR{index + 1}：{keyResult.title}（<span>{keyResult.progress ?? '—'}%</span>）</p>
+            <p key={keyResult.id}>
+              {t('daily.krSummaryPrefix', { number: index + 1, title: keyResult.title })}
+              <span>{keyResult.progress ?? '—'}%</span>
+              {t('daily.krSummarySuffix')}
+            </p>
           ))}
-          {visibleEvidence.length > 0 && <p>{`成果密级：${classificationLabels[evidenceClassification]}`}</p>}
+          {visibleEvidence.length > 0 && <p>{t('daily.evidenceClassification', { classification: t(classificationLabels[evidenceClassification]) })}</p>}
           <DailyReportEvidenceDetails viewer={currentUser} report={report} attachments={data.attachments} />
         </div>;
       },
     },
-    { key: 'hours', label: '工时', render: (report: DailyReport) => `${report.hours} 小时` },
-    { key: 'status', label: '状态', render: (report: DailyReport) => <StatusBadge status={report.status} /> },
-    ...(showOwnActions ? [{ key: 'own-actions', label: '操作', render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(''); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (appMode === 'supabase') { const history = await repository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>编辑我的日报</button> : <span>已锁定</span> }] : []),
-    ...(showReviewActions ? [{ key: 'actions', label: '审核', render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice('已确认成员日报（模拟操作）。')}>确认成员日报</button><button type="button" className="text-button" onClick={() => setNotice('已退回成员日报（模拟操作）。')}>退回成员日报</button><button type="button" className="text-button" onClick={() => setNotice('已添加成员日报评论（模拟操作）。')}>添加评论</button></span> }] : []),
+    { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
+    { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
+    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(''); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (appMode === 'supabase') { const history = await repository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
+    ...(showReviewActions ? [{ key: 'actions', label: t('daily.review'), render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice(t('daily.confirmedNotice'))}>{t('daily.confirm')}</button><button type="button" className="text-button" onClick={() => setNotice(t('daily.returnedNotice'))}>{t('daily.return')}</button><button type="button" className="text-button" onClick={() => setNotice(t('daily.commentedNotice'))}>{t('daily.comment')}</button></span> }] : []),
   ];
 
   return (
     <section className="business-page" aria-labelledby="daily-reports-page-title">
       <PageHeader
-        title="日报"
-        description="我的日报由本人创建和编辑；项目负责人仅能审核成员日报，不能修改成员原文。"
-        primaryAction={authoringContext ? { label: '填写今日日报', buttonRef: authoringButtonRef, onClick: () => { setNotice(''); setIsAuthoring(true); } } : undefined}
+        title={t('daily.title')}
+        description={t('daily.description')}
+        primaryAction={authoringContext ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { setNotice(''); setIsAuthoring(true); } } : undefined}
       />
       {notice && <p className="page-notice" role="status">{notice}</p>}
       {isAuthoring && authoringContext && (
         <section className="page-section" aria-labelledby="daily-report-authoring">
-          <h2 id="daily-report-authoring" ref={authoringHeadingRef} tabIndex={-1}>{editingReport ? '编辑我的日报' : '填写今日日报'}</h2>
+          <h2 id="daily-report-authoring" ref={authoringHeadingRef} tabIndex={-1}>{editingReport ? t('daily.editMine') : t('daily.fillToday')}</h2>
           <DailyReportForm
             mode={editingReport ? 'edit' : 'create'}
             initialDraft={editingReport ? dailyReportToDraft(editingReport) : undefined}
@@ -231,8 +243,8 @@ export function DailyReportsPage() {
           {editingReport && revisions.length > 0 && <RevisionHistory revisions={revisions} />}
         </section>
       )}
-      <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">我的日报</h2><DataTable ariaLabel="我的日报" rows={ownReports} getRowKey={(report) => report.id} emptyMessage="今天还没有日报，填写后可在这里查看。" columns={reportColumns(false, true)} /></section>
-      {currentUser.role === 'project_leader' && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">项目成员日报</h2><DataTable ariaLabel="项目成员日报" rows={memberReports} getRowKey={(report) => report.id} emptyMessage="暂无需要审核的成员日报。" columns={reportColumns(true, false)} /></section>}
+      <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">{t('daily.myReports')}</h2><DataTable ariaLabel={t('daily.myReports')} rows={ownReports} getRowKey={(report) => report.id} emptyMessage={t('daily.myReportsEmpty')} columns={reportColumns(false, true)} /></section>
+      {currentUser.role === 'project_leader' && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">{t('daily.memberReports')}</h2><DataTable ariaLabel={t('daily.memberReports')} rows={memberReports} getRowKey={(report) => report.id} emptyMessage={t('daily.memberReportsEmpty')} columns={reportColumns(true, false)} /></section>}
     </section>
   );
 }

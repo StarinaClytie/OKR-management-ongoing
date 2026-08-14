@@ -3,7 +3,7 @@ import type { ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrR
 import type { DailyReport, User } from '../domain/types';
 
 function unsupported<T>(): RepositoryResult<T> {
-  return { ok: false, error: { code: 'validation', message: '演示模式不支持此持久化操作' } };
+  return { ok: false, error: { code: 'validation', message: '当前环境不支持此持久化操作' } };
 }
 
 export class DemoOkrRepository implements OkrRepository {
