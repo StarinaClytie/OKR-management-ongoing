@@ -14,7 +14,7 @@ After sign-in, the application uses your organization, role, project relationshi
 
 Open **OKR Management** and select **Update My KR**. Choose a KR that you own, enter an actual completion percentage from **0–100**, an effective date, and an update note, then save.
 
-- This is a normal save, not a simulated preview. In production with `VITE_APP_MODE=supabase`, it calls a restricted backend RPC.
+- This is a normal save, not a simulated preview, but it calls the restricted backend RPC and writes to Supabase only in a correctly configured production build with `VITE_APP_MODE=supabase`, a valid Supabase URL, and a public publishable/anon key. Demo mode is a non-persistent local preview and is not evidence of real saving.
 - Each successful save appends an immutable KR progress record with its date and note. Earlier history is not overwritten.
 - Only the KR owner can write actual progress. An invalid percentage, missing date or note, network issue, or authorization failure creates no record; correct the form and submit again.
 - After a save, the page reloads data and recalculates execution status from planned progress, milestones, dates, and unresolved risks.

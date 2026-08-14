@@ -26,8 +26,10 @@ VITE_APP_MODE=demo
 
 # 或真实 Supabase 身份、数据库和私有附件
 VITE_APP_MODE=supabase
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
+# 从 Supabase Project Settings > API 复制实际项目 URL 与 publishable/anon key。
+# 这些值不能有首尾空格，也不能是示例或占位字符串。
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
 ```
 
 `demo` 不构造 Supabase 客户端，也不会上传数据；`supabase` 必须配置公开 URL 和 publishable/anon key。前端绝不能配置 service-role key 或数据库密码。
@@ -47,6 +49,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
 ```bash
 npm run verify:config
 npm test -- --run scripts/verify-supabase-config.test.mjs
+npm run test:smoke:real
 npm run test:run
 npm run typecheck
 npm run build
@@ -57,13 +60,12 @@ npx supabase db lint
 
 ## 数据与部署
 
-演示模式的数据只保存在当前页面内存；它不是对真实持久化的证明。Supabase 与阿里云部署、备份、清理和上线闸门见 [Supabase 部署手册](docs/supabase-setup.md)。生产构建必须使用 `VITE_APP_MODE=supabase` 并运行生产校验：
+演示模式的数据只保存在当前页面内存；它是不可持久化的预览，不是对真实持久化的证明。只有在正确配置了 `VITE_APP_MODE=supabase`、有效 Supabase URL 和公开 publishable/anon key 的生产构建中，KR 进度与风险事件保存才会写入 Supabase。Supabase 与阿里云部署、备份、清理和上线闸门见 [Supabase 部署手册](docs/supabase-setup.md)。
 
 ```bash
-VITE_APP_MODE=supabase \
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
-VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY \
-node scripts/verify-supabase-config.mjs --production
+npm run build:production
 ```
 
-生产构建输出到 `dist/`，可由 Nginx 作为 SPA 静态站点托管。未获明确批准前，不要执行 `supabase db push` 或覆盖线上站点。
+`build:production` 会在**同一组环境变量**下先运行 `--production` 配置校验，再构建 `dist/`；不要将示例、占位值或高权限密钥放入 shell 命令。生产构建输出到 `dist/`，可由 Nginx 作为 SPA 静态站点托管。未获明确批准前，不要执行 `supabase db push` 或覆盖线上站点。
+
+`npm run test:smoke:real` 是一个无网络、无真实写入的 Supabase 模式交互测试装置。它以受控内存仓库验证 KR 保存、风险创建/编辑/解决与矩阵位置、负责人范围、权限非披露、语言切换和直达拒绝页；它不能替代已获批准后的真实 Supabase 验收。

@@ -5,11 +5,47 @@ const url = process.env.VITE_SUPABASE_URL ?? '';
 const key = process.env.VITE_SUPABASE_ANON_KEY ?? '';
 const productionVerification = process.argv.includes('--production');
 const failures = [];
+const placeholderPattern = /(?:example|your[_-]?project|your[_-]?publishable|replace|placeholder|changeme|<|>)/i;
+
+function isAnonJwt(value) {
+  const parts = value.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return payload.role === 'anon';
+  } catch {
+    return false;
+  }
+}
+
+function isSecretShapedKey(value) {
+  if (/^sb_secret_/i.test(value)) return true;
+  const parts = value.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return payload.role === 'service_role';
+  } catch {
+    return false;
+  }
+}
+
+function isPublicSupabaseKey(value) {
+  return /^sb_publishable_[A-Za-z0-9_-]{12,}$/.test(value) || isAnonJwt(value);
+}
 
 if (!['demo', 'supabase'].includes(mode)) failures.push('VITE_APP_MODE 必须是 demo 或 supabase');
 if (mode === 'supabase') {
-  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)) failures.push('VITE_SUPABASE_URL 必须是有效的 HTTPS Supabase 项目 URL');
+  if (!url) failures.push('Supabase 模式缺少 VITE_SUPABASE_URL');
+  else if (url !== url.trim()) failures.push('VITE_SUPABASE_URL 不得包含首尾空白字符');
+  else if (placeholderPattern.test(url)) failures.push('VITE_SUPABASE_URL 不得使用示例或占位值');
+  else if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)) failures.push('VITE_SUPABASE_URL 必须是有效的 HTTPS Supabase 项目 URL');
+
   if (!key) failures.push('Supabase 模式缺少 VITE_SUPABASE_ANON_KEY');
+  else if (key !== key.trim()) failures.push('VITE_SUPABASE_ANON_KEY 不得包含首尾空白字符');
+  else if (placeholderPattern.test(key)) failures.push('VITE_SUPABASE_ANON_KEY 不得使用示例或占位值');
+  else if (isSecretShapedKey(key)) failures.push('VITE_SUPABASE_ANON_KEY 不能是 service-role 或 secret key');
+  else if (!isPublicSupabaseKey(key)) failures.push('VITE_SUPABASE_ANON_KEY 必须是 publishable key 或 anon JWT');
 }
 if (productionVerification && mode !== 'supabase') failures.push('生产验证要求 VITE_APP_MODE=supabase');
 for (const forbidden of ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_DB_PASSWORD', 'DATABASE_URL']) {
