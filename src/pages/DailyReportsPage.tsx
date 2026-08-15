@@ -9,6 +9,9 @@ import { getDailyEvidencePermissionScope, getDailyReportBodyPermissionScope } fr
 import type { Classification, DailyReport, Objective, User } from '../domain/types';
 import { mockRepository } from '../mocks/repository';
 import { DailyReportForm } from './daily-report/DailyReportForm';
+import { dailyReportToDraft } from '../data/dailyReportMapper';
+import { appMode, repository } from '../lib/supabase';
+import { RevisionHistory, type RevisionSummary } from './daily-report/RevisionHistory';
 import { DailyReportEvidenceDetails } from './DailyReportEvidenceDetails';
 
 function authorName(authorId: string, users: ReturnType<typeof mockRepository.getDashboardData>['users']) {
@@ -72,12 +75,17 @@ export function DailyReportsPage() {
   const { currentUser } = useAuth();
   const [notice, setNotice] = useState('');
   const [isAuthoring, setIsAuthoring] = useState(false);
+  const [editingReport, setEditingReport] = useState<DailyReport>();
+  const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
   const [localReports, setLocalReports] = useState<{ ownerId: string | undefined; reports: DailyReport[] }>(() => ({ ownerId: currentUser?.id, reports: [] }));
   const nextLocalSubmissionNonce = useRef(1);
   const authoringButtonRef = useRef<HTMLButtonElement>(null);
+  const authoringHeadingRef = useRef<HTMLHeadingElement>(null);
   const restoreAuthoringFocus = useRef(false);
   useEffect(() => {
     setIsAuthoring(false);
+    setEditingReport(undefined);
+    setRevisions([]);
     setLocalReports({ ownerId: currentUser?.id, reports: [] });
     setNotice('');
     nextLocalSubmissionNonce.current = 1;
@@ -88,6 +96,9 @@ export function DailyReportsPage() {
       authoringButtonRef.current?.focus();
     }
   }, [isAuthoring]);
+  useEffect(() => {
+    if (isAuthoring && editingReport) authoringHeadingRef.current?.focus();
+  }, [editingReport, isAuthoring]);
   if (!currentUser) return null;
   const currentUserId = currentUser.id;
   const data = mockRepository.getDashboardData(currentUser.id);
@@ -129,12 +140,12 @@ export function DailyReportsPage() {
   const authoringObjectiveIds = new Set(authoringObjectives.map((objective) => objective.id));
   const authoringKeyResults = linkableKeyResults.filter((keyResult) => authoringObjectiveIds.has(keyResult.objectiveId));
 
-  function handleSubmit(draft: DailyReportDraft) {
+  async function handleSubmit(draft: DailyReportDraft) {
     if (!authoringContext) {
       return { ok: false as const, error: '当前没有可授权的项目可用于填写日报。' };
     }
 
-    const result = toLocalDailyReport(draft, {
+    const conversion = toLocalDailyReport(draft, {
       authorId: authoringContext.report.authorId,
       projectId: authoringContext.report.projectId,
       fallbackObjectiveId: authoringContext.objective.id,
@@ -143,13 +154,31 @@ export function DailyReportsPage() {
       objectives: authoringObjectives,
       keyResults: authoringKeyResults,
     });
-    if (!result.ok) {
-      return { ok: false as const, error: result.error.message };
+    if (!conversion.ok) {
+      return { ok: false as const, error: conversion.error.message };
+    }
+
+    if (appMode === 'supabase') {
+      const input = {
+        projectId: conversion.report.projectId, objectiveId: conversion.report.objectiveId,
+        reportDate: conversion.report.date, status: conversion.report.status,
+        classification: conversion.report.classification, totalHours: conversion.report.hours,
+        dailyObjective: conversion.report.dailyObjective ?? conversion.report.content,
+        objectiveProgress: conversion.report.objectiveProgress ?? 0,
+        keyResults: conversion.report.dailyKeyResults ?? [], evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
+      };
+      const files = draft.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []);
+      const persisted = editingReport
+        ? (files.length ? await repository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await repository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
+        : (files.length ? await repository.createDailyReportWithAttachments(input, files) : await repository.createDailyReport(input));
+      if (!persisted.ok) return { ok: false as const, error: persisted.error.code === 'conflict' ? '日报已被更新，请刷新后重试。' : persisted.error.message };
     }
 
     nextLocalSubmissionNonce.current += 1;
-    setLocalReports((bucket) => ({ ownerId: currentUserId, reports: [result.report, ...(bucket.ownerId === currentUserId ? bucket.reports : [])] }));
-    setNotice('日报已保存到当前演示页面，尚未连接后端。');
+    const saved = { ...conversion.report, id: editingReport?.id ?? conversion.report.id, currentRevision: (editingReport?.currentRevision ?? 0) + 1, updatedAt: new Date().toISOString() };
+    setLocalReports((bucket) => ({ ownerId: currentUserId, reports: editingReport ? [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : []).filter((item) => item.id !== editingReport.id)] : [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : [])] }));
+    setNotice(appMode === 'demo' ? '日报已保存到当前演示页面，尚未连接后端。' : '日报已安全保存。');
+    setEditingReport(undefined);
     restoreAuthoringFocus.current = true;
     setIsAuthoring(false);
     return { ok: true as const };
@@ -176,7 +205,7 @@ export function DailyReportsPage() {
     },
     { key: 'hours', label: '工时', render: (report: DailyReport) => `${report.hours} 小时` },
     { key: 'status', label: '状态', render: (report: DailyReport) => <StatusBadge status={report.status} /> },
-    ...(showOwnActions ? [{ key: 'own-actions', label: '操作', render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={() => setNotice('已打开我的日报模拟编辑。')}>编辑我的日报</button> : null }] : []),
+    ...(showOwnActions ? [{ key: 'own-actions', label: '操作', render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(''); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (appMode === 'supabase') { const history = await repository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>编辑我的日报</button> : <span>已锁定</span> }] : []),
     ...(showReviewActions ? [{ key: 'actions', label: '审核', render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice('已确认成员日报（模拟操作）。')}>确认成员日报</button><button type="button" className="text-button" onClick={() => setNotice('已退回成员日报（模拟操作）。')}>退回成员日报</button><button type="button" className="text-button" onClick={() => setNotice('已添加成员日报评论（模拟操作）。')}>添加评论</button></span> }] : []),
   ];
 
@@ -190,13 +219,16 @@ export function DailyReportsPage() {
       {notice && <p className="page-notice" role="status">{notice}</p>}
       {isAuthoring && authoringContext && (
         <section className="page-section" aria-labelledby="daily-report-authoring">
-          <h2 id="daily-report-authoring">填写今日日报</h2>
+          <h2 id="daily-report-authoring" ref={authoringHeadingRef} tabIndex={-1}>{editingReport ? '编辑我的日报' : '填写今日日报'}</h2>
           <DailyReportForm
+            mode={editingReport ? 'edit' : 'create'}
+            initialDraft={editingReport ? dailyReportToDraft(editingReport) : undefined}
             objectives={authoringObjectives}
             keyResults={authoringKeyResults}
-            onCancel={() => { restoreAuthoringFocus.current = true; setIsAuthoring(false); }}
+            onCancel={() => { restoreAuthoringFocus.current = true; setEditingReport(undefined); setIsAuthoring(false); }}
             onSubmit={handleSubmit}
           />
+          {editingReport && revisions.length > 0 && <RevisionHistory revisions={revisions} />}
         </section>
       )}
       <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">我的日报</h2><DataTable ariaLabel="我的日报" rows={ownReports} getRowKey={(report) => report.id} emptyMessage="今天还没有日报，填写后可在这里查看。" columns={reportColumns(false, true)} /></section>

@@ -9,7 +9,9 @@ const roleLabels = {
 } as const;
 
 export function RoleSwitcher() {
-  const { currentUser, selectableUsers, selectUser } = useAuth();
+  const { currentUser, mode, selectableUsers, selectUser } = useAuth();
+
+  if (mode !== 'demo') return null;
 
   return (
     <label className="role-switcher">

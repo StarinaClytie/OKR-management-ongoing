@@ -1,103 +1,57 @@
 # Northstar OKR
 
-Northstar OKR is a Chinese-first enterprise OKR management frontend prototype. It demonstrates role-aware dashboards, protected navigation, structured daily reporting, project visualizations, and confidentiality-aware UI boundaries using local mock data.
+一个中文优先的企业 OKR 应用，提供角色化仪表盘、结构化日报、计划进度、风险解释、修订历史，以及由 Supabase RLS 和私有 Storage 保护的附件。
 
-## Highlights
-
-- Five roles: Administrator, Management, Project Leader, Employee, and HR
-- Eight application areas: Dashboard, OKR Management, Projects, Daily Report, Weekly Report, Team, Analytics, and Settings
-- Modular dashboards tailored to each role
-- Five project views: alignment tree, Gantt chart, progress trend, risk matrix, and workload
-- Structured daily Objective and Key Result entry with manually entered progress, work hours, measurement types, linked OKRs, and evidence metadata
-- Project Leader self-reporting plus member report review, confirmation, return, and comments
-- Permission-aware rendering for OKRs, reports, evidence, milestones, risks, tasks, and system metadata
-- Responsive navigation, keyboard interactions, focus management, and accessible status/error feedback
-
-## Technology
-
-- React 19
-- TypeScript
-- Vite
-- React Router
-- Recharts
-- Vitest and Testing Library
-
-## Run Locally
-
-Requirements: Node.js 20 or later and npm.
+## 本地运行
 
 ```bash
-git clone https://github.com/StarinaClytie/OKR-management-ongoing.git
-cd OKR-management-ongoing
 npm install
 npm run dev
-```
-
-Open the local URL printed by Vite.
-
-## Quality Checks
-
-```bash
 npm run test:run
 npm run typecheck
 npm run build
 ```
 
-The production bundle is written to `dist/`.
+开发服务器启动后，按终端显示的本地地址打开应用。生产构建会输出到 `dist/`。
 
-## Explore the Demo
+## 运行模式
 
-Use the role switcher in the top bar to move between the five simulated identities. Each role receives a different dashboard composition and permission scope. Protected routes display an access-denied state when the active user lacks the required capability.
+复制 `.env.example` 为 `.env.local`，选择一种模式：
 
-Project Leaders can write their own daily reports and review member reports without modifying the member's original content. HR views authorized workload fields only; report bodies and evidence remain outside the HR view. The five project visualizations can be switched with the mouse or keyboard.
+```dotenv
+# 完全本地的模拟身份和数据
+VITE_APP_MODE=demo
 
-## Permission Model
-
-The frontend models both role capabilities and resource-level relationships. It distinguishes summary access from detailed access and treats OKRs, report bodies, evidence, attachments, milestones, risks, project tasks, and audit metadata as separate permission resources.
-
-The prototype also models classification levels and filters unauthorized data before mapping, aggregation, or DOM rendering. Administrator and Management are intentionally different roles: administrators manage system configuration and access metadata but do not automatically receive confidential business content.
-
-## Project Structure
-
-```text
-src/
-  app/          Application shell and routes
-  auth/         Permission evaluation and route protection
-  components/   Shared UI and security components
-  dashboard/    Role-specific widgets and visualizations
-  domain/       Types, permissions, and daily-report conversion
-  layout/       Sidebar, role switcher, and responsive shell
-  mocks/        Local demonstration data
-  pages/        Route-level page frameworks and daily report UI
-  styles/       Design tokens and global responsive styles
+# 或真实 Supabase 身份、数据库和私有附件
+VITE_APP_MODE=supabase
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_KEY
 ```
 
-## Prototype Boundaries
+`demo` 不构造 Supabase 客户端，也不会上传数据；`supabase` 必须配置公开 URL 和 publishable/anon key。前端绝不能配置 service-role key 或数据库密码。
 
-This repository is a frontend foundation, not a production authorization system. It currently has no backend, real identity provider, database, persistent file upload, encryption service, production export pipeline, or AI-based OKR evaluation. Submitted demo state is stored in browser memory and resets on refresh.
+## 演示方式
 
-Client-side menu hiding and route guards improve the demonstration experience, but a production system must repeat every authorization and classification check on the server. Never treat frontend checks as a security boundary.
+顶栏的“演示角色”切换器可在管理员、管理层、项目负责人、员工和 HR 五种模拟身份间切换。每种角色会看到其权限范围内的仪表盘和导航；当路由权限被拒绝时，应用会显示访问受限页面。
 
-## Deployment
+项目负责人可以填写自己的结构化日报并审核成员日报；HR 只查看已授权工时字段，不展示日报正文或证据。项目视图提供对齐树、甘特图、进度趋势、风险矩阵和工作负载五个标签，支持键盘方向键切换。
 
-Build the static application with:
+## 安全边界
+
+演示模式的菜单、路由和按钮控制只用于体验；Supabase 模式由数据库 RLS、受限 RPC 和 Storage policy 对每次读取和写入重新鉴权。管理员默认不能读取机密业务正文；OKR 摘要、日报正文、证据和附件是独立权限资源。项目不包含 AI 功能。
+
+## 验证
 
 ```bash
-npm ci
+npm run verify:config
+npm run test:run
+npm run typecheck
 npm run build
+npx supabase db reset
+npx supabase test db
+npx supabase db lint
 ```
 
-Serve the generated `dist/` directory from a static host or web server. Configure history fallback to `index.html` so React Router URLs work when opened directly.
+## 数据与部署
 
-## Roadmap
-
-- Backend API, database, and persistent audit trail
-- Enterprise authentication and server-enforced authorization
-- Real attachment upload and secure object storage
-- Configurable progress baselines and risk-scoring explanations
-- Editable submitted reports with version history
-- AI-assisted Objective and Key Result writing feedback
-
-## License
-
-No open-source license has been added yet. All rights are reserved unless a license is added in a future release.
+演示模式的数据只保存在当前页面内存。Supabase 与阿里云部署、备份、清理和上线闸门见 [Supabase 部署手册](docs/supabase-setup.md)。生产构建输出到 `dist/`，可由 Nginx 作为 SPA 静态站点托管。

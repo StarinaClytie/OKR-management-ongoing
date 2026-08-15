@@ -11,10 +11,12 @@ export type DailyReportSubmitResult =
   | { ok: false; error: string };
 
 interface DailyReportFormProps {
+  mode?: 'create' | 'edit';
+  initialDraft?: DailyReportDraft;
   objectives: readonly Objective[];
   keyResults: readonly KeyResult[];
   onCancel: () => void;
-  onSubmit: (draft: DailyReportDraft) => DailyReportSubmitResult;
+  onSubmit: (draft: DailyReportDraft) => DailyReportSubmitResult | Promise<DailyReportSubmitResult>;
 }
 
 const initialKeyResult = (id: string): DailyKeyResultDraft => ({
@@ -40,15 +42,15 @@ function useNarrowDailyForm() {
   return narrow;
 }
 
-export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: DailyReportFormProps) {
-  const [draft, setDraft] = useState<DailyReportDraft>({
+export function DailyReportForm({ mode = 'create', initialDraft, objectives, keyResults, onCancel, onSubmit }: DailyReportFormProps) {
+  const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft ? structuredClone(initialDraft) : ({
     dailyObjective: '',
     objectiveProgress: undefined,
     keyResults: [initialKeyResult('daily-kr-1')],
     evidence: [],
     classification: 'internal',
-  });
-  const [activeKrId, setActiveKrId] = useState('daily-kr-1');
+  }));
+  const [activeKrId, setActiveKrId] = useState(initialDraft?.keyResults[0]?.id ?? 'daily-kr-1');
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
   const [status, setStatus] = useState('');
   const nextKrId = useRef(2);
@@ -111,18 +113,18 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
   };
 
   const saveDraft = () => setStatus('草稿已保存在当前页面。');
-  const submit = () => {
+  const submit = async () => {
     setShowSubmitErrors(true);
     if (validateDailyReportDraft(draft).length > 0) {
       setStatus('请先补全或修正必填项。');
       return;
     }
-    const result = onSubmit(draft);
-    setStatus(result.ok ? '日报已提交（当前页面模拟）。' : result.error);
+    const result = await onSubmit(draft);
+    setStatus(result.ok ? (mode === 'edit' ? '日报修改已保存。' : '日报已提交。') : result.error);
   };
 
   return (
-    <form className="daily-entry-layout" noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
+    <form className="daily-entry-layout" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <div className="daily-entry-form">
         <DailyObjectiveField
           objective={draft.dailyObjective}
@@ -133,7 +135,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
           onObjectiveChange={(dailyObjective) => setDraft((current) => ({ ...current, dailyObjective }))}
           onProgressChange={updateObjectiveProgress}
         />
-        <section className="daily-key-results" aria-labelledby="daily-key-results-heading">
+        <section className="daily-key-results form-card form-section" aria-labelledby="daily-key-results-heading">
           <div className="daily-evidence__header">
             <h2 id="daily-key-results-heading">当日 KR</h2>
             <button type="button" className="button button--secondary" onClick={addKeyResult}>添加 KR</button>
@@ -171,7 +173,7 @@ export function DailyReportForm({ objectives, keyResults, onCancel, onSubmit }: 
         <div className="daily-form-actions">
           <button type="button" className="button button--secondary" onClick={onCancel}>取消</button>
           <button type="button" className="button button--secondary" onClick={saveDraft}>保存草稿</button>
-          <button type="submit" className="button button--primary">提交日报</button>
+          <button type="submit" className="button button--primary">{mode === 'edit' ? '保存日报修改' : '提交日报'}</button>
         </div>
         {status && <p className="page-notice" role="status">{status}</p>}
       </div>

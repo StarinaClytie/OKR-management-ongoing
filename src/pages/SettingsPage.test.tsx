@@ -24,6 +24,7 @@ describe('SettingsPage', () => {
         expect(panelId).toBeNull();
       }
     }
+    expect(screen.getByRole('tabpanel')).toHaveClass('settings-panel', 'form-card', 'form-section');
   });
 
   it('resets an unavailable active tab after the simulated user changes and keeps tab ARIA relationships valid', () => {

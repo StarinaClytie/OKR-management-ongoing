@@ -22,7 +22,7 @@ export function DailyObjectiveField({
   const [examplesVisible, setExamplesVisible] = useState(false);
 
   return (
-    <section className="daily-objective-field" aria-labelledby="daily-objective-heading">
+    <section className="daily-objective-field form-card form-section" aria-labelledby="daily-objective-heading">
       <div className="daily-field-heading">
         <h2 id="daily-objective-heading">今日目标</h2>
         <p>建议使用动词＋结果描述今天最重要的目标</p>

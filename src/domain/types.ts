@@ -111,6 +111,8 @@ export interface DailyReport {
   evidenceClassification: Classification;
   attachmentIds: string[];
   status: ReportStatus;
+  currentRevision?: number;
+  updatedAt?: string;
 }
 
 export interface WeeklyReport {
@@ -149,6 +151,8 @@ export interface Risk {
   probability: 1 | 2 | 3;
   impact: 1 | 2 | 3;
   mitigation: string;
+  reason?: string;
+  lastReviewedAt?: string;
   status: ProgressStatus;
   classification: Classification;
   identifiedAt: string;

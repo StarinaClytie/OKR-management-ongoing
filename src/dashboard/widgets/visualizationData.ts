@@ -8,6 +8,7 @@ import type {
   ProgressStatus,
 } from '../../domain/types';
 import type { DashboardData } from '../../mocks/repository';
+import { scoreRisk } from '../../domain/riskScore';
 
 export interface PreparedKeyResult {
   id: string;
@@ -58,6 +59,11 @@ export interface PreparedRisk {
   impactLabel: string;
   status: ProgressStatus;
   mitigation: string;
+  reason: string;
+  ownerName: string;
+  lastReviewedAt: string;
+  score: 1 | 2 | 3 | 4 | 6 | 9;
+  level: 'low' | 'medium' | 'high' | 'critical';
 }
 
 export interface PreparedWorkload {
@@ -211,6 +217,10 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
       impactLabel: impactLabels[risk.impact],
       status: risk.status,
       mitigation: risk.mitigation,
+      reason: risk.reason ?? risk.description,
+      ownerName: resolveUserName(data, risk.ownerId),
+      lastReviewedAt: risk.lastReviewedAt ?? risk.identifiedAt,
+      ...scoreRisk(risk.probability, risk.impact),
     }));
 
   const workloads = data.workloads

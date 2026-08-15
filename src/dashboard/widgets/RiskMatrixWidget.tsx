@@ -7,6 +7,7 @@ export interface RiskMatrixWidgetProps {
 }
 
 const levels = [3, 2, 1] as const;
+const levelLabels = { low: '低风险', medium: '中风险', high: '高风险', critical: '严重风险' } as const;
 
 export function RiskMatrixWidget({ data }: RiskMatrixWidgetProps) {
   const { risks } = prepareVisualizationData(data);
@@ -46,7 +47,16 @@ export function RiskMatrixWidget({ data }: RiskMatrixWidgetProps) {
         </div>
         <span className="risk-matrix__axis risk-matrix__axis--x">业务影响 →</span>
       </div>
-      {selected && <section className="risk-details" role="region" aria-label="风险详情"><h3>{selected.title}</h3><p>{selected.mitigation}</p></section>}
+      {selected && <section className="risk-details" role="region" aria-label="风险详情">
+        <h3>{selected.title}</h3>
+        <p>概率 {selected.probability} × 影响 {selected.impact} = {selected.score}（{levelLabels[selected.level]}）</p>
+        <dl>
+          <dt>判断依据</dt><dd>{selected.reason}</dd>
+          <dt>负责人</dt><dd>{selected.ownerName}</dd>
+          <dt>缓解措施</dt><dd>{selected.mitigation}</dd>
+          <dt>最近复核</dt><dd>{selected.lastReviewedAt}</dd>
+        </dl>
+      </section>}
     </div>
   );
 }

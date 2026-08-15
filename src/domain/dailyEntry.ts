@@ -23,6 +23,11 @@ export interface DailyEvidenceDraft {
   label: string;
   kind: 'file' | 'link';
   classification: Classification;
+  file?: File;
+  attachmentId?: string;
+  uploadState?: 'selected' | 'pending' | 'uploading' | 'uploaded' | 'failed' | 'deleting';
+  uploadProgress?: number;
+  error?: string;
 }
 
 export interface DailyReportDraft {

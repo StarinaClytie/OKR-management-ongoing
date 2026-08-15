@@ -220,6 +220,18 @@ describe('ProjectVisualizationsWidget', () => {
     const panel = screen.getByRole('region', { name: '风险详情' });
     expect(panel).toHaveTextContent('实验样本量不足');
     expect(panel).toHaveTextContent('按周监控流量并准备合并实验方案。');
+    expect(panel).toHaveTextContent('概率 2 × 影响 2 = 4（中风险）');
+    expect(panel).toHaveTextContent('判断依据');
+    expect(panel).toHaveTextContent('负责人');
+    expect(panel).toHaveTextContent('最近复核');
+  });
+
+  it('renders all nine textual coordinates and a readable upright probability axis', () => {
+    const { container } = render(<RiskMatrixWidget data={leaderData} />);
+    expect(screen.getAllByRole('region', { name: /概率，.*影响/ })).toHaveLength(9);
+    const axis = screen.getByText('发生概率 ↑');
+    expect(axis).toHaveClass('risk-matrix__axis--y');
+    expect(container.querySelector('.risk-matrix__axis--y')).toBe(axis);
   });
 
   it('never leaves denied labels in text, accessible names, or hidden panels', async () => {
@@ -268,8 +280,15 @@ describe('ProjectVisualizationsWidget', () => {
 
     expect(screen.getByText('12 个周度数据点')).toBeVisible();
     expect(screen.getByText('实际进度（实线）')).toBeVisible();
-    expect(screen.getByText('计划进度（虚线）')).toBeVisible();
+    expect(screen.getByText('计划进度（由负责人设置）')).toBeVisible();
     expect(screen.getByText('单位：完成度 %')).toBeVisible();
+    expect(screen.getByText('计算说明').tagName).toBe('SUMMARY');
+  });
+
+  it('labels Gantt baselines as owner-entered planned dates with an explanation disclosure', () => {
+    render(<GanttChartWidget data={leaderData} />);
+    expect(screen.getByText('基准计划（计划日期）')).toBeVisible();
+    expect(screen.getByText('计算说明').tagName).toBe('SUMMARY');
   });
 
   it('falls back to KPI comparison when fewer than eight authorized points remain', () => {

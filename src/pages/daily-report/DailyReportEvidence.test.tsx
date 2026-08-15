@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { DailyReportEvidence } from './DailyReportEvidence';
 
 describe('DailyReportEvidence', () => {
@@ -19,5 +20,13 @@ describe('DailyReportEvidence', () => {
     render(<DailyReportEvidence objectives={[]} evidence={[]} onLinkedObjectiveChange={vi.fn()} onEvidenceChange={onEvidenceChange} />);
     fireEvent.click(screen.getByRole('button', { name: '添加成果附件或链接' }));
     expect(onEvidenceChange).toHaveBeenCalledWith([expect.objectContaining({ label: '' })]);
+  });
+
+  it('uses the native picker and returns independently classified real File objects', async () => {
+    const user = userEvent.setup(); const onEvidenceChange = vi.fn();
+    render(<DailyReportEvidence objectives={[]} evidence={[]} onLinkedObjectiveChange={vi.fn()} onEvidenceChange={onEvidenceChange} />);
+    const file = new File(['proof'], 'proof.pdf', { type: 'application/pdf' });
+    await user.upload(screen.getByLabelText('选择成果附件'), file);
+    expect(onEvidenceChange).toHaveBeenCalledWith([expect.objectContaining({ file, label: 'proof.pdf', kind: 'file', classification: 'internal', uploadState: 'selected' })]);
   });
 });

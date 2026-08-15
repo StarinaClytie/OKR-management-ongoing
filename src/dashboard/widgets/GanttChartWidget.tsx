@@ -37,9 +37,10 @@ export function GanttChartWidget({ data }: GanttChartWidgetProps) {
       <div className="gantt-chart">
         <div className="gantt-chart__legend" aria-label="时间条图例">
           <span><i className="gantt-legend gantt-legend--actual" />实际进度（实心）</span>
-          <span><i className="gantt-legend gantt-legend--baseline" />基准计划（虚线）</span>
+          <span><i className="gantt-legend gantt-legend--baseline" />基准计划（计划日期）</span>
           <span><i className="gantt-legend gantt-legend--milestone" />里程碑（菱形）</span>
         </div>
+        <details><summary>计算说明</summary><p>虚线基准使用负责人设置的计划日期；实心条仅展示已记录的实际执行进度。</p></details>
         <div className="gantt-chart__weeks" aria-hidden="true">
           {weekLabels.map((week) => <span key={week}>{week}</span>)}
         </div>

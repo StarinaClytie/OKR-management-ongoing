@@ -556,7 +556,9 @@ select {
 .settings-tabs { margin-bottom: var(--space-4); border-bottom: 1px solid #e2e8f0; }
 .settings-tab { padding: 10px 12px; color: #475569; background: transparent; border: 0; border-bottom: 2px solid transparent; font-weight: 700; }
 .settings-tab[aria-selected='true'] { color: #1d4ed8; border-bottom-color: currentColor; }
-.settings-panel { max-width: 640px; padding: var(--space-5); background: var(--color-surface); border: 1px solid #e2e8f0; border-radius: var(--radius-md); }
+.form-card { padding: var(--space-5); background: var(--color-surface); border: 1px solid #e2e8f0; border-radius: var(--radius-md); }
+.form-section { display: grid; gap: var(--space-4); }
+.settings-panel { max-width: 640px; }
 .settings-toggle { display: flex; gap: var(--space-2); margin-top: var(--space-5); color: #334155; }
 
 .daily-entry-layout {
@@ -581,10 +583,7 @@ select {
 .daily-key-results,
 .daily-evidence,
 .daily-entry-help {
-  padding: var(--space-5);
   background: var(--color-surface);
-  border: 1px solid #e2e8f0;
-  border-radius: var(--radius-md);
 }
 
 .daily-field-heading h2,
@@ -622,7 +621,7 @@ select {
 .daily-kr-editor input,
 .daily-kr-editor textarea,
 .daily-kr-editor select,
-.daily-evidence input,
+.daily-evidence input:not(.sr-only),
 .daily-evidence select {
   width: 100%;
   min-height: 38px;
@@ -643,7 +642,7 @@ select {
 .daily-kr-editor input:focus-visible,
 .daily-kr-editor textarea:focus-visible,
 .daily-kr-editor select:focus-visible,
-.daily-evidence input:focus-visible,
+.daily-evidence input:not(.sr-only):focus-visible,
 .daily-evidence select:focus-visible,
 .daily-form-actions .button:focus-visible,
 .daily-evidence__header .button:focus-visible,
@@ -682,6 +681,8 @@ select {
 @media (max-width: 760px) {
   .daily-entry-layout { grid-template-columns: 1fr; }
   .daily-entry-help--mobile { margin-top: var(--space-2); }
+  .form-card { padding: var(--space-4); }
+  .daily-entry-form { gap: var(--space-4); }
 }
 
 @media (max-width: 520px) {
@@ -1291,7 +1292,7 @@ select {
 .risk-matrix__axis--y {
   align-self: center;
   writing-mode: vertical-rl;
-  transform: rotate(180deg);
+  text-orientation: upright;
 }
 
 .risk-matrix__axis--x {

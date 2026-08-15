@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "verify:config": "node scripts/verify-supabase-config.mjs",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest",
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
     "react": "latest",

@@ -24,7 +24,7 @@ export function SettingsPage() {
       <div className="settings-tabs" role="tablist" aria-label="设置类别">
         {tabs.map((tab) => <button key={tab.id} id={`${idBase}-${tab.id}-tab`} type="button" role="tab" aria-selected={tab.id === activeTab} aria-controls={tab.id === activeTab ? `${idBase}-${tab.id}-panel` : undefined} className="settings-tab" onClick={() => setState({ ...ownedState, activeTab: tab.id, notice: '' })}>{tab.label}</button>)}
       </div>
-      <section id={`${idBase}-${active.id}-panel`} className="settings-panel" role="tabpanel" aria-label={active.label} aria-labelledby={`${idBase}-${active.id}-tab`}><h2>{active.label}</h2><p>{active.description}</p><label className="settings-toggle"><input type="checkbox" checked={ownedState.reminders} onChange={(event) => setState({ ...ownedState, reminders: event.target.checked, notice: '' })} /> 接收相关提醒</label></section>
+      <section id={`${idBase}-${active.id}-panel`} className="settings-panel form-card form-section" role="tabpanel" aria-label={active.label} aria-labelledby={`${idBase}-${active.id}-tab`}><h2>{active.label}</h2><p>{active.description}</p><label className="settings-toggle"><input type="checkbox" checked={ownedState.reminders} onChange={(event) => setState({ ...ownedState, reminders: event.target.checked, notice: '' })} /> 接收相关提醒</label></section>
     </section>
   );
 }

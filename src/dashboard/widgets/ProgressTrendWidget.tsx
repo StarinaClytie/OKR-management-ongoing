@@ -34,8 +34,9 @@ export function ProgressTrendWidget({ data }: ProgressTrendWidgetProps) {
       </div>
       <div className="trend-chart__legend" aria-label="进度趋势图例">
         <span><i className="trend-legend trend-legend--actual" />实际进度（实线）</span>
-        <span><i className="trend-legend trend-legend--planned" />计划进度（虚线）</span>
+        <span><i className="trend-legend trend-legend--planned" />计划进度（由负责人设置）</span>
       </div>
+      <details><summary>计算说明</summary><p>虚线来自负责人保存的计划基准点；实线来自员工手动填报的实际完成度，系统不会改写实际进度。</p></details>
       <p className="trend-chart__count">{trendPoints.length} 个周度数据点</p>
       <div className="trend-chart__scroll" tabIndex={0} aria-label="进度趋势图，可横向滚动">
         <LineChart
@@ -50,7 +51,7 @@ export function ProgressTrendWidget({ data }: ProgressTrendWidgetProps) {
           <XAxis dataKey="weekOf" tick={{ fontSize: 11 }} interval={1} />
           <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
           <Line dataKey="actual" name="实际进度" type="monotone" stroke="#2563eb" strokeWidth={3} dot={{ r: 3 }} />
-          <Line dataKey="planned" name="计划进度" type="monotone" stroke="#64748b" strokeWidth={2} strokeDasharray="7 5" dot={false} />
+          <Line dataKey="planned" name="计划进度（由负责人设置）" type="monotone" stroke="#64748b" strokeWidth={2} strokeDasharray="7 5" dot={false} />
         </LineChart>
       </div>
     </div>

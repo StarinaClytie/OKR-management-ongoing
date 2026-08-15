@@ -40,4 +40,13 @@ describe('DailyReportEvidenceDetails', () => {
     expect(container).not.toHaveTextContent('不得泄漏的受限附件.xlsx');
     expect(container.querySelector('[aria-label*="不得泄漏"]')).not.toBeInTheDocument();
   });
+
+  it('does not reveal attachment names, counts, paths, or URLs to HR', () => {
+    const hr = users.find((user) => user.role === 'hr')!;
+    const report = dailyReports.find((item) => item.id === 'daily-report-employee-2026-08-07')!;
+    const secret = { ...attachments[0]!, relatedResourceId: report.id, title: 'payroll-secret.pdf', url: 'https://private.example/raw-path' };
+    const { container } = render(<DailyReportEvidenceDetails viewer={hr} report={report} attachments={[secret]} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(container.innerHTML).not.toMatch(/payroll-secret|raw-path|附件|1/);
+  });
 });

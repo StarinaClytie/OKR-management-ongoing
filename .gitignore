@@ -1,5 +1,12 @@
 node_modules/
 dist/
+coverage/
 .DS_Store
-*.local
-
+.superpowers/
+graphify-out/
+.worktrees/
+*.log
+.env.local
+.env.*.local
+supabase/.temp/
+supabase/.branches/
