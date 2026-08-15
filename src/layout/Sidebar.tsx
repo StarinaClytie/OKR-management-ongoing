@@ -3,6 +3,7 @@ import type { Ref } from 'react';
 import { NavLink } from 'react-router-dom';
 import { PermissionGate } from '../auth/PermissionGate';
 import { navigationItems } from '../navigation/navigation';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export interface SidebarProps {
   variant: 'desktop' | 'mobile';
@@ -13,6 +14,7 @@ export interface SidebarProps {
 }
 
 export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, drawerRef }: SidebarProps) {
+  const { t } = useLocale();
   const isMobileDrawer = variant === 'mobile';
   const dashboardPath = navigationItems[0].path;
 
@@ -20,7 +22,7 @@ export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, draw
     <aside
       ref={drawerRef}
       className={`app-sidebar app-sidebar--${variant}${mobileOpen ? ' app-sidebar--open' : ''}`}
-      aria-label={isMobileDrawer ? '移动端主导航' : '主导航'}
+      aria-label={isMobileDrawer ? t('navigation.mobile') : t('navigation.primary')}
       aria-hidden={isMobileDrawer && !mobileOpen ? true : undefined}
       aria-modal={isMobileDrawer && mobileOpen ? true : undefined}
       role={isMobileDrawer && mobileOpen ? 'dialog' : undefined}
@@ -31,7 +33,7 @@ export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, draw
           className="icon-button app-sidebar__close"
           data-drawer-close
           type="button"
-          aria-label="关闭导航"
+          aria-label={t('navigation.close')}
           onClick={onClose}
         >
           <X size={20} aria-hidden="true" />
@@ -42,7 +44,7 @@ export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, draw
         <span>Northstar OKR</span>
       </NavLink>
 
-      <nav className="app-sidebar__nav" aria-label="工作区">
+      <nav className="app-sidebar__nav" aria-label={t('navigation.workspace')}>
         {navigationItems.map((item) => {
           const Icon = item.icon;
 
@@ -54,7 +56,7 @@ export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, draw
                 onClick={onNavigate}
               >
                 <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
-                <span>{item.label}</span>
+                <span>{t(item.labelKey)}</span>
               </NavLink>
             </PermissionGate>
           );

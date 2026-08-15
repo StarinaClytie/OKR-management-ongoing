@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export function AccessDeniedPage() {
+  const { t } = useLocale();
   return (
     <section className="status-page" aria-labelledby="access-denied-title">
-      <p className="status-page__eyebrow">权限提示</p>
-      <h1 id="access-denied-title">访问受限</h1>
-      <p>当前演示角色没有访问此页面的权限。</p>
-      <Link className="text-link" to="/dashboard">返回仪表盘</Link>
+      <p className="status-page__eyebrow">{t('access.eyebrow')}</p>
+      <h1 id="access-denied-title">{t('access.title')}</h1>
+      <p>{t('access.description')}</p>
+      <Link className="text-link" to="/dashboard">{t('common.backToDashboard')}</Link>
     </section>
   );
 }

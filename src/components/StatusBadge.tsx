@@ -1,14 +1,16 @@
 import type { ProgressStatus, ReportStatus } from '../domain/types';
+import { useLocale } from '../i18n/LocaleProvider';
+import type { MessageKey } from '../i18n/messages';
 
-const statusLabels: Record<ProgressStatus | ReportStatus, string> = {
-  on_track: '正常推进',
-  at_risk: '存在风险',
-  off_track: '已偏离',
-  complete: '已完成',
-  draft: '草稿',
-  submitted: '已提交',
-  returned: '已退回',
-  confirmed: '已确认',
+const statusLabels: Record<ProgressStatus | ReportStatus, MessageKey> = {
+  on_track: 'status.onTrack',
+  at_risk: 'status.atRisk',
+  off_track: 'status.offTrack',
+  complete: 'status.complete',
+  draft: 'status.draft',
+  submitted: 'status.submitted',
+  returned: 'status.returned',
+  confirmed: 'status.confirmed',
 };
 
 export interface StatusBadgeProps {
@@ -16,5 +18,6 @@ export interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  return <span className={`status-badge status-badge--${status}`}>{statusLabels[status]}</span>;
+  const { t } = useLocale();
+  return <span className={`status-badge status-badge--${status}`}>{t(statusLabels[status])}</span>;
 }

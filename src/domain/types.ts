@@ -12,6 +12,7 @@ export interface User {
   title: string;
   department: string;
   projectIds: string[];
+  preferredLocale?: 'zh-CN' | 'en';
 }
 
 export interface OrganizationRelation {
@@ -145,6 +146,8 @@ export interface DocumentRecord {
 export interface Risk {
   id: string;
   projectId: string;
+  keyResultId?: string;
+  objectiveId?: string;
   title: string;
   description: string;
   ownerId: string;
@@ -156,6 +159,7 @@ export interface Risk {
   status: ProgressStatus;
   classification: Classification;
   identifiedAt: string;
+  resolved: boolean;
 }
 
 export interface Milestone {
@@ -174,7 +178,7 @@ export interface ProgressSnapshot {
   projectId: string;
   keyResultId: string;
   weekOf: string;
-  actual: number;
+  actual?: number;
   planned: number;
 }
 

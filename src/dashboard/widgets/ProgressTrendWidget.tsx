@@ -2,22 +2,25 @@ import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { MetricCard } from '../../components/MetricCard';
 import type { DashboardData } from '../../mocks/repository';
 import { prepareVisualizationData } from './visualizationData';
+import { useLocale } from '../../i18n/LocaleProvider';
 
 export interface ProgressTrendWidgetProps {
   data: DashboardData;
 }
 
 export function ProgressTrendWidget({ data }: ProgressTrendWidgetProps) {
+  const { t } = useLocale();
   const { trendPoints } = prepareVisualizationData(data);
   const latest = trendPoints.at(-1);
+  const latestActual = latest?.actual;
 
   if (trendPoints.length < 8) {
     return (
       <div className="trend-fallback">
-        <p className="visualization-empty">数据不足，暂不绘制趋势线</p>
+        <p className="visualization-empty">{t('trend.insufficient')}</p>
         <div className="dashboard-metrics">
-          <MetricCard label="最新实际进度" value={`${latest?.actual ?? 0}%`} detail="授权范围内最近一周" />
-          <MetricCard label="最新计划进度" value={`${latest?.planned ?? 0}%`} detail="授权范围内最近一周" />
+          <MetricCard label={t('trend.latestActual')} value={latestActual === undefined ? '—' : `${latestActual}%`} detail={latestActual === undefined ? t('trend.noActual') : t('trend.latestScope')} />
+          <MetricCard label={t('trend.latestPlan')} value={`${latest?.planned ?? 0}%`} detail={t('trend.latestScope')} />
         </div>
       </div>
     );
@@ -27,31 +30,31 @@ export function ProgressTrendWidget({ data }: ProgressTrendWidgetProps) {
     <div className="trend-chart">
       <div className="trend-chart__heading">
         <div>
-          <strong>最近 12 周进度</strong>
-          <span>{trendPoints[0].weekOf} 至 {latest?.weekOf}</span>
+          <strong>{t('trend.recent')}</strong>
+          <span>{t('trend.period', { start: trendPoints[0].weekOf, end: latest?.weekOf ?? '' })}</span>
         </div>
-        <span>单位：完成度 %</span>
+        <span>{t('trend.unit')}</span>
       </div>
-      <div className="trend-chart__legend" aria-label="进度趋势图例">
-        <span><i className="trend-legend trend-legend--actual" />实际进度（实线）</span>
-        <span><i className="trend-legend trend-legend--planned" />计划进度（由负责人设置）</span>
+      <div className="trend-chart__legend" aria-label={t('trend.legend')}>
+        <span><i className="trend-legend trend-legend--actual" />{t('trend.actual')}</span>
+        <span><i className="trend-legend trend-legend--planned" />{t('trend.planned')}</span>
       </div>
-      <details><summary>计算说明</summary><p>虚线来自负责人保存的计划基准点；实线来自员工手动填报的实际完成度，系统不会改写实际进度。</p></details>
-      <p className="trend-chart__count">{trendPoints.length} 个周度数据点</p>
-      <div className="trend-chart__scroll" tabIndex={0} aria-label="进度趋势图，可横向滚动">
+      <details><summary>{t('trend.calculation')}</summary><p>{t('trend.calculationDetail')}</p></details>
+      <p className="trend-chart__count">{t('trend.pointCount', { count: trendPoints.length })}</p>
+      <div className="trend-chart__scroll" tabIndex={0} aria-label={t('trend.scrollable')}>
         <LineChart
           width={760}
           height={280}
           data={trendPoints}
           margin={{ top: 12, right: 20, bottom: 12, left: 0 }}
           role="img"
-          aria-label="实际进度与计划进度周度折线图"
+          aria-label={t('trend.chartLabel')}
         >
           <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
           <XAxis dataKey="weekOf" tick={{ fontSize: 11 }} interval={1} />
           <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
-          <Line dataKey="actual" name="实际进度" type="monotone" stroke="#2563eb" strokeWidth={3} dot={{ r: 3 }} />
-          <Line dataKey="planned" name="计划进度（由负责人设置）" type="monotone" stroke="#64748b" strokeWidth={2} strokeDasharray="7 5" dot={false} />
+          <Line dataKey="actual" name={t('trend.actual')} type="monotone" stroke="#2563eb" strokeWidth={3} dot={{ r: 3 }} />
+          <Line dataKey="planned" name={t('trend.planned')} type="monotone" stroke="#64748b" strokeWidth={2} strokeDasharray="7 5" dot={false} />
         </LineChart>
       </div>
     </div>

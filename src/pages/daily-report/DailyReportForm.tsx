@@ -5,10 +5,12 @@ import { DailyKeyResultEditor } from './DailyKeyResultEditor';
 import { DailyKrHelp } from './DailyKrHelp';
 import { DailyObjectiveField } from './DailyObjectiveField';
 import { DailyReportEvidence } from './DailyReportEvidence';
+import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';
+import type { LocalizedMessage, MessageKey } from '../../i18n/messages';
 
 export type DailyReportSubmitResult =
   | { ok: true }
-  | { ok: false; error: string };
+  | { ok: false; error: LocalizedMessage };
 
 interface DailyReportFormProps {
   mode?: 'create' | 'edit';
@@ -28,6 +30,38 @@ const initialKeyResult = (id: string): DailyKeyResultDraft => ({
   workNote: '',
 });
 
+const validationKeys: Record<string, MessageKey> = {
+  '请填写完成度': 'validation.progressRequired',
+  '完成度需填写 0%～100%': 'validation.progressRange',
+  '请填写当日 O': 'validation.objectiveRequired',
+  '请至少添加一个当日 KR': 'validation.krRequired',
+  '请填写 KR 内容': 'validation.krContentRequired',
+  '请填写 KR 工作说明': 'validation.krNoteRequired',
+  '工时需填写有限且不小于 0 的数值': 'validation.hoursInvalid',
+  '请填写数量型 KR 的目标值': 'validation.quantityTarget',
+  '数量型 KR 的目标值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
+  '当前实际值需填写有限且不小于 0 的数值': 'validation.currentActual',
+  '请填写比率型 KR 的起始值': 'validation.ratioBaseline',
+  '比率型 KR 的起始值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
+  '请填写比率型 KR 的目标值': 'validation.ratioTarget',
+  '比率型 KR 的目标值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
+  '请填写比率型 KR 的当前值': 'validation.ratioCurrent',
+  '比率型 KR 的当前值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
+  '请填写里程碑截止日期': 'validation.milestoneDate',
+  '请选择里程碑当前状态': 'validation.milestoneStatus',
+  '请填写主观型 KR 的验收标准': 'validation.subjectiveCriteria',
+  '请填写成果名称或链接说明': 'validation.evidenceName',
+  '请选择成果类型': 'validation.evidenceType',
+  '请选择有效的成果密级': 'validation.evidenceClassification',
+  '请选择有效的日报密级': 'validation.reportClassification',
+};
+
+function localizeValidation(message: string | null, t: LocaleContextValue['t']): string | null {
+  if (!message) return null;
+  const key = validationKeys[message];
+  return key ? t(key) : t('common.requestFailed');
+}
+
 function useNarrowDailyForm() {
   const [narrow, setNarrow] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches);
 
@@ -43,6 +77,7 @@ function useNarrowDailyForm() {
 }
 
 export function DailyReportForm({ mode = 'create', initialDraft, objectives, keyResults, onCancel, onSubmit }: DailyReportFormProps) {
+  const { t } = useLocale();
   const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft ? structuredClone(initialDraft) : ({
     dailyObjective: '',
     objectiveProgress: undefined,
@@ -52,15 +87,15 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
   }));
   const [activeKrId, setActiveKrId] = useState(initialDraft?.keyResults[0]?.id ?? 'daily-kr-1');
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<LocalizedMessage | null>(null);
   const nextKrId = useRef(2);
   const narrow = useNarrowDailyForm();
   const averageReference = useMemo(() => getKrAverageReference(draft.keyResults), [draft.keyResults]);
   const validationErrors = useMemo(() => showSubmitErrors
-    ? Object.fromEntries(validateDailyReportDraft(draft).map((issue) => [issue.field, issue.message])) as Record<string, string>
-    : {}, [draft, showSubmitErrors]);
+    ? Object.fromEntries(validateDailyReportDraft(draft).map((issue) => [issue.field, localizeValidation(issue.message, t)!])) as Record<string, string>
+    : {}, [draft, showSubmitErrors, t]);
   const objectiveProgressValidation = validateProgress(draft.objectiveProgress);
-  const objectiveProgressError = showSubmitErrors || draft.objectiveProgress !== undefined ? objectiveProgressValidation : null;
+  const objectiveProgressError = showSubmitErrors || draft.objectiveProgress !== undefined ? localizeValidation(objectiveProgressValidation, t) : null;
   const activeKr = draft.keyResults.find((keyResult) => keyResult.id === activeKrId);
 
   const updateKeyResult = (id: string, patch: Partial<DailyKeyResultDraft>) => {
@@ -112,15 +147,15 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
     }));
   };
 
-  const saveDraft = () => setStatus('草稿已保存在当前页面。');
+  const saveDraft = () => setStatus({ key: 'daily.draftSaved' });
   const submit = async () => {
     setShowSubmitErrors(true);
     if (validateDailyReportDraft(draft).length > 0) {
-      setStatus('请先补全或修正必填项。');
+      setStatus({ key: 'daily.fixRequired' });
       return;
     }
     const result = await onSubmit(draft);
-    setStatus(result.ok ? (mode === 'edit' ? '日报修改已保存。' : '日报已提交。') : result.error);
+    setStatus(result.ok ? { key: mode === 'edit' ? 'daily.editSaved' : 'daily.submitted' } : result.error);
   };
 
   return (
@@ -137,15 +172,15 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
         />
         <section className="daily-key-results form-card form-section" aria-labelledby="daily-key-results-heading">
           <div className="daily-evidence__header">
-            <h2 id="daily-key-results-heading">当日 KR</h2>
-            <button type="button" className="button button--secondary" onClick={addKeyResult}>添加 KR</button>
+            <h2 id="daily-key-results-heading">{t('daily.todayKrs')}</h2>
+            <button type="button" className="button button--secondary" onClick={addKeyResult}>{t('daily.addKr')}</button>
           </div>
           {draft.keyResults.map((keyResult, index) => (
             <DailyKeyResultEditor
               key={keyResult.id}
               index={index}
               keyResult={keyResult}
-              errors={{ title: validationErrors[`keyResults.${index}.title`], hours: validationErrors[`keyResults.${index}.hours`], progress: showSubmitErrors || keyResult.progress !== undefined ? validateProgress(keyResult.progress) ?? undefined : undefined, targetValue: validationErrors[`keyResults.${index}.targetValue`], actualValue: validationErrors[`keyResults.${index}.actualValue`], baselineValue: validationErrors[`keyResults.${index}.baselineValue`], dueDate: validationErrors[`keyResults.${index}.dueDate`], milestoneStatus: validationErrors[`keyResults.${index}.milestoneStatus`], acceptanceCriteria: validationErrors[`keyResults.${index}.acceptanceCriteria`], workNote: validationErrors[`keyResults.${index}.workNote`] }}
+              errors={{ title: validationErrors[`keyResults.${index}.title`], hours: validationErrors[`keyResults.${index}.hours`], progress: showSubmitErrors || keyResult.progress !== undefined ? localizeValidation(validateProgress(keyResult.progress), t) ?? undefined : undefined, targetValue: validationErrors[`keyResults.${index}.targetValue`], actualValue: validationErrors[`keyResults.${index}.actualValue`], baselineValue: validationErrors[`keyResults.${index}.baselineValue`], dueDate: validationErrors[`keyResults.${index}.dueDate`], milestoneStatus: validationErrors[`keyResults.${index}.milestoneStatus`], acceptanceCriteria: validationErrors[`keyResults.${index}.acceptanceCriteria`], workNote: validationErrors[`keyResults.${index}.workNote`] }}
               onChange={(patch) => updateKeyResult(keyResult.id, patch)}
               onProgressChange={(progress) => updateKeyResultProgress(keyResult.id, progress)}
               onActivate={() => setActiveKrId(keyResult.id)}
@@ -171,13 +206,13 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
           errors={validationErrors}
         />
         <div className="daily-form-actions">
-          <button type="button" className="button button--secondary" onClick={onCancel}>取消</button>
-          <button type="button" className="button button--secondary" onClick={saveDraft}>保存草稿</button>
-          <button type="submit" className="button button--primary">{mode === 'edit' ? '保存日报修改' : '提交日报'}</button>
+          <button type="button" className="button button--secondary" onClick={onCancel}>{t('common.cancel')}</button>
+          <button type="button" className="button button--secondary" onClick={saveDraft}>{t('daily.saveDraft')}</button>
+          <button type="submit" className="button button--primary">{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
         </div>
-        {status && <p className="page-notice" role="status">{status}</p>}
+        {status && <p className="page-notice" role="status">{t(status.key, status.values)}</p>}
       </div>
-      {!narrow && activeKr && <aside className="daily-entry-help-shell" aria-label="填写帮助"><DailyKrHelp type={activeKr.type} /></aside>}
+      {!narrow && activeKr && <aside className="daily-entry-help-shell" aria-label={t('daily.help')}><DailyKrHelp type={activeKr.type} /></aside>}
     </form>
   );
 }

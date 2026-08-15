@@ -8,7 +8,7 @@ describe('application sidebar', () => {
 
     render(<App />);
 
-    await user.selectOptions(screen.getByLabelText('演示角色'), 'user-administrator');
+    await user.selectOptions(screen.getByLabelText('角色视图'), 'user-administrator');
 
     expect(screen.getByRole('link', { name: '设置' })).toBeVisible();
     expect(screen.queryByText('机密项目正文')).not.toBeInTheDocument();

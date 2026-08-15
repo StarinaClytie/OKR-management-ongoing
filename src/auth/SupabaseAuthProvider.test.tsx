@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoleSwitcher } from '../layout/RoleSwitcher';
 import type { OkrRepository, RepositoryResult, SessionLike, SupabaseClientLike } from '../data/types';
 import type { User } from '../domain/types';
@@ -46,6 +47,8 @@ function repositoryWithProfile(result: RepositoryResult<User | null>): OkrReposi
 }
 
 describe('SupabaseAuthProvider', () => {
+  beforeEach(() => window.localStorage.clear());
+
   it('renders signed-out state without demo identity', async () => {
     const { client } = createClient(null);
     render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile({ ok: true, data: employee })}><StateProbe /></SupabaseAuthProvider>);
@@ -56,6 +59,20 @@ describe('SupabaseAuthProvider', () => {
     const { client } = createClient({ user: { id: 'unassigned' } });
     render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile({ ok: true, data: null })}><StateProbe /></SupabaseAuthProvider>);
     expect(await screen.findByRole('heading', { name: '等待管理员分配' })).toBeVisible();
+  });
+
+  it('uses the stored locale and allows switching on signed-out screens', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem('northstar.locale', 'en');
+    const { client } = createClient(null);
+
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile({ ok: true, data: employee })}><StateProbe /></SupabaseAuthProvider>);
+
+    expect(await screen.findByRole('heading', { name: 'Sign in to Northstar OKR' })).toBeVisible();
+    expect(document.documentElement.lang).toBe('en');
+    await user.click(screen.getByRole('button', { name: 'Switch to Chinese' }));
+    expect(screen.getByRole('heading', { name: '登录 Northstar OKR' })).toBeVisible();
+    expect(document.documentElement.lang).toBe('zh-CN');
   });
 
   it('clears the previous user synchronously before loading a changed session', async () => {

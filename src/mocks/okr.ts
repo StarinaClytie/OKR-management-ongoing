@@ -141,6 +141,7 @@ export const risks: Risk[] = [
     status: 'at_risk',
     classification: 'internal',
     identifiedAt: '2026-08-03',
+    resolved: false,
   },
   {
     id: 'risk-orion-copy-delay',
@@ -154,6 +155,7 @@ export const risks: Risk[] = [
     status: 'on_track',
     classification: 'internal',
     identifiedAt: '2026-08-05',
+    resolved: false,
   },
   {
     id: 'risk-nova-source-gaps',
@@ -167,6 +169,7 @@ export const risks: Risk[] = [
     status: 'off_track',
     classification: 'confidential',
     identifiedAt: '2026-08-02',
+    resolved: false,
   },
   {
     id: 'risk-nova-access-review',
@@ -180,6 +183,7 @@ export const risks: Risk[] = [
     status: 'at_risk',
     classification: 'restricted',
     identifiedAt: '2026-08-06',
+    resolved: false,
   },
 ];
 

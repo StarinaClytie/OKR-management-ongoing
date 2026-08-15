@@ -6,6 +6,10 @@ import { keyResults as mockKeyResults, objectives as mockObjectives } from '../.
 import { users } from '../../mocks/users';
 import { completeQuantityKr } from '../../test/dailyReportTestHelpers';
 import { DailyReportForm } from './DailyReportForm';
+import { AuthProvider } from '../../auth/AuthContext';
+import { LanguageSwitcher } from '../../components/LanguageSwitcher';
+import { DemoOkrRepository } from '../../data/demoRepository';
+import { LocaleProvider } from '../../i18n/LocaleProvider';
 
 const objectives: Objective[] = [{
   id: 'objective-orion',
@@ -108,7 +112,7 @@ describe('DailyReportForm', () => {
 
   it('shows one fail-closed error and never reports success when parent conversion fails', async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn(() => ({ ok: false as const, error: '所关联的 KR 不属于最终 O' }));
+    const onSubmit = vi.fn(() => ({ ok: false as const, error: { key: 'daily.krMismatch' as const } }));
     render(<DailyReportForm objectives={objectives} keyResults={keyResults} onCancel={vi.fn()} onSubmit={onSubmit} />);
 
     await completeQuantityForm(user, '75');
@@ -117,6 +121,22 @@ describe('DailyReportForm', () => {
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.getByRole('status')).toHaveTextContent('所关联的 KR 不属于最终 O');
     expect(screen.queryByText('日报已提交（当前页面模拟）。')).not.toBeInTheDocument();
+  });
+
+  it('renders a pending rejection in the locale active when it settles', async () => {
+    const user = userEvent.setup();
+    window.localStorage.clear();
+    let finishSubmit!: () => void;
+    const onSubmit = vi.fn(() => new Promise<import('./DailyReportForm').DailyReportSubmitResult>((resolve) => {
+      finishSubmit = () => resolve({ ok: false, error: { key: 'common.requestFailed' } });
+    }));
+    render(<AuthProvider><LocaleProvider repository={new DemoOkrRepository()}><LanguageSwitcher /><DailyReportForm objectives={objectives} keyResults={keyResults} onCancel={vi.fn()} onSubmit={onSubmit} /></LocaleProvider></AuthProvider>);
+    await completeQuantityForm(user, '75');
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+    await user.click(screen.getByRole('button', { name: '切换为英文' }));
+    finishSubmit();
+
+    expect(await screen.findByRole('status')).toHaveTextContent('The request could not be completed. Please try again later.');
   });
 
   it('never overwrites employee-entered KR or O progress', async () => {

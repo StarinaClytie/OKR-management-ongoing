@@ -1,4 +1,10 @@
 import { Component, type ErrorInfo, type PropsWithChildren, type ReactNode } from 'react';
+import { useLocale } from '../i18n/LocaleProvider';
+
+function WidgetErrorFallback() {
+  const { t } = useLocale();
+  return <section className="widget-error" role="status"><strong>{t('error.widgetTitle')}</strong><p>{t('error.widgetDescription')}</p></section>;
+}
 
 interface WidgetErrorBoundaryState {
   hasError: boolean;
@@ -17,12 +23,7 @@ export class WidgetErrorBoundary extends Component<PropsWithChildren, WidgetErro
 
   public override render(): ReactNode {
     if (this.state.hasError) {
-      return (
-        <section className="widget-error" role="status">
-          <strong>该模块暂时无法显示</strong>
-          <p>请稍后重试，或继续查看其他内容。</p>
-        </section>
-      );
+      return <WidgetErrorFallback />;
     }
 
     return this.props.children;

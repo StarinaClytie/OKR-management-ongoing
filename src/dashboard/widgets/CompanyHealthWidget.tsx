@@ -5,18 +5,22 @@ import { MetricCard } from '../../components/MetricCard';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
 import type { DashboardData } from '../../mocks/repository';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { deriveExecutionStatuses } from '../../domain/progressStatus';
 
 export interface CompanyHealthWidgetProps {
   data: DashboardData;
 }
 
 export function CompanyHealthWidget({ data }: CompanyHealthWidgetProps) {
+  const { t } = useLocale();
   const visibleProjects = data.projects.filter((project) => can(data.currentUser, 'okr.read_detail', project).allowed);
   const visibleProjectIds = new Set(visibleProjects.map((project) => project.id));
   const visibleObjectives = data.objectives.filter((objective) => can(data.currentUser, 'okr.read_detail', objective).allowed);
   const visibleRisks = data.risks.filter(
     (risk) => risk.classification !== 'restricted' && visibleProjectIds.has(risk.projectId),
   );
+  const executionStatuses = deriveExecutionStatuses({ ...data, risks: visibleRisks });
   const averageProgress = visibleObjectives.length === 0
     ? 0
     : Math.round(visibleObjectives.reduce((total, objective) => total + objective.progress, 0) / visibleObjectives.length);
@@ -26,16 +30,16 @@ export function CompanyHealthWidget({ data }: CompanyHealthWidgetProps) {
     <section className="dashboard-widget dashboard-widget--wide" aria-labelledby="company-health-title">
       <div className="dashboard-widget__header">
         <div>
-          <p className="dashboard-widget__eyebrow">组织目标</p>
-          <h2 id="company-health-title">公司 OKR 健康度</h2>
+          <p className="dashboard-widget__eyebrow">{t('company.objectives')}</p>
+          <h2 id="company-health-title">{t('company.health')}</h2>
         </div>
       </div>
       <div className="dashboard-metrics">
-        <MetricCard label="目标平均进度" value={`${averageProgress}%`} detail={`${visibleObjectives.length} 个目标`} />
-        <MetricCard label="需关注风险" value={risksNeedingAttention} detail="含存在风险和已偏离" />
-        <MetricCard label="正常推进项目" value={visibleProjects.filter((project) => project.status === 'on_track').length} detail={`共 ${visibleProjects.length} 个项目`} />
+        <MetricCard label={t('company.averageProgress')} value={`${averageProgress}%`} detail={t('company.objectiveCount', { count: visibleObjectives.length })} />
+        <MetricCard label={t('company.risks')} value={risksNeedingAttention} detail={t('company.riskDetail')} />
+        <MetricCard label={t('company.onTrackProjects')} value={visibleProjects.filter((project) => project.status === 'on_track').length} detail={t('company.projectCount', { count: visibleProjects.length })} />
       </div>
-      <div className="dashboard-list" aria-label="目标健康列表">
+      <div className="dashboard-list" aria-label={t('company.healthList')}>
         {visibleObjectives.map((objective) => (
           <PermissionGate
             key={objective.id}
@@ -46,11 +50,11 @@ export function CompanyHealthWidget({ data }: CompanyHealthWidgetProps) {
             <article className="objective-row">
               <div>
                 <strong>{objective.title}</strong>
-                <span>{objective.progress}% 完成</span>
+                <span>{t('common.percentComplete', { progress: objective.progress })}</span>
               </div>
               <div className="objective-row__status">
                 <ConfidentialityBadge classification={objective.classification} />
-                <StatusBadge status={objective.status} />
+                <StatusBadge status={executionStatuses.objectives.get(objective.id)?.status ?? objective.status} />
               </div>
             </article>
           </PermissionGate>

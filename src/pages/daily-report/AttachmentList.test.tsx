@@ -7,6 +7,7 @@ it('shows progress, retry, replace, remove, and signed-download actions', async 
   const user = userEvent.setup(); const onRetry = vi.fn(); const onRemove = vi.fn(); const onDownload = vi.fn(); const onReplace = vi.fn();
   const { rerender } = render(<AttachmentList items={[{ id: 'a', label: 'evidence.pdf', kind: 'file', classification: 'confidential', uploadState: 'failed', uploadProgress: 40, error: '网络中断' }]} onRetry={onRetry} onRemove={onRemove} onDownload={onDownload} onReplace={onReplace} />);
   expect(screen.getByRole('progressbar', { name: 'evidence.pdf 上传进度' })).toHaveValue(40);
+  expect(screen.getByText('机密')).toBeVisible();
   await user.click(screen.getByRole('button', { name: '重试' })); expect(onRetry).toHaveBeenCalledWith('a');
   rerender(<AttachmentList items={[{ id: 'a', attachmentId: 'server-a', label: 'evidence.pdf', kind: 'file', classification: 'confidential', uploadState: 'uploaded' }]} onRetry={onRetry} onRemove={onRemove} onDownload={onDownload} onReplace={onReplace} />);
   await user.click(screen.getByRole('button', { name: '下载' })); expect(onDownload).toHaveBeenCalledWith('a');

@@ -48,9 +48,9 @@ describe('application shell', () => {
     expect(screen.getByRole('option', { name: '第三季度' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: '第四季度' })).toBeInTheDocument();
 
-    await user.selectOptions(quarterSelect, '第四季度');
+    await user.selectOptions(quarterSelect, 'topbar.quarter4');
 
-    expect(quarterSelect).toHaveValue('第四季度');
+    expect(quarterSelect).toHaveValue('topbar.quarter4');
   });
 
   it('renders only the desktop sidebar above the mobile breakpoint', () => {
