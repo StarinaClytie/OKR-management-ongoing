@@ -82,7 +82,7 @@ export class SupabaseOkrRepository implements OkrRepository {
 
     const results = await Promise.all([
       this.selectRows('profiles', 'id,display_name,preferred_locale,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)'),
-      this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,project_members(profile_id)'),
+      this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,project_members!project_members_project_id_fkey(profile_id)'),
       this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date'),
       this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date'),
       this.selectRows('progress_baselines', 'id,key_result_id,planned_for,planned_value'),
