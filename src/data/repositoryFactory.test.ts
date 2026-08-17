@@ -34,6 +34,7 @@ describe('createRepository', () => {
         getSession: vi.fn(),
         onAuthStateChange: vi.fn(),
         signInWithPassword: vi.fn(),
+        updateUser: vi.fn(),
         signOut: vi.fn(),
       },
       from: vi.fn(),

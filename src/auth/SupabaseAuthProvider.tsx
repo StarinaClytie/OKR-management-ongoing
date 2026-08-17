@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PropsWithCh
 import type { User } from '../domain/types';
 import type { OkrRepository, SessionLike, SupabaseClientLike } from '../data/types';
 import { AuthContext, type AuthContextValue } from './AuthContext';
+import { InviteAccept } from './InviteAccept';
 import { LoginForm } from './LoginForm';
 import { readStoredLocale, storeLocale } from '../i18n/LocaleProvider';
 import { translate, type Locale } from '../i18n/messages';
@@ -33,6 +34,10 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
       setLocale(readStoredLocale());
       if (!session) {
         setStatus('signed_out');
+        return;
+      }
+      if (session.user.email_confirmed_at === null) {
+        setStatus('invite_pending');
         return;
       }
       setStatus('loading');
@@ -101,6 +106,20 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
           locale={locale}
           signIn={async (email, password) => {
             const { error } = await client.auth.signInWithPassword({ email, password });
+            return { error };
+          }}
+        />
+      </>
+    );
+  } else if (status === 'invite_pending') {
+    content = (
+      <>
+        {languageSwitcher}
+        <InviteAccept
+          locale={locale}
+          email={email}
+          setPassword={async (password) => {
+            const { error } = await client.auth.updateUser({ password });
             return { error };
           }}
         />

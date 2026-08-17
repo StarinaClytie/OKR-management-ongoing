@@ -29,6 +29,7 @@ function SignOutProbe() {
 function createClient(initialSession: SessionLike | null) {
   let listener: ((event: string, session: SessionLike | null) => void) | undefined;
   const signInWithPassword = vi.fn(async (): Promise<{ data: { session: SessionLike | null }; error: { message: string } | null }> => ({ data: { session: null }, error: null }));
+  const updateUser = vi.fn(async (): Promise<{ data: { user: SessionLike['user'] | null }; error: { message: string } | null }> => ({ data: { user: null }, error: null }));
   const client: SupabaseClientLike = {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: initialSession }, error: null })),
@@ -37,13 +38,14 @@ function createClient(initialSession: SessionLike | null) {
         return { data: { subscription: { unsubscribe: vi.fn() } } };
       }),
       signInWithPassword,
+      updateUser,
       signOut: vi.fn(async () => ({ error: null })),
     },
     from: vi.fn() as never,
     rpc: vi.fn() as never,
     storage: {} as never,
   };
-  return { client, signInWithPassword, emit: (session: SessionLike | null) => listener?.('SIGNED_IN', session) };
+  return { client, signInWithPassword, updateUser, emit: (session: SessionLike | null) => listener?.('SIGNED_IN', session) };
 }
 
 function repositoryWithProfile(result: RepositoryResult<AuthProfileState>): OkrRepository {
@@ -152,5 +154,32 @@ describe('SupabaseAuthProvider', () => {
     await screen.findByRole('button', { name: 'signout' });
     await user.click(screen.getByRole('button', { name: 'signout' }));
     expect(await screen.findByRole('heading', { name: '登录 Northstar OKR' })).toBeVisible();
+  });
+
+  it('renders the invite acceptance page for an unconfirmed invitee', async () => {
+    const { client } = createClient({ user: { id: 'invitee', email: 'invitee@example.com', email_confirmed_at: null } });
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(active)}><StateProbe /></SupabaseAuthProvider>);
+    expect(await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' })).toBeVisible();
+    expect(screen.getByDisplayValue('invitee@example.com')).toBeDisabled();
+  });
+
+  it('sets the invitee password and transitions to the ready state', async () => {
+    const user = userEvent.setup();
+    const invitee: User = { id: 'invitee', name: '受邀人', role: 'employee', title: '', department: '', projectIds: [] };
+    const repository = repositoryWithProfile({ ok: true, data: { kind: 'active', user: invitee } });
+    const { client, updateUser, emit } = createClient({ user: { id: 'invitee', email: 'invitee@example.com', email_confirmed_at: null } });
+    updateUser.mockImplementation(async () => {
+      emit({ user: { id: 'invitee', email: 'invitee@example.com', email_confirmed_at: '2026-08-17T00:00:00Z' } });
+      return { data: { user: { id: 'invitee', email: 'invitee@example.com', email_confirmed_at: '2026-08-17T00:00:00Z' } }, error: null };
+    });
+    render(<SupabaseAuthProvider client={client} repository={repository}><StateProbe /></SupabaseAuthProvider>);
+
+    await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' });
+    await user.type(screen.getByLabelText('新密码 *'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码 *'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '完成账号设置' }));
+
+    expect(await screen.findByText('ready:invitee:invitee@example.com')).toBeVisible();
+    expect(updateUser).toHaveBeenCalledWith({ password: 'secret123' });
   });
 });

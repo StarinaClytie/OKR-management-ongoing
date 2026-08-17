@@ -9,7 +9,7 @@ export type RepositoryResult<T> =
   | { ok: false; error: { code: RepositoryErrorCode; message: string } };
 
 export interface SessionLike {
-  user: { id: string; email?: string };
+  user: { id: string; email?: string; email_confirmed_at?: string | null };
 }
 
 export interface AuthSubscriptionLike {
@@ -24,6 +24,10 @@ export interface SupabaseClientLike {
     };
     signInWithPassword(credentials: { email: string; password: string }): Promise<{
       data: { session: SessionLike | null };
+      error: { message: string } | null;
+    }>;
+    updateUser(attributes: { password: string }): Promise<{
+      data: { user: SessionLike['user'] | null };
       error: { message: string } | null;
     }>;
     signOut(): Promise<{ error: { message: string } | null }>;
