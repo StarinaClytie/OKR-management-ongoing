@@ -26,6 +26,7 @@ export interface DashboardData {
   currentUser: User;
   users: User[];
   dailyReports: DailyReport[];
+  weeklyReports?: WeeklyReport[];
   projects: Project[];
   objectives: Objective[];
   keyResults: KeyResult[];
@@ -232,6 +233,7 @@ export const mockRepository = {
       currentUser,
       users,
       dailyReports,
+      weeklyReports,
       projects,
       objectives,
       keyResults,

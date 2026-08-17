@@ -12,11 +12,22 @@ export const impactDefinitions = {
 
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
-export function scoreRisk(probability: 1 | 2 | 3, impact: 1 | 2 | 3): {
+export interface RiskScore {
   score: 1 | 2 | 3 | 4 | 6 | 9;
   level: RiskLevel;
-} {
+}
+
+export interface RiskCoordinate extends RiskScore {
+  probability: 1 | 2 | 3;
+  impact: 1 | 2 | 3;
+}
+
+export function scoreRisk(probability: 1 | 2 | 3, impact: 1 | 2 | 3): RiskScore {
   const score = (probability * impact) as 1 | 2 | 3 | 4 | 6 | 9;
   const level: RiskLevel = score <= 2 ? 'low' : score <= 4 ? 'medium' : score === 6 ? 'high' : 'critical';
   return { score, level };
+}
+
+export function getRiskCoordinate(probability: 1 | 2 | 3, impact: 1 | 2 | 3): RiskCoordinate {
+  return { probability, impact, ...scoreRisk(probability, impact) };
 }

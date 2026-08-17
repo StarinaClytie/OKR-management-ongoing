@@ -4,9 +4,12 @@ export interface ProgressRingProps {
   size?: 'small' | 'medium';
 }
 
-export function ProgressRing({ value, label = '完成进度', size = 'medium' }: ProgressRingProps) {
+import { useLocale } from '../i18n/LocaleProvider';
+
+export function ProgressRing({ value, label, size = 'medium' }: ProgressRingProps) {
+  const { t } = useLocale();
   const progress = Math.max(0, Math.min(100, Math.round(value)));
-  const accessibleLabel = `${label} ${progress}%`;
+  const accessibleLabel = `${label ?? t('progress.label')} ${progress}%`;
 
   return (
     <div

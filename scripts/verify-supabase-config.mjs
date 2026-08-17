@@ -3,19 +3,83 @@ import { readFileSync } from 'node:fs';
 const mode = process.env.VITE_APP_MODE ?? 'demo';
 const url = process.env.VITE_SUPABASE_URL ?? '';
 const key = process.env.VITE_SUPABASE_ANON_KEY ?? '';
+const productionVerification = process.argv.includes('--production');
 const failures = [];
+const placeholderPattern = /(?:example|your[_-]?project|your[_-]?publishable|replace|placeholder|changeme|<|>)/i;
+
+function isAnonJwt(value) {
+  const parts = value.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return payload.role === 'anon';
+  } catch {
+    return false;
+  }
+}
+
+function isSecretShapedKey(value) {
+  if (/^sb_secret_/i.test(value)) return true;
+  const parts = value.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return payload.role === 'service_role';
+  } catch {
+    return false;
+  }
+}
+
+function isPublicSupabaseKey(value) {
+  return /^sb_publishable_[A-Za-z0-9_-]{12,}$/.test(value) || isAnonJwt(value);
+}
 
 if (!['demo', 'supabase'].includes(mode)) failures.push('VITE_APP_MODE 必须是 demo 或 supabase');
 if (mode === 'supabase') {
-  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)) failures.push('VITE_SUPABASE_URL 必须是有效的 HTTPS Supabase 项目 URL');
+  if (!url) failures.push('Supabase 模式缺少 VITE_SUPABASE_URL');
+  else if (url !== url.trim()) failures.push('VITE_SUPABASE_URL 不得包含首尾空白字符');
+  else if (placeholderPattern.test(url)) failures.push('VITE_SUPABASE_URL 不得使用示例或占位值');
+  else if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)) failures.push('VITE_SUPABASE_URL 必须是有效的 HTTPS Supabase 项目 URL');
+
   if (!key) failures.push('Supabase 模式缺少 VITE_SUPABASE_ANON_KEY');
+  else if (key !== key.trim()) failures.push('VITE_SUPABASE_ANON_KEY 不得包含首尾空白字符');
+  else if (placeholderPattern.test(key)) failures.push('VITE_SUPABASE_ANON_KEY 不得使用示例或占位值');
+  else if (isSecretShapedKey(key)) failures.push('VITE_SUPABASE_ANON_KEY 不能是 service-role 或 secret key');
+  else if (!isPublicSupabaseKey(key)) failures.push('VITE_SUPABASE_ANON_KEY 必须是 publishable key 或 anon JWT');
 }
+if (productionVerification && mode !== 'supabase') failures.push('生产验证要求 VITE_APP_MODE=supabase');
 for (const forbidden of ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_DB_PASSWORD', 'DATABASE_URL']) {
   if (process.env[forbidden]) failures.push(`前端环境不得包含 ${forbidden}`);
 }
 
 const trackedText = ['README.md', '.env.example'].map((file) => { try { return readFileSync(file, 'utf8'); } catch { return ''; } }).join('\n');
 if (/service_role\s*=|postgres(?:ql)?:\/\/[^\s]+:[^\s]+@/i.test(trackedText)) failures.push('文档或示例疑似包含高权限密钥/数据库连接串');
+
+const guideChecks = [
+  /probability/i,
+  /impact/i,
+  /riskScore = probability × impact/,
+  /1×3=3/,
+  /most severe|最严重/iu,
+  /employee|员工/iu,
+  /project leader|项目负责人/iu,
+  /KR progress|KR 进度/iu,
+  /中文|Chinese/iu,
+  /English|英文/iu,
+];
+
+for (const guidePath of ['docs/user-guide.zh-CN.md', 'docs/user-guide.en.md']) {
+  let guide = '';
+  try {
+    guide = readFileSync(guidePath, 'utf8');
+  } catch {
+    failures.push(`缺少用户指南：${guidePath}`);
+    continue;
+  }
+  if (!guideChecks.every((pattern) => pattern.test(guide))) {
+    failures.push(`用户指南缺少必需的风险、权限或语言切换说明：${guidePath}`);
+  }
+}
 
 if (failures.length) {
   console.error(`配置检查失败（${failures.length} 项）：`);

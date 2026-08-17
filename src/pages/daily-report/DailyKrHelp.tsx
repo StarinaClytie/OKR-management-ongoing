@@ -1,11 +1,13 @@
 import { useId, useState } from 'react';
-import { getKrGuidance, type DailyKrType } from '../../domain/dailyEntry';
+import type { DailyKrType } from '../../domain/dailyEntry';
+import { useLocale } from '../../i18n/LocaleProvider';
+import type { MessageKey } from '../../i18n/messages';
 
-const fullRuleByType: Record<DailyKrType, string> = {
-  quantity: '先确认目标值和当前实际值，再由员工自行计算并填写完成度；系统不会代填或覆盖。',
-  ratio: '先统一起始值、目标值和当前值的口径，再由员工自行换算并填写完成度。',
-  milestone: '里程碑完成度仍由员工结合当前状态填写；状态选择不会自动改为 0% 或 100%。',
-  subjective: '先写清双方可共同判断的验收标准，再由员工按实际结果自评并填写完成度。',
+const guidanceKeys: Record<DailyKrType, { label: MessageKey; formula: MessageKey; example: MessageKey; caution: MessageKey; rule: MessageKey }> = {
+  quantity: { label: 'daily.krType.quantity', formula: 'daily.quantityFormula', example: 'daily.quantityExample', caution: 'daily.quantityCaution', rule: 'daily.quantityRule' },
+  ratio: { label: 'daily.krType.ratio', formula: 'daily.ratioFormula', example: 'daily.ratioExample', caution: 'daily.ratioCaution', rule: 'daily.ratioRule' },
+  milestone: { label: 'daily.krType.milestone', formula: 'daily.milestoneFormula', example: 'daily.milestoneExample', caution: 'daily.milestoneCaution', rule: 'daily.milestoneRule' },
+  subjective: { label: 'daily.krType.subjective', formula: 'daily.subjectiveFormula', example: 'daily.subjectiveExample', caution: 'daily.subjectiveCaution', rule: 'daily.subjectiveRule' },
 };
 
 interface DailyKrHelpProps {
@@ -14,16 +16,17 @@ interface DailyKrHelpProps {
 }
 
 export function DailyKrHelp({ type, className = '' }: DailyKrHelpProps) {
+  const { t } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
-  const guidance = getKrGuidance(type);
+  const guidance = guidanceKeys[type];
 
   return (
-    <section className={`daily-entry-help ${className}`.trim()} aria-label="填写帮助">
-      <p className="daily-entry-help__eyebrow">{guidance.label}填写参考</p>
-      <p>公式参考：{guidance.formula}</p>
-      <p>示例：<span>{guidance.example}</span></p>
-      <p>注意：{guidance.caution}</p>
+    <section className={`daily-entry-help ${className}`.trim()} aria-label={t('daily.help')}>
+      <p className="daily-entry-help__eyebrow">{t('daily.guidanceTitle', { type: t(guidance.label) })}</p>
+      <p>{t('daily.formula', { formula: t(guidance.formula) })}</p>
+      <p>{t('daily.examplePrefix')}<span>{t(guidance.example)}</span></p>
+      <p>{t('daily.caution', { caution: t(guidance.caution) })}</p>
       <button
         type="button"
         className="text-button"
@@ -31,9 +34,9 @@ export function DailyKrHelp({ type, className = '' }: DailyKrHelpProps) {
         aria-controls={contentId}
         onClick={() => setExpanded((current) => !current)}
       >
-        {expanded ? '收起完整规则' : '查看完整规则'}
+        {expanded ? t('daily.hideRules') : t('daily.showRules')}
       </button>
-      {expanded && <p id={contentId} className="daily-entry-help__full-rule">{fullRuleByType[type]}</p>}
+      {expanded && <p id={contentId} className="daily-entry-help__full-rule">{t(guidance.rule)}</p>}
     </section>
   );
 }

@@ -4,12 +4,15 @@ import { Outlet } from 'react-router-dom';
 import { RoleSwitcher } from './RoleSwitcher';
 import { Sidebar } from './Sidebar';
 import { useMediaQuery } from './useMediaQuery';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { useLocale } from '../i18n/LocaleProvider';
 
-const quarters = ['第一季度', '第二季度', '第三季度', '第四季度'] as const;
+const quarters = ['topbar.quarter1', 'topbar.quarter2', 'topbar.quarter3', 'topbar.quarter4'] as const;
 
 export function AppShell() {
+  const { t } = useLocale();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [quarter, setQuarter] = useState<(typeof quarters)[number]>('第三季度');
+  const [quarter, setQuarter] = useState<(typeof quarters)[number]>('topbar.quarter3');
   const isMobile = useMediaQuery('(max-width: 767px)');
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
@@ -83,7 +86,7 @@ export function AppShell() {
           drawerRef={drawerRef}
         />
       ) : null}
-      {modalOpen && <button className="sidebar-scrim" tabIndex={-1} type="button" aria-label="关闭导航遮罩" aria-hidden="true" onClick={closeMobileDrawer} />}
+      {modalOpen && <button className="sidebar-scrim" tabIndex={-1} type="button" aria-label={t('navigation.closeScrim')} aria-hidden="true" onClick={closeMobileDrawer} />}
       <div className="app-shell__main" inert={modalOpen} aria-hidden={modalOpen ? true : undefined}>
         <header className="app-topbar">
           {isMobile ? (
@@ -91,7 +94,7 @@ export function AppShell() {
               ref={menuButtonRef}
               className="icon-button app-topbar__menu"
               type="button"
-              aria-label="打开导航"
+              aria-label={t('navigation.open')}
               aria-expanded={mobileOpen}
               onClick={() => setMobileOpen(true)}
             >
@@ -99,13 +102,14 @@ export function AppShell() {
             </button>
           ) : null}
           <label className="quarter-selector">
-            <span className="app-topbar__eyebrow">2026 年 · 季度</span>
-            <select aria-label="选择季度" value={quarter} onChange={(event) => setQuarter(event.target.value as typeof quarter)}>
-              {quarters.map((option) => <option key={option} value={option}>{option}</option>)}
+            <span className="app-topbar__eyebrow">{t('topbar.period')}</span>
+            <select aria-label={t('topbar.selectQuarter')} value={quarter} onChange={(event) => setQuarter(event.target.value as typeof quarter)}>
+              {quarters.map((option) => <option key={option} value={option}>{t(option)}</option>)}
             </select>
           </label>
           <div className="app-topbar__actions">
-            <button className="icon-button" type="button" aria-label="通知">
+            <LanguageSwitcher />
+            <button className="icon-button" type="button" aria-label={t('topbar.notifications')}>
               <Bell size={19} />
             </button>
             <RoleSwitcher />

@@ -20,7 +20,7 @@ npx supabase test db
 npx supabase db lint
 ```
 
-预期：3 个 pgTAP 文件、113 项数据库测试全部通过，lint 为零错误。
+预期：所有 pgTAP 文件和断言通过，lint 为零错误。断言数量会随受控迁移增加而变化，不应使用旧的固定数量作为上线依据。
 
 ## 3. 精确迁移闸门
 
@@ -29,6 +29,7 @@ npx supabase db lint
 1. `supabase/migrations/202608130001_core_schema.sql`
 2. `supabase/migrations/202608130002_security.sql`
 3. `supabase/migrations/202608130003_storage.sql`
+4. `supabase/migrations/202608140001_real_kr_risk_i18n.sql`
 
 获明确批准后才运行：
 
@@ -42,7 +43,7 @@ npx supabase migration list
 npx supabase db lint --linked
 ```
 
-`--dry-run` 输出必须只包含上述三个迁移；若远端有未预期迁移、目标 ref 不同或 lint 失败，立即停止。
+`--dry-run` 输出必须只包含上述四个迁移；若远端有未预期迁移、目标 ref 不同或 lint 失败，立即停止。
 
 ## 4. 环境与构建
 
@@ -50,24 +51,34 @@ npx supabase db lint --linked
 
 ```dotenv
 VITE_APP_MODE=supabase
-VITE_SUPABASE_URL=https://eomesxviqudmowgwftnn.supabase.co
-VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
+# 将下面两个变量从 Supabase Project Settings > API 注入受保护的构建环境，
+# 或只写入不提交 Git 的 .env.production.local：
+# VITE_SUPABASE_URL
+# VITE_SUPABASE_ANON_KEY
 ```
 
 ```bash
 npm ci
-npm run verify:config
 npm run test:run
+npm run test:smoke:real
 npm run typecheck
-npm run build
+npm run build:production
 ```
 
 将 `dist/` 原子切换到 Nginx 站点目录；SPA 必须配置 `try_files $uri $uri/ /index.html`。保留上一个 release 目录和当前 commit SHA，失败时把软链接切回上一版本并 reload Nginx。不要在服务器直接 `git pull` 覆盖正在服务的目录。
 
+`build:production` 按 Vite 生产模式读取 `.env`、`.env.local`、`.env.production`、`.env.production.local`，后面的文件覆盖前面的文件，CI/服务器注入的同名变量优先级最高；它会在这一组变量下先调用 `--production`，再运行构建。它拒绝 `VITE_APP_MODE=demo`、首尾空白、示例/占位值、格式错误 key 和 service-role/secret-shaped key，并且不打印 publishable/anon key。它只验证前端变量和文档，不会连接或修改 Supabase。不要把 URL 或 key 的示例值复制到 shell 命令；从受保护的构建环境注入实际值。真实 KR 保存、风险事件保存和 RLS 需要在已经应用迁移的 Supabase 环境中验收。
+
+`npm run test:smoke:real` 是本地、无网络的 Supabase 模式 UI 测试装置。它以受控内存仓库验证员工 KR 保存、风险新增/编辑/解决和矩阵呈现、项目负责人全项目范围、员工/HR 项目非披露、通用直达拒绝页、中英文切换与响应式可达性。它不会连接 Supabase，不能替代迁移批准后的真实生产冒烟。
+
 ## 5. RLS、Auth 与附件验收
 
 - 未登录请求不能读取业务表；无组织/项目分配的 profile 显示未分配状态。
-- 五种授权角色分别核对导航、日报正文、工时字段、风险和设置边界。
+- 五种授权角色分别核对导航、日报正文、工时字段、风险和设置边界。员工仅能为自己负责的 KR 添加实际进度、为自己负责 KR/目标添加风险；项目负责人管理所负责项目中的风险；HR 不具备通用风险管理权限。
+- 用员工账号验证“更新我的 KR”会追加可追溯的实际进度，而非显示模拟保存提示。验证员工添加、编辑和解决风险事件，矩阵坐标为 `Y=probability`、`X=impact`，分数为 `riskScore = probability × impact`；确认 `1×3=3` 是中等事件但不会单独升级执行状态。
+- 验证风险事件与执行状态并行：未解决分数 6 至少存在风险、9 至少偏离计划；计划差额、逾期里程碑和截止日期同样参与，最严重结果优先。
+- 验证员工和 HR 的项目列表只显示被授权项目，未授权项目没有名称、数量、密级、描述、占位或 ARIA 元数据；直接 URL 仅显示通用拒绝页。
+- 验证首次中文和中文 / English 即时切换；用户输入的业务内容不自动翻译。
 - HR、未授权人员与越级关系看不到附件文件名、数量、路径或 URL。
 - 附件 bucket 保持 private；仅允许 PDF、Office、CSV、PNG/JPEG、TXT，单文件不超过 10 MiB。
 - 下载先调用授权 RPC，再生成 60 秒签名 URL；DOM 和日志不出现原始 storage path。

@@ -1,10 +1,12 @@
 import type { Classification } from '../domain/types';
+import { useLocale } from '../i18n/LocaleProvider';
+import type { MessageKey } from '../i18n/messages';
 
-const classificationLabels: Record<Classification, string> = {
-  public: '公开',
-  internal: '内部',
-  confidential: '机密',
-  restricted: '严格机密',
+const classificationLabels: Record<Classification, MessageKey> = {
+  public: 'classification.public',
+  internal: 'classification.internal',
+  confidential: 'classification.confidential',
+  restricted: 'classification.restricted',
 };
 
 export interface ConfidentialityBadgeProps {
@@ -12,5 +14,6 @@ export interface ConfidentialityBadgeProps {
 }
 
 export function ConfidentialityBadge({ classification }: ConfidentialityBadgeProps) {
-  return <span className={`confidentiality-badge confidentiality-badge--${classification}`}>{classificationLabels[classification]}</span>;
+  const { t } = useLocale();
+  return <span className={`confidentiality-badge confidentiality-badge--${classification}`}>{t(classificationLabels[classification])}</span>;
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useLocale } from '../i18n/LocaleProvider';
 
 export interface DataTableColumn<Row> {
   key: string;
@@ -15,6 +16,7 @@ export interface DataTableProps<Row> {
 }
 
 export function DataTable<Row>({ ariaLabel, columns, rows, getRowKey, emptyMessage }: DataTableProps<Row>) {
+  const { t } = useLocale();
   if (rows.length === 0) return <p className="data-table__empty">{emptyMessage}</p>;
 
   return (
@@ -22,7 +24,7 @@ export function DataTable<Row>({ ariaLabel, columns, rows, getRowKey, emptyMessa
       className="data-table__scroll"
       role="region"
       tabIndex={0}
-      aria-label={`${ariaLabel}，可横向滚动`}
+      aria-label={t('common.scrollable', { label: ariaLabel })}
       onKeyDown={(event) => {
         const distance = 80;
         if (event.key === 'ArrowRight') { event.preventDefault(); event.currentTarget.scrollLeft += distance; }

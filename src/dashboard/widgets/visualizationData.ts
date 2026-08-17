@@ -9,6 +9,7 @@ import type {
 } from '../../domain/types';
 import type { DashboardData } from '../../mocks/repository';
 import { scoreRisk } from '../../domain/riskScore';
+import { deriveExecutionStatuses } from '../../domain/progressStatus';
 
 export interface PreparedKeyResult {
   id: string;
@@ -93,19 +94,29 @@ function isExplicitlyRestricted(classification: Classification): boolean {
   return classification === 'restricted';
 }
 
-function resolveUserName(data: DashboardData, userId: string): string {
-  if (userId === data.currentUser.id) return data.currentUser.name;
-  return data.users.find((user) => user.id === userId)?.name ?? '成员';
+interface VisualizationFallbacks {
+  unknownMember?: string;
+  authorizedKeyResult?: string;
 }
 
-function prepareKeyResult(data: DashboardData, keyResult: KeyResult): PreparedKeyResult {
+function resolveUserName(data: DashboardData, userId: string, unknownMember: string): string {
+  if (userId === data.currentUser.id) return data.currentUser.name;
+  return data.users.find((user) => user.id === userId)?.name ?? unknownMember;
+}
+
+function prepareKeyResult(
+  data: DashboardData,
+  keyResult: KeyResult,
+  unknownMember: string,
+  status: ProgressStatus,
+): PreparedKeyResult {
   return {
     id: keyResult.id,
     title: keyResult.title,
-    ownerName: resolveUserName(data, keyResult.ownerId),
+    ownerName: resolveUserName(data, keyResult.ownerId, unknownMember),
     isCurrentUser: keyResult.ownerId === data.currentUser.id,
     progress: keyResult.progress,
-    status: keyResult.status,
+    status,
     startDate: keyResult.startDate,
     dueDate: keyResult.dueDate,
   };
@@ -123,7 +134,9 @@ function canReadMilestone(data: DashboardData, milestone: Milestone): boolean {
   return can(data.currentUser, 'milestone.read', milestone).allowed;
 }
 
-export function prepareVisualizationData(data: DashboardData): PreparedVisualizationData {
+export function prepareVisualizationData(data: DashboardData, fallbacks: VisualizationFallbacks = {}): PreparedVisualizationData {
+  const unknownMember = fallbacks.unknownMember ?? '成员';
+  const authorizedKeyResult = fallbacks.authorizedKeyResult ?? '授权 KR';
   const companyObjectives = data.companyObjectives
     .filter((objective) => can(data.currentUser, 'company_objective.read', objective).allowed)
     .map((objective) => ({ id: objective.id, title: objective.title }));
@@ -139,8 +152,20 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
     (keyResult) => visibleObjectiveIds.has(keyResult.objectiveId) && canReadKeyResult(data, keyResult),
   );
   const visibleKeyResultIds = new Set(visibleKeyResults.map((keyResult) => keyResult.id));
+  const readableRisks = data.risks.filter((risk) => can(data.currentUser, 'risk.read', risk).allowed);
+  const readableMilestones = data.milestones.filter((milestone) => canReadMilestone(data, milestone));
+  const executionStatuses = deriveExecutionStatuses({
+    ...data,
+    risks: readableRisks,
+    milestones: readableMilestones,
+  });
 
-  const preparedKeyResults = visibleKeyResults.map((keyResult) => prepareKeyResult(data, keyResult));
+  const preparedKeyResults = visibleKeyResults.map((keyResult) => prepareKeyResult(
+    data,
+    keyResult,
+    unknownMember,
+    executionStatuses.keyResults.get(keyResult.id)?.status ?? keyResult.status,
+  ));
   const preparedKeyResultsById = new Map(preparedKeyResults.map((keyResult) => [keyResult.id, keyResult]));
 
   const alignmentProjects = visibleProjects.map((project): PreparedAlignmentProject => {
@@ -167,9 +192,9 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
         return {
           id: objective.id,
           title: objective.title,
-          ownerName: resolveUserName(data, objective.ownerId),
+          ownerName: resolveUserName(data, objective.ownerId, unknownMember),
           progress: objective.progress,
-          status: objective.status,
+          status: executionStatuses.objectives.get(objective.id)?.status ?? objective.status,
           keyResults: objectiveKeyResults
             .filter((keyResult) => visibleKeyResultIds.has(keyResult.id))
             .map((keyResult) => preparedKeyResultsById.get(keyResult.id)!),
@@ -191,7 +216,7 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
         .filter((label): label is string => Boolean(label)),
     }));
   const tasks = data.projectTasks.filter((task) => visibleKeyResultIds.has(task.keyResultId) && can(data.currentUser, 'task.read', task).allowed).map((task) => ({
-    id: task.id, title: task.title, keyResultTitle: preparedKeyResultsById.get(task.keyResultId)?.title ?? '授权 KR', startDate: task.startDate, dueDate: task.dueDate, progress: task.progress,
+    id: task.id, title: task.title, keyResultTitle: preparedKeyResultsById.get(task.keyResultId)?.title ?? authorizedKeyResult, startDate: task.startDate, dueDate: task.dueDate, progress: task.progress,
   }));
 
   const trendSourceId = preparedKeyResults
@@ -206,8 +231,7 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
         .sort((left, right) => left.weekOf.localeCompare(right.weekOf))
     : [];
 
-  const risks = data.risks
-    .filter((risk) => can(data.currentUser, 'risk.read', risk).allowed)
+  const risks = readableRisks
     .map((risk): PreparedRisk => ({
       id: risk.id,
       title: risk.title,
@@ -218,7 +242,7 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
       status: risk.status,
       mitigation: risk.mitigation,
       reason: risk.reason ?? risk.description,
-      ownerName: resolveUserName(data, risk.ownerId),
+      ownerName: resolveUserName(data, risk.ownerId, unknownMember),
       lastReviewedAt: risk.lastReviewedAt ?? risk.identifiedAt,
       ...scoreRisk(risk.probability, risk.impact),
     }));
@@ -227,7 +251,7 @@ export function prepareVisualizationData(data: DashboardData): PreparedVisualiza
     .filter((workload) => can(data.currentUser, 'worklog.read_hours', workload).allowed)
     .map((workload): PreparedWorkload => ({
       id: workload.id,
-      memberName: resolveUserName(data, workload.userId),
+      memberName: resolveUserName(data, workload.userId, unknownMember),
       plannedHours: workload.plannedHours,
       loggedHours: workload.loggedHours,
       capacityHours: workload.capacityHours,

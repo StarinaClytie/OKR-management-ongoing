@@ -6,6 +6,9 @@ import { GanttChartWidget } from './GanttChartWidget';
 import { ProgressTrendWidget } from './ProgressTrendWidget';
 import { ProjectVisualizationsWidget, VisualizationLoadingFallback } from './ProjectVisualizationsWidget';
 import { RiskMatrixWidget } from './RiskMatrixWidget';
+import { AuthProvider } from '../../auth/AuthContext';
+import { DemoOkrRepository } from '../../data/demoRepository';
+import { LocaleProvider } from '../../i18n/LocaleProvider';
 
 const leaderData = mockRepository.getDashboardData('user-project-leader');
 
@@ -220,7 +223,9 @@ describe('ProjectVisualizationsWidget', () => {
     const panel = screen.getByRole('region', { name: '风险详情' });
     expect(panel).toHaveTextContent('实验样本量不足');
     expect(panel).toHaveTextContent('按周监控流量并准备合并实验方案。');
-    expect(panel).toHaveTextContent('概率 2 × 影响 2 = 4（中风险）');
+    expect(panel).toHaveTextContent('概率 2 × 影响 2 = 4');
+    expect(panel).toHaveTextContent('风险事件严重程度：中风险事件');
+    expect(panel).toHaveTextContent('执行状态影响：不自动升级执行状态。');
     expect(panel).toHaveTextContent('判断依据');
     expect(panel).toHaveTextContent('负责人');
     expect(panel).toHaveTextContent('最近复核');
@@ -232,6 +237,30 @@ describe('ProjectVisualizationsWidget', () => {
     const axis = screen.getByText('发生概率 ↑');
     expect(axis).toHaveClass('risk-matrix__axis--y');
     expect(container.querySelector('.risk-matrix__axis--y')).toBe(axis);
+  });
+
+  it('explains matrix event severity separately from execution status', () => {
+    render(<RiskMatrixWidget data={leaderData} />);
+
+    expect(screen.getByText('风险事件 ≠ 执行状态')).toBeVisible();
+    expect(screen.getByText(/纵轴：发生概率/)).toBeVisible();
+    expect(screen.getByText(/横轴：业务影响/)).toBeVisible();
+    expect(screen.getByText('风险分 = 概率 × 影响')).toBeVisible();
+    expect(screen.getByText(/1–2：低风险事件/)).toBeVisible();
+    expect(screen.getByText(/3–4：中风险事件/)).toBeVisible();
+    expect(screen.getByText(/6：高风险事件，执行状态升级为需关注/)).toBeVisible();
+    expect(screen.getByText(/9：严重风险事件，执行状态升级为已偏离/)).toBeVisible();
+    expect(screen.getByText('示例：概率 1 × 影响 3 = 3，为中风险事件，不自动升级执行状态。')).toBeVisible();
+  });
+
+  it('uses locale-appropriate punctuation in the English risk explanation', () => {
+    window.localStorage.setItem('northstar.locale', 'en');
+    render(<AuthProvider><LocaleProvider repository={new DemoOkrRepository()}><RiskMatrixWidget data={leaderData} /></LocaleProvider></AuthProvider>);
+
+    const explanation = screen.getByText(/Risk event ≠ execution status/).closest('p');
+    expect(explanation).toHaveTextContent('Risk event ≠ execution status: The matrix assesses');
+    expect(explanation).not.toHaveTextContent('status：');
+    window.localStorage.clear();
   });
 
   it('never leaves denied labels in text, accessible names, or hidden panels', async () => {
@@ -297,6 +326,19 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.getByText('数据不足，暂不绘制趋势线')).toBeVisible();
     expect(screen.getByLabelText('最新实际进度')).toHaveTextContent('46%');
     expect(screen.queryByText('12 个周度数据点')).not.toBeInTheDocument();
+  });
+
+  it('shows unavailable actual progress for a sparse baseline-only series', () => {
+    const planOnlyData = {
+      ...leaderData,
+      progressSnapshots: leaderData.progressSnapshots.slice(0, 2).map((point) => ({ ...point, actual: undefined })),
+    };
+
+    render(<ProgressTrendWidget data={planOnlyData} />);
+
+    expect(screen.getByLabelText('最新实际进度')).toHaveTextContent('—');
+    expect(screen.getByLabelText('最新实际进度')).toHaveTextContent('尚无实际填报');
+    expect(screen.getByLabelText('最新实际进度')).not.toHaveTextContent('0%');
   });
 
   it('shows HR workload fields without ever rendering report bodies', () => {

@@ -10,10 +10,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { Action, SystemPermissionScope } from '../domain/permissions';
+import type { MessageKey } from '../i18n/messages';
 
 export interface NavigationItem {
   path: string;
-  label: string;
+  labelKey: MessageKey;
   icon: LucideIcon;
   action: Action;
   resource: SystemPermissionScope;
@@ -27,12 +28,12 @@ const dashboardScope: SystemPermissionScope = {
 };
 
 export const navigationItems: readonly NavigationItem[] = [
-  { path: '/dashboard', label: '仪表盘', icon: LayoutDashboard, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/okrs', label: 'OKR 管理', icon: Target, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/projects', label: '项目', icon: FolderKanban, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/daily-reports', label: '日报', icon: ClipboardList, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/weekly-reports', label: '周报', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/team', label: '团队', icon: Users, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/analytics', label: '分析', icon: BarChart3, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/settings', label: '设置', icon: Settings, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/dashboard', labelKey: 'navigation.dashboard', icon: LayoutDashboard, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/okrs', labelKey: 'navigation.okrs', icon: Target, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/projects', labelKey: 'navigation.projects', icon: FolderKanban, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/daily-reports', labelKey: 'navigation.dailyReports', icon: ClipboardList, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/weekly-reports', labelKey: 'navigation.weeklyReports', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/team', labelKey: 'navigation.team', icon: Users, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/analytics', labelKey: 'navigation.analytics', icon: BarChart3, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/settings', labelKey: 'navigation.settings', icon: Settings, action: 'dashboard.view', resource: dashboardScope },
 ];

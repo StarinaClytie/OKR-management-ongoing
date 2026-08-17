@@ -4,24 +4,32 @@ import type { DashboardData } from '../../mocks/repository';
 import { ProgressRing } from '../../components/ProgressRing';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
+import { useLocale } from '../../i18n/LocaleProvider';
+import { can } from '../../auth/permissionService';
+import { deriveExecutionStatuses } from '../../domain/progressStatus';
 
 export interface MyKeyResultsWidgetProps {
   data: DashboardData;
 }
 
 export function MyKeyResultsWidget({ data }: MyKeyResultsWidgetProps) {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const ownedKeyResults = data.keyResults.filter((keyResult) => keyResult.ownerId === data.currentUser.id);
+  const executionStatuses = deriveExecutionStatuses({
+    ...data,
+    risks: data.risks.filter((risk) => can(data.currentUser, 'risk.read', risk).allowed),
+  });
 
   return (
     <section className="dashboard-widget" aria-labelledby="my-key-results-title">
       <div className="dashboard-widget__header">
         <div>
-          <p className="dashboard-widget__eyebrow">我的执行项</p>
-          <h2 id="my-key-results-title">我的关键结果</h2>
+          <p className="dashboard-widget__eyebrow">{t('myKr.eyebrow')}</p>
+          <h2 id="my-key-results-title">{t('myKr.title')}</h2>
         </div>
         <button className="button button--secondary" type="button" onClick={() => navigate('/okrs')}>
-          更新 KR
+          {t('myKr.update')}
         </button>
       </div>
       <div className="dashboard-list">
@@ -33,12 +41,12 @@ export function MyKeyResultsWidget({ data }: MyKeyResultsWidgetProps) {
             fallback={<RestrictedContent classification={keyResult.classification} />}
           >
             <article className="key-result-row">
-              <ProgressRing value={keyResult.progress} label={`${keyResult.title}完成进度`} size="small" />
+              <ProgressRing value={keyResult.progress} label={t('myKr.progressLabel', { title: keyResult.title })} size="small" />
               <div className="key-result-row__body">
                 <strong>{keyResult.title}</strong>
-                <span>截止 {keyResult.dueDate}</span>
+                <span>{t('myKr.due', { date: keyResult.dueDate })}</span>
               </div>
-              <StatusBadge status={keyResult.status} />
+              <StatusBadge status={executionStatuses.keyResults.get(keyResult.id)?.status ?? keyResult.status} />
             </article>
           </PermissionGate>
         ))}
