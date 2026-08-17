@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { RoleSwitcher } from '../layout/RoleSwitcher';
 import type { OkrRepository, RepositoryResult, SessionLike, SupabaseClientLike } from '../data/types';
@@ -22,6 +23,7 @@ function StateProbe() {
 
 function createClient(initialSession: SessionLike | null) {
   let listener: ((event: string, session: SessionLike | null) => void) | undefined;
+  const signInWithPassword = vi.fn(async (): Promise<{ data: { session: SessionLike | null }; error: { message: string } | null }> => ({ data: { session: null }, error: null }));
   const client: SupabaseClientLike = {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: initialSession }, error: null })),
@@ -29,13 +31,14 @@ function createClient(initialSession: SessionLike | null) {
         listener = callback;
         return { data: { subscription: { unsubscribe: vi.fn() } } };
       }),
+      signInWithPassword,
       signOut: vi.fn(async () => ({ error: null })),
     },
     from: vi.fn() as never,
     rpc: vi.fn() as never,
     storage: {} as never,
   };
-  return { client, emit: (session: SessionLike | null) => listener?.('SIGNED_IN', session) };
+  return { client, signInWithPassword, emit: (session: SessionLike | null) => listener?.('SIGNED_IN', session) };
 }
 
 function repositoryWithProfile(result: RepositoryResult<User | null>): OkrRepository {
@@ -79,5 +82,30 @@ describe('SupabaseAuthProvider', () => {
     const { client } = createClient({ user: { id: 'user-one' } });
     render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile({ ok: true, data: employee })}><RoleSwitcher /></SupabaseAuthProvider>);
     await waitFor(() => expect(screen.queryByLabelText('演示角色')).not.toBeInTheDocument());
+  });
+
+  it('renders the email/password login form when signed out', async () => {
+    const { client } = createClient(null);
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile({ ok: true, data: employee })}><StateProbe /></SupabaseAuthProvider>);
+    expect(await screen.findByLabelText('邮箱')).toBeVisible();
+    expect(screen.getByLabelText('密码')).toBeVisible();
+    expect(screen.getByRole('button', { name: '登录' })).toBeVisible();
+  });
+
+  it('signs in through Supabase and transitions via the existing session handling', async () => {
+    const user = userEvent.setup();
+    const { client, signInWithPassword, emit } = createClient(null);
+    const repository = repositoryWithProfile({ ok: true, data: employee });
+    signInWithPassword.mockImplementation(async () => {
+      emit({ user: { id: 'user-one' } });
+      return { data: { session: { user: { id: 'user-one' } } }, error: null };
+    });
+    render(<SupabaseAuthProvider client={client} repository={repository}><StateProbe /></SupabaseAuthProvider>);
+    await screen.findByLabelText('邮箱');
+    await user.type(screen.getByLabelText('邮箱'), 'member@example.com');
+    await user.type(screen.getByLabelText('密码'), 'secret');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+    expect(await screen.findByText('ready:user-one')).toBeVisible();
+    expect(signInWithPassword).toHaveBeenCalledWith({ email: 'member@example.com', password: 'secret' });
   });
 });

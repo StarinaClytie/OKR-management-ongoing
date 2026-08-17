@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PropsWithChildren } from 're
 import type { User } from '../domain/types';
 import type { OkrRepository, SessionLike, SupabaseClientLike } from '../data/types';
 import { AuthContext, type AuthContextValue } from './AuthContext';
+import { LoginForm } from './LoginForm';
 
 export interface SupabaseAuthProviderProps extends PropsWithChildren {
   client: SupabaseClientLike;
@@ -65,7 +66,14 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
   if (status === 'loading') {
     content = <main className="auth-status"><h1>正在验证身份</h1><p>请稍候。</p></main>;
   } else if (status === 'signed_out') {
-    content = <main className="auth-status"><h1>登录 Northstar OKR</h1><p>请使用组织账户登录。</p></main>;
+    content = (
+      <LoginForm
+        signIn={async (email, password) => {
+          const { error } = await client.auth.signInWithPassword({ email, password });
+          return { error };
+        }}
+      />
+    );
   } else if (status === 'unassigned') {
     content = <main className="auth-status"><h1>等待管理员分配</h1><p>账户已登录，但尚未分配组织角色。</p></main>;
   }
