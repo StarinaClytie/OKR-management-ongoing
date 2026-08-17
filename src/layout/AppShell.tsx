@@ -1,9 +1,11 @@
 import { Bell, Menu } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { AccountMenu } from './AccountMenu';
 import { RoleSwitcher } from './RoleSwitcher';
 import { Sidebar } from './Sidebar';
 import { useMediaQuery } from './useMediaQuery';
+import { useAuth } from '../auth/AuthContext';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useLocale } from '../i18n/LocaleProvider';
 
@@ -11,6 +13,7 @@ const quarters = ['topbar.quarter1', 'topbar.quarter2', 'topbar.quarter3', 'topb
 
 export function AppShell() {
   const { t } = useLocale();
+  const { mode } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [quarter, setQuarter] = useState<(typeof quarters)[number]>('topbar.quarter3');
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -113,6 +116,7 @@ export function AppShell() {
               <Bell size={19} />
             </button>
             <RoleSwitcher />
+            {mode === 'supabase' ? <AccountMenu /> : null}
           </div>
         </header>
         <main className="app-content">

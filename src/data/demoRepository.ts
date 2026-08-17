@@ -1,6 +1,6 @@
 import { mockRepository } from '../mocks/repository';
-import type { ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OwnedRiskInput, RepositoryResult } from './types';
-import type { DailyReport, User } from '../domain/types';
+import type { ApprovePendingUserInput, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, RepositoryResult, UpdateUserInput } from './types';
+import type { DailyReport } from '../domain/types';
 
 function unsupported<T>(): RepositoryResult<T> {
   return { ok: false, error: { code: 'validation', message: '当前环境不支持此持久化操作' } };
@@ -13,8 +13,8 @@ export class DemoOkrRepository implements OkrRepository {
     return mockRepository.getDashboardData(userId);
   }
 
-  async getCurrentProfile(): Promise<RepositoryResult<User | null>> {
-    return { ok: true, data: null };
+  async getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>> {
+    return { ok: true, data: { kind: 'unassigned' } };
   }
 
   async getDashboardData(userId = 'user-employee') {
@@ -24,6 +24,26 @@ export class DemoOkrRepository implements OkrRepository {
   async listDailyReports(): Promise<RepositoryResult<DailyReport[]>> {
     return { ok: true, data: mockRepository.getDashboardData('user-employee').dailyReports };
   }
+
+  async listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>> {
+    return {
+      ok: true,
+      data: mockRepository.getDashboardData('user-administrator').users.map((user) => ({
+        id: user.id,
+        displayName: user.name,
+        email: '',
+        department: user.department,
+        jobTitle: user.title,
+        role: user.role,
+        isActive: true,
+        projectIds: user.projectIds,
+      })),
+    };
+  }
+
+  async approvePendingUser(_input: ApprovePendingUserInput) { return unsupported<void>(); }
+  async updateUserProfile(_input: UpdateUserInput) { return unsupported<void>(); }
+  async setUserActive(_userId: string, _active: boolean) { return unsupported<void>(); }
 
   async createDailyReport(_input: DailyReportInput) { return unsupported<{ id: string; revision: number }>(); }
   async createDailyReportWithAttachments(_input: DailyReportInput, _attachments: ClassifiedAttachmentInput[]) { return unsupported<{ id: string; revision: number }>(); }

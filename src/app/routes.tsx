@@ -8,9 +8,11 @@ import { AnalyticsPage } from '../pages/AnalyticsPage';
 import { DailyReportsPage } from '../pages/DailyReportsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OkrManagementPage } from '../pages/OkrManagementPage';
+import { ProfilePage } from '../pages/ProfilePage';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { TeamPage } from '../pages/TeamPage';
+import { UsersPage } from '../pages/UsersPage';
 import { WeeklyReportsPage } from '../pages/WeeklyReportsPage';
 
 const pageByPath = {
@@ -19,6 +21,7 @@ const pageByPath = {
   '/daily-reports': DailyReportsPage,
   '/weekly-reports': WeeklyReportsPage,
   '/team': TeamPage,
+  '/users': UsersPage,
   '/analytics': AnalyticsPage,
   '/settings': SettingsPage,
 } as const;
@@ -41,6 +44,7 @@ export function AppRoutes() {
           <Route key={item.path} path={item.path} element={<ProtectedNavigationRoute item={item} />} />
         ))}
         <Route path="/access-denied" element={<AccessDeniedPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

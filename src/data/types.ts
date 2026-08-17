@@ -1,15 +1,15 @@
 import type { DashboardData } from '../mocks/repository';
-import type { Classification, DailyReport, ReportStatus, User } from '../domain/types';
+import type { Classification, DailyReport, ReportStatus, Role, User } from '../domain/types';
 
 export type AppMode = 'demo' | 'supabase';
-export type RepositoryErrorCode = 'unauthorized' | 'validation' | 'conflict' | 'network' | 'unknown';
+export type RepositoryErrorCode = 'unauthorized' | 'validation' | 'conflict' | 'duplicate' | 'network' | 'unknown';
 
 export type RepositoryResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: RepositoryErrorCode; message: string } };
 
 export interface SessionLike {
-  user: { id: string };
+  user: { id: string; email?: string };
 }
 
 export interface AuthSubscriptionLike {
@@ -30,6 +30,9 @@ export interface SupabaseClientLike {
   };
   from(table: string): unknown;
   rpc(functionName: string, args?: Record<string, unknown>): unknown;
+  functions?: {
+    invoke(name: string, options?: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
+  };
   storage: {
     from(bucket: string): {
       upload(path: string, file: File, options?: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
@@ -78,11 +81,49 @@ export interface OwnedRiskInput {
   resolved: boolean;
 }
 
+export type AuthProfileState =
+  | { kind: 'active'; user: User }
+  | { kind: 'unassigned' }
+  | { kind: 'inactive' };
+
+export interface OrganizationUser {
+  id: string;
+  displayName: string;
+  email: string;
+  department: string;
+  jobTitle: string;
+  role: Role;
+  isActive: boolean;
+  projectIds: string[];
+}
+
+export interface ApprovePendingUserInput {
+  userId: string;
+  displayName: string;
+  email: string;
+  department: string;
+  jobTitle: string;
+  role: Role;
+}
+
+export interface UpdateUserInput {
+  userId: string;
+  displayName: string;
+  email: string;
+  department: string;
+  jobTitle: string;
+  role: Role;
+}
+
 export interface OkrRepository {
   readonly mode: AppMode;
   getCachedDashboardData?(userId: string): DashboardData | undefined;
-  getCurrentProfile(): Promise<RepositoryResult<User | null>>;
+  getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>>;
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
+  listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>>;
+  approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>>;
+  updateUserProfile(input: UpdateUserInput): Promise<RepositoryResult<void>>;
+  setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>>;
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
