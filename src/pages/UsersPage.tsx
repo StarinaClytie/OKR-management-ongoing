@@ -9,7 +9,7 @@ import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
 import { repositoryErrorKey } from '../i18n/repositoryErrors';
 import { adminUserService, repository } from '../lib/supabase';
-import type { AdminUserService, PendingUser } from '../services/adminUserService';
+import type { AdminUserService, InviteUserErrorCode, PendingUser } from '../services/adminUserService';
 import { AccessDeniedPage } from './AccessDeniedPage';
 
 type Async<T> = { status: 'loading' } | { status: 'ready'; data: T } | { status: 'error'; code: RepositoryErrorCode };
@@ -17,6 +17,22 @@ type Async<T> = { status: 'loading' } | { status: 'ready'; data: T } | { status:
 interface Feedback {
   kind: 'success' | 'error';
   key: MessageKey;
+  values?: Record<string, string | number>;
+}
+
+function inviteErrorKey(code: InviteUserErrorCode): MessageKey {
+  switch (code) {
+    case 'unauthorized':
+      return 'users.inviteUnauthorized';
+    case 'invalid_email':
+      return 'users.inviteInvalidEmail';
+    case 'provisioning_failed':
+      return 'users.inviteProvisioningFailed';
+    case 'recovery_invite_failed':
+      return 'users.inviteRecoveryInviteFailed';
+    default:
+      return 'users.inviteFailed';
+  }
 }
 
 function formatTimestamp(value: string | null): string {
@@ -39,6 +55,7 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [approveTarget, setApproveTarget] = useState<PendingUser | null>(null);
   const [editTarget, setEditTarget] = useState<OrganizationUser | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | undefined>(undefined);
 
@@ -69,6 +86,7 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
   function closeModal() {
     setApproveTarget(null);
     setEditTarget(null);
+    setInviteOpen(false);
     setFormError(undefined);
     setSubmitting(false);
   }
@@ -117,6 +135,48 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
     }
   }
 
+  function openInvite() {
+    setFormError(undefined);
+    setInviteOpen(true);
+  }
+
+  function closeInvite() {
+    setInviteOpen(false);
+    setFormError(undefined);
+    setSubmitting(false);
+  }
+
+  async function handleInviteSubmit(values: UserFormValues) {
+    if (!adminUsers) return;
+    setSubmitting(true);
+    setFormError(undefined);
+    const result = await adminUsers.inviteUser({
+      email: values.email,
+      displayName: values.displayName,
+      department: values.department,
+      jobTitle: values.jobTitle,
+      role: values.role,
+    });
+    setSubmitting(false);
+    if (result.ok) {
+      closeInvite();
+      if (result.outcome === 'invited') {
+        setFeedback({ kind: 'success', key: 'users.inviteSuccess', values: { email: result.email } });
+        await load();
+      } else if (result.outcome === 'recovered') {
+        setFeedback({
+          kind: 'success',
+          key: result.invitationSent ? 'users.inviteRecoveredResent' : 'users.inviteRecovered',
+        });
+        await load();
+      } else {
+        setFeedback({ kind: 'error', key: 'users.inviteAlreadyMember' });
+      }
+    } else {
+      setFormError(t(inviteErrorKey(result.error.code)));
+    }
+  }
+
   async function toggleActive(user: OrganizationUser) {
     const result = await dataRepository.setUserActive(user.id, !user.isActive);
     if (result.ok) {
@@ -129,8 +189,12 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
 
   return (
     <section className="business-page" aria-labelledby="users-page-title">
-      <PageHeader title={t('users.title')} description={t('users.description')} />
-      {feedback ? <p className="page-notice" role={feedback.kind === 'success' ? 'status' : 'alert'}>{t(feedback.key)}</p> : null}
+      <PageHeader
+        title={t('users.title')}
+        description={t('users.description')}
+        primaryAction={adminUsers ? { label: t('users.invite'), onClick: openInvite } : undefined}
+      />
+      {feedback ? <p className="page-notice" role={feedback.kind === 'success' ? 'status' : 'alert'}>{t(feedback.key, feedback.values)}</p> : null}
 
       <section className="users-section" aria-labelledby="users-pending-title">
         <h2 id="users-pending-title" className="users-section__heading">{t('users.pending')}</h2>
@@ -212,6 +276,19 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
           error={formError}
           onSubmit={handleEdit}
           onClose={closeModal}
+        />
+      ) : null}
+
+      {inviteOpen ? (
+        <UserFormModal
+          title={t('users.modal.inviteTitle')}
+          initial={{ displayName: '', email: '', department: '', jobTitle: '', role: 'employee' }}
+          emailRequired
+          submitLabel={t('users.inviteSend')}
+          submitting={submitting}
+          error={formError}
+          onSubmit={handleInviteSubmit}
+          onClose={closeInvite}
         />
       ) : null}
     </section>

@@ -6,7 +6,7 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import type { OkrRepository, OrganizationUser, RepositoryResult } from '../data/types';
 import type { User } from '../domain/types';
 import { LocaleProvider } from '../i18n/LocaleProvider';
-import type { AdminUserService, PendingUser } from '../services/adminUserService';
+import type { AdminUserService, InviteUserResult, PendingUser } from '../services/adminUserService';
 import { UsersPage } from './UsersPage';
 
 const admin: User = { id: 'admin-1', name: '管理员', role: 'administrator', title: '', department: '', projectIds: [] };
@@ -31,8 +31,11 @@ function makeRepository(overrides: Partial<OkrRepository> = {}): OkrRepository {
   } as unknown as OkrRepository;
 }
 
-function makeAdminService(listResult: { ok: true; data: PendingUser[] } = { ok: true, data: pendingUsers }): AdminUserService {
-  return { listPendingUsers: vi.fn(async () => listResult) } as unknown as AdminUserService;
+function makeAdminService(overrides: { listResult?: { ok: true; data: PendingUser[] }; inviteResult?: InviteUserResult } = {}): AdminUserService {
+  return {
+    listPendingUsers: vi.fn(async () => overrides.listResult ?? { ok: true, data: pendingUsers }),
+    inviteUser: vi.fn(async (): Promise<InviteUserResult> => overrides.inviteResult ?? { ok: true, outcome: 'invited', email: 'new@example.com', invitationSent: true }),
+  } as unknown as AdminUserService;
 }
 
 function renderUsersPage(opts: { role?: User['role']; repository?: OkrRepository; adminUsers?: AdminUserService } = {}) {
@@ -71,6 +74,113 @@ describe('UsersPage', () => {
   it('denies management', () => {
     renderUsersPage({ role: 'management' });
     expect(screen.getByRole('heading', { name: '访问受限' })).toBeVisible();
+  });
+
+  it('denies project_leader', () => {
+    renderUsersPage({ role: 'project_leader' });
+    expect(screen.getByRole('heading', { name: '访问受限' })).toBeVisible();
+  });
+
+  it('denies hr', () => {
+    renderUsersPage({ role: 'hr' });
+    expect(screen.getByRole('heading', { name: '访问受限' })).toBeVisible();
+  });
+
+  it('shows the Invite User button to an administrator', async () => {
+    renderUsersPage();
+    expect(await screen.findByRole('button', { name: '邀请用户' })).toBeVisible();
+  });
+
+  it('invites a user through the invite form', async () => {
+    const user = userEvent.setup();
+    const { adminUsers } = renderUsersPage();
+
+    await screen.findByText('new@example.com');
+    await user.click(screen.getByRole('button', { name: '邀请用户' }));
+
+    expect(screen.getByRole('dialog', { name: '邀请用户' })).toBeVisible();
+    await user.type(screen.getByLabelText('姓名 *'), '新同事');
+    await user.type(screen.getByLabelText('邮箱 *'), 'colleague@example.com');
+    await user.selectOptions(screen.getByLabelText('角色 *'), 'employee');
+    await user.click(screen.getByRole('button', { name: '发送邀请' }));
+
+    await waitFor(() => expect(adminUsers.inviteUser).toHaveBeenCalledWith({
+      email: 'colleague@example.com',
+      displayName: '新同事',
+      department: '',
+      jobTitle: '',
+      role: 'employee',
+    }));
+  });
+
+  it('rejects an invalid invite email', async () => {
+    const user = userEvent.setup();
+    const { adminUsers } = renderUsersPage();
+
+    await screen.findByText('new@example.com');
+    await user.click(screen.getByRole('button', { name: '邀请用户' }));
+    await user.type(screen.getByLabelText('姓名 *'), '新同事');
+    await user.type(screen.getByLabelText('邮箱 *'), 'not-an-email');
+    await user.click(screen.getByRole('button', { name: '发送邀请' }));
+
+    expect(await screen.findByText('请输入有效的邮箱地址。')).toBeVisible();
+    expect(adminUsers.inviteUser).not.toHaveBeenCalled();
+  });
+
+  it('shows a distinct message when the email already belongs to a member', async () => {
+    const user = userEvent.setup();
+    const adminUsers = makeAdminService({ inviteResult: { ok: true, outcome: 'already_member', email: 'colleague@example.com', invitationSent: false } });
+    renderUsersPage({ adminUsers });
+
+    await screen.findByText('new@example.com');
+    await user.click(screen.getByRole('button', { name: '邀请用户' }));
+    await user.type(screen.getByLabelText('姓名 *'), '新同事');
+    await user.type(screen.getByLabelText('邮箱 *'), 'colleague@example.com');
+    await user.click(screen.getByRole('button', { name: '发送邀请' }));
+
+    expect(await screen.findByText('该邮箱已属于组织成员。')).toBeVisible();
+  });
+
+  it('shows the recovered message when no invitation was required', async () => {
+    const user = userEvent.setup();
+    const adminUsers = makeAdminService({ inviteResult: { ok: true, outcome: 'recovered', email: 'colleague@example.com', invitationSent: false } });
+    renderUsersPage({ adminUsers });
+
+    await screen.findByText('new@example.com');
+    await user.click(screen.getByRole('button', { name: '邀请用户' }));
+    await user.type(screen.getByLabelText('姓名 *'), '新同事');
+    await user.type(screen.getByLabelText('邮箱 *'), 'colleague@example.com');
+    await user.click(screen.getByRole('button', { name: '发送邀请' }));
+
+    expect(await screen.findByText('账号已存在，组织权限已补全。')).toBeVisible();
+  });
+
+  it('shows the re-sent message when a recovered account had its invitation re-sent', async () => {
+    const user = userEvent.setup();
+    const adminUsers = makeAdminService({ inviteResult: { ok: true, outcome: 'recovered', email: 'colleague@example.com', invitationSent: true } });
+    renderUsersPage({ adminUsers });
+
+    await screen.findByText('new@example.com');
+    await user.click(screen.getByRole('button', { name: '邀请用户' }));
+    await user.type(screen.getByLabelText('姓名 *'), '新同事');
+    await user.type(screen.getByLabelText('邮箱 *'), 'colleague@example.com');
+    await user.click(screen.getByRole('button', { name: '发送邀请' }));
+
+    expect(await screen.findByText('账号已存在，组织权限已补全，邀请已重新发送。')).toBeVisible();
+  });
+
+  it('shows an accurate error when a recovered account cannot be re-invited', async () => {
+    const user = userEvent.setup();
+    const adminUsers = makeAdminService({ inviteResult: { ok: false, error: { code: 'recovery_invite_failed', message: '请求未完成，请稍后重试' } } });
+    renderUsersPage({ adminUsers });
+
+    await screen.findByText('new@example.com');
+    await user.click(screen.getByRole('button', { name: '邀请用户' }));
+    await user.type(screen.getByLabelText('姓名 *'), '新同事');
+    await user.type(screen.getByLabelText('邮箱 *'), 'colleague@example.com');
+    await user.click(screen.getByRole('button', { name: '发送邀请' }));
+
+    expect(await screen.findByText('账号权限已补全，但邀请邮件发送失败，请稍后重试。')).toBeVisible();
   });
 
   it('approves a pending user through the form', async () => {

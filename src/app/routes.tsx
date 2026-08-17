@@ -38,6 +38,7 @@ function ProtectedNavigationRoute({ item }: { item: NavigationItem }) {
 export function AppRoutes() {
   return (
     <Routes>
+      <Route path="/auth/invite" element={<Navigate to="/dashboard" replace />} />
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         {navigationItems.map((item) => (
