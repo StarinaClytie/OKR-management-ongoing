@@ -22,6 +22,10 @@ export interface SupabaseClientLike {
     onAuthStateChange(callback: (event: string, session: SessionLike | null) => void): {
       data: { subscription: AuthSubscriptionLike };
     };
+    signInWithPassword(credentials: { email: string; password: string }): Promise<{
+      data: { session: SessionLike | null };
+      error: { message: string } | null;
+    }>;
     signOut(): Promise<{ error: { message: string } | null }>;
   };
   from(table: string): unknown;

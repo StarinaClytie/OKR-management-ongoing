@@ -28,6 +28,7 @@ function createClient(options?: {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: { user: { id: 'profile-1' } } }, error: null })),
       onAuthStateChange: vi.fn(),
+      signInWithPassword: vi.fn(),
       signOut: vi.fn(),
     } as never,
     from: vi.fn(() => builder),

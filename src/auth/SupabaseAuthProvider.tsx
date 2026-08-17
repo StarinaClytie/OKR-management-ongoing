@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PropsWithCh
 import type { User } from '../domain/types';
 import type { OkrRepository, SessionLike, SupabaseClientLike } from '../data/types';
 import { AuthContext, type AuthContextValue } from './AuthContext';
+import { LoginForm } from './LoginForm';
 import { readStoredLocale, storeLocale } from '../i18n/LocaleProvider';
 import { translate, type Locale } from '../i18n/messages';
 
@@ -85,7 +86,17 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
   if (status === 'loading') {
     content = <main className="auth-status">{languageSwitcher}<h1>{t('auth.verifying')}</h1><p>{t('auth.wait')}</p></main>;
   } else if (status === 'signed_out') {
-    content = <main className="auth-status">{languageSwitcher}<h1>{t('auth.signIn')}</h1><p>{t('auth.signInDescription')}</p></main>;
+    content = (
+      <>
+        {languageSwitcher}
+        <LoginForm
+          signIn={async (email, password) => {
+            const { error } = await client.auth.signInWithPassword({ email, password });
+            return { error };
+          }}
+        />
+      </>
+    );
   } else if (status === 'unassigned') {
     content = <main className="auth-status">{languageSwitcher}<h1>{t('auth.unassigned')}</h1><p>{t('auth.unassignedDescription')}</p></main>;
   }
