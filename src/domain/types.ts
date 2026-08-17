@@ -13,6 +13,7 @@ export interface User {
   department: string;
   projectIds: string[];
   preferredLocale?: 'zh-CN' | 'en';
+  organization?: string;
 }
 
 export interface OrganizationRelation {

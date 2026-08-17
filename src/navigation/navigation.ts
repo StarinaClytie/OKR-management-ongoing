@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Settings,
   Target,
+  UserCog,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -27,6 +28,13 @@ const dashboardScope: SystemPermissionScope = {
   systemAction: 'dashboard.view',
 };
 
+const usersScope: SystemPermissionScope = {
+  resourceId: 'system-users',
+  resourceType: 'system',
+  classification: 'internal',
+  systemAction: 'user.manage',
+};
+
 export const navigationItems: readonly NavigationItem[] = [
   { path: '/dashboard', labelKey: 'navigation.dashboard', icon: LayoutDashboard, action: 'dashboard.view', resource: dashboardScope },
   { path: '/okrs', labelKey: 'navigation.okrs', icon: Target, action: 'dashboard.view', resource: dashboardScope },
@@ -34,6 +42,7 @@ export const navigationItems: readonly NavigationItem[] = [
   { path: '/daily-reports', labelKey: 'navigation.dailyReports', icon: ClipboardList, action: 'dashboard.view', resource: dashboardScope },
   { path: '/weekly-reports', labelKey: 'navigation.weeklyReports', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
   { path: '/team', labelKey: 'navigation.team', icon: Users, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/users', labelKey: 'navigation.users', icon: UserCog, action: 'user.manage', resource: usersScope },
   { path: '/analytics', labelKey: 'navigation.analytics', icon: BarChart3, action: 'dashboard.view', resource: dashboardScope },
   { path: '/settings', labelKey: 'navigation.settings', icon: Settings, action: 'dashboard.view', resource: dashboardScope },
 ];

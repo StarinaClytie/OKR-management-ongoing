@@ -15,6 +15,7 @@ export interface SupabaseAuthProviderProps extends PropsWithChildren {
 export function SupabaseAuthProvider({ children, client, repository }: SupabaseAuthProviderProps) {
   const [status, setStatus] = useState<AuthContextValue['status']>('loading');
   const [currentUser, setCurrentUser] = useState<User>();
+  const [email, setEmail] = useState<string | undefined>();
   const requestVersion = useRef(0);
   const [locale, setLocale] = useState<Locale>(readStoredLocale);
 
@@ -28,6 +29,7 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
     async function loadSession(session: SessionLike | null) {
       const version = ++requestVersion.current;
       setCurrentUser(undefined);
+      setEmail(session?.user.email);
       setLocale(readStoredLocale());
       if (!session) {
         setStatus('signed_out');
@@ -36,15 +38,20 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
       setStatus('loading');
       const result = await repository.getCurrentProfile();
       if (!mounted || version !== requestVersion.current) return;
-      if (!result.ok || !result.data) {
+      if (!result.ok) {
         setStatus('unassigned');
         return;
       }
-      if (result.data.id !== session.user.id) {
+      const state = result.data;
+      if (state.kind === 'inactive') {
+        setStatus('inactive');
+        return;
+      }
+      if (state.kind === 'unassigned' || state.user.id !== session.user.id) {
         setStatus('unassigned');
         return;
       }
-      setCurrentUser(result.data);
+      setCurrentUser(state.user);
       setStatus('ready');
     }
 
@@ -66,10 +73,11 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
     status,
     mode: 'supabase',
     currentUser,
+    email,
     selectableUsers: [],
     selectUser: () => undefined,
     signOut: async () => { await client.auth.signOut(); },
-  }), [client, currentUser, status]);
+  }), [client, currentUser, email, status]);
   const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   const nextLocale = locale === 'zh-CN' ? 'en' : 'zh-CN';
   const languageLabel = locale === 'zh-CN' ? t('language.switchToEnglish') : t('language.switchToChinese');
@@ -90,6 +98,7 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
       <>
         {languageSwitcher}
         <LoginForm
+          locale={locale}
           signIn={async (email, password) => {
             const { error } = await client.auth.signInWithPassword({ email, password });
             return { error };
@@ -99,6 +108,15 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
     );
   } else if (status === 'unassigned') {
     content = <main className="auth-status">{languageSwitcher}<h1>{t('auth.unassigned')}</h1><p>{t('auth.unassignedDescription')}</p></main>;
+  } else if (status === 'inactive') {
+    content = (
+      <main className="auth-status">
+        {languageSwitcher}
+        <h1>{t('auth.inactive')}</h1>
+        <p>{t('auth.inactiveDescription')}</p>
+        <button className="button button--primary" type="button" onClick={() => { void client.auth.signOut(); }}>{t('account.signOut')}</button>
+      </main>
+    );
   }
 
   return <AuthContext.Provider value={value}>{content}</AuthContext.Provider>;

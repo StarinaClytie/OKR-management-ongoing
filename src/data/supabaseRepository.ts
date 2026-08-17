@@ -1,6 +1,6 @@
 import type { DashboardData } from '../mocks/repository';
 import type { DailyReport, Role, User } from '../domain/types';
-import type { AttachmentUploadTarget, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OwnedRiskInput, RepositoryErrorCode, RepositoryResult, SupabaseClientLike } from './types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, RepositoryErrorCode, RepositoryResult, SupabaseClientLike, UpdateUserInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
@@ -20,11 +20,13 @@ function failure<T>(error: { code?: string; message: string } | null): Repositor
     ? 'unauthorized'
     : source === '40001'
       ? 'conflict'
-      : source.startsWith('22') || source === '23514'
-        ? 'validation'
-        : error
-          ? 'network'
-          : 'unknown';
+      : source === '23505'
+        ? 'duplicate'
+        : source.startsWith('22') || source === '23514' || source === '23503'
+          ? 'validation'
+          : error
+            ? 'network'
+            : 'unknown';
   return { ok: false, error: { code, message: code === 'unauthorized' ? '无权访问请求的资源' : '请求未完成，请稍后重试' } };
 }
 
@@ -32,15 +34,34 @@ function mapProfile(row: Record<string, unknown>): User | null {
   const roleRow = Array.isArray(row.user_roles) ? row.user_roles[0] as Record<string, unknown> | undefined : undefined;
   const role = roleRow?.role;
   const roles: readonly Role[] = ['administrator', 'management', 'project_leader', 'employee', 'hr'];
+  const organization = row.organizations as Record<string, unknown> | undefined;
   if (typeof row.id !== 'string' || typeof row.display_name !== 'string' || !roles.includes(role as Role)) return null;
   return {
     id: row.id,
     name: row.display_name,
     role: role as Role,
-    title: typeof row.title === 'string' ? row.title : '',
+    title: typeof row.job_title === 'string' ? row.job_title : '',
     department: typeof row.department === 'string' ? row.department : '',
     projectIds: Array.isArray(row.project_members) ? row.project_members.map((item) => String((item as Record<string, unknown>).project_id)) : [],
     preferredLocale: row.preferred_locale === 'en' ? 'en' : 'zh-CN',
+    organization: typeof organization?.name === 'string' ? organization.name : undefined,
+  };
+}
+
+function mapOrganizationUser(row: Record<string, unknown>): OrganizationUser | null {
+  const roles: readonly Role[] = ['administrator', 'management', 'project_leader', 'employee', 'hr'];
+  const roleRow = Array.isArray(row.user_roles) ? row.user_roles[0] as Record<string, unknown> | undefined : undefined;
+  const role = roleRow?.role;
+  if (typeof row.id !== 'string' || typeof row.display_name !== 'string' || !roles.includes(role as Role)) return null;
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    email: typeof row.email === 'string' ? row.email : '',
+    department: typeof row.department === 'string' ? row.department : '',
+    jobTitle: typeof row.job_title === 'string' ? row.job_title : '',
+    role: role as Role,
+    isActive: row.is_active === true,
+    projectIds: Array.isArray(row.project_members) ? row.project_members.map((item) => String((item as Record<string, unknown>).project_id)) : [],
   };
 }
 
@@ -57,17 +78,22 @@ export class SupabaseOkrRepository implements OkrRepository {
   readonly mode = 'supabase' as const;
   constructor(readonly client: SupabaseClientLike) {}
 
-  async getCurrentProfile(): Promise<RepositoryResult<User | null>> {
+  async getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>> {
     const session = await this.client.auth.getSession();
     if (session.error) return failure(session.error);
-    if (!session.data.session) return { ok: true, data: null };
+    if (!session.data.session) return { ok: true, data: { kind: 'unassigned' } };
+    const state = await this.callRpc<{ state: string }>('get_my_profile_state', {});
+    if (!state.ok) return state;
+    if (state.data.state === 'missing') return { ok: true, data: { kind: 'unassigned' } };
+    if (state.data.state === 'inactive') return { ok: true, data: { kind: 'inactive' } };
     const query = this.client.from('profiles') as ProfileQuery;
     const { data, error } = await query
-      .select('id,display_name,preferred_locale,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)')
+      .select('id,display_name,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)')
       .eq('id', session.data.session.user.id)
       .maybeSingle();
     if (error) return failure(error);
-    return { ok: true, data: data ? mapProfile(data) : null };
+    const user = data ? mapProfile(data) : null;
+    return { ok: true, data: user ? { kind: 'active', user } : { kind: 'unassigned' } };
   }
 
   private async selectRows(table: string, columns: string): Promise<RepositoryResult<Record<string, unknown>[]>> {
@@ -81,7 +107,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (!session.data.session) return failure({ code: '42501', message: 'No active session' });
 
     const results = await Promise.all([
-      this.selectRows('profiles', 'id,display_name,preferred_locale,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)'),
+      this.selectRows('profiles', 'id,display_name,department,job_title,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)'),
       this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,project_members!project_members_project_id_fkey(profile_id)'),
       this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date'),
       this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date'),
@@ -255,6 +281,38 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
   async setMyLocale(locale: 'zh-CN' | 'en'): Promise<RepositoryResult<void>> {
     const result = await this.callRpc<null>('set_my_locale', { p_locale: locale });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>> {
+    const result = await this.selectRows('profiles', 'id,display_name,email,department,job_title,is_active,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)');
+    if (!result.ok) return result;
+    const users = result.data.map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
+    return { ok: true, data: users };
+  }
+  async approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('approve_pending_user', {
+      p_target_user_id: input.userId,
+      p_display_name: input.displayName,
+      p_email: input.email,
+      p_department: input.department,
+      p_job_title: input.jobTitle,
+      p_role: input.role,
+    });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async updateUserProfile(input: UpdateUserInput): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('update_user_profile', {
+      p_target_user_id: input.userId,
+      p_display_name: input.displayName,
+      p_email: input.email,
+      p_department: input.department,
+      p_job_title: input.jobTitle,
+      p_role: input.role,
+    });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('set_user_active', { p_target_user_id: userId, p_is_active: active });
     return result.ok ? { ok: true, data: undefined } : result;
   }
   async beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>> {

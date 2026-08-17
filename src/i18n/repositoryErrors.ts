@@ -5,6 +5,7 @@ const errorKeys: Record<RepositoryErrorCode, MessageKey> = {
   unauthorized: 'common.requestUnauthorized',
   validation: 'common.requestValidation',
   conflict: 'common.requestConflict',
+  duplicate: 'common.requestDuplicate',
   network: 'common.requestFailed',
   unknown: 'common.requestFailed',
 };

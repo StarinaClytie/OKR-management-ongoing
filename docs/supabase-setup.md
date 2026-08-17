@@ -30,6 +30,7 @@ npx supabase db lint
 2. `supabase/migrations/202608130002_security.sql`
 3. `supabase/migrations/202608130003_storage.sql`
 4. `supabase/migrations/202608140001_real_kr_risk_i18n.sql`
+5. `supabase/migrations/202608170001_admin_users.sql`
 
 获明确批准后才运行：
 

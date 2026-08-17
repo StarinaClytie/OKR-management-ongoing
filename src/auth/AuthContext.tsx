@@ -14,9 +14,10 @@ const selectableUserIds = new Set([
 export const selectableUsers = users.filter((user) => selectableUserIds.has(user.id));
 
 export interface AuthContextValue {
-  status: 'loading' | 'signed_out' | 'unassigned' | 'ready';
+  status: 'loading' | 'signed_out' | 'unassigned' | 'inactive' | 'ready';
   mode: AppMode;
   currentUser: User | undefined;
+  email?: string;
   selectableUsers: readonly User[];
   selectUser: (userId: string) => void;
   signOut: () => Promise<void>;
@@ -36,6 +37,7 @@ export function AuthProvider({ children, initialUserId = 'user-employee' }: Auth
       currentUser,
       status: currentUser ? 'ready' : 'unassigned',
       mode: 'demo',
+      email: undefined,
       selectableUsers,
       selectUser: setCurrentUserId,
       signOut: async () => undefined,

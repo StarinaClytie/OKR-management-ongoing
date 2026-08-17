@@ -1,13 +1,6 @@
 import { useAuth } from '../auth/AuthContext';
+import { roleLabels } from '../auth/roleLabels';
 import { useLocale } from '../i18n/LocaleProvider';
-
-const roleLabels = {
-  administrator: 'role.administrator',
-  management: 'role.management',
-  project_leader: 'role.projectLeader',
-  employee: 'role.employee',
-  hr: 'role.hr',
-} as const;
 
 export function RoleSwitcher() {
   const { t } = useLocale();
