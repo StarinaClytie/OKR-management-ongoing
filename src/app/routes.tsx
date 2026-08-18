@@ -9,6 +9,7 @@ import { DailyReportsPage } from '../pages/DailyReportsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { OkrManagementPage } from '../pages/OkrManagementPage';
 import { ProfilePage } from '../pages/ProfilePage';
+import { ProjectDetailPage } from '../pages/ProjectDetailPage';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { TeamPage } from '../pages/TeamPage';
@@ -46,6 +47,7 @@ export function AppRoutes() {
         ))}
         <Route path="/access-denied" element={<AccessDeniedPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

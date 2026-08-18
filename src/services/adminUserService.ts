@@ -27,7 +27,16 @@ export interface InviteUserInput {
 }
 
 export type InviteUserOutcome = 'invited' | 'recovered' | 'already_member';
-export type InviteUserErrorCode = 'unauthorized' | 'forbidden' | 'invalid_email' | 'provisioning_failed' | 'recovery_invite_failed' | 'network';
+export type InviteUserErrorCode =
+  | 'unauthorized'
+  | 'forbidden'
+  | 'invalid_email'
+  | 'rate_limited'
+  | 'email_not_authorized'
+  | 'email_delivery_failed'
+  | 'provisioning_failed'
+  | 'recovery_invite_failed'
+  | 'network';
 
 export type InviteUserResult =
   | { ok: true; outcome: InviteUserOutcome; userId?: string; email: string; invitationSent: boolean }
@@ -135,9 +144,12 @@ export class AdminUserService {
         const normalized: InviteUserErrorCode =
           code === 'unauthorized' || code === 'forbidden' ? 'unauthorized'
             : code === 'invalid_email' ? 'invalid_email'
-              : code === 'provisioning_failed' ? 'provisioning_failed'
-                : code === 'recovery_invite_failed' ? 'recovery_invite_failed'
-                  : 'network';
+              : code === 'rate_limited' ? 'rate_limited'
+                : code === 'email_not_authorized' ? 'email_not_authorized'
+                  : code === 'email_delivery_failed' ? 'email_delivery_failed'
+                    : code === 'provisioning_failed' ? 'provisioning_failed'
+                      : code === 'recovery_invite_failed' ? 'recovery_invite_failed'
+                        : 'network';
         return { ok: false, error: { code: normalized, message: normalized === 'unauthorized' ? '无权访问请求的资源' : '请求未完成，请稍后重试' } };
       }
 

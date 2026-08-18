@@ -1,8 +1,8 @@
 import type { DashboardData } from '../mocks/repository';
-import type { Classification, DailyReport, ReportStatus, Role, User } from '../domain/types';
+import type { Classification, DailyReport, ProjectStatus, ReportStatus, Role, User } from '../domain/types';
 
 export type AppMode = 'demo' | 'supabase';
-export type RepositoryErrorCode = 'unauthorized' | 'validation' | 'conflict' | 'duplicate' | 'network' | 'unknown';
+export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'network' | 'unknown';
 
 export type RepositoryResult<T> =
   | { ok: true; data: T }
@@ -108,7 +108,56 @@ export interface OrganizationUser {
   jobTitle: string;
   role: Role;
   isActive: boolean;
+  onboardingCompleted: boolean;
   projectIds: string[];
+}
+
+export interface ProjectCreateInput {
+  name: string;
+  description: string;
+  leaderId: string;
+  startDate: string;
+  dueDate: string;
+  classification: Classification;
+  status: ProjectStatus;
+  memberIds: string[];
+}
+
+export interface ProjectUpdateInput {
+  projectId: string;
+  name: string;
+  description: string;
+  startDate: string;
+  dueDate: string;
+  classification: Classification;
+  status: ProjectStatus;
+}
+
+export interface ProjectMemberInfo {
+  id: string;
+  name: string;
+  role: Role;
+  department: string;
+  jobTitle: string;
+  isActive: boolean;
+  onboardingCompleted: boolean;
+  isLeader: boolean;
+}
+
+export interface ProjectDetail {
+  id: string;
+  name: string;
+  description: string;
+  leaderId: string;
+  leaderName: string;
+  classification: Classification;
+  startDate: string;
+  dueDate: string;
+  status: ProjectStatus;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  members: ProjectMemberInfo[];
 }
 
 export interface ApprovePendingUserInput {
@@ -135,6 +184,14 @@ export interface OkrRepository {
   getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>>;
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>>;
+  createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>>;
+  updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>>;
+  setProjectLeader(projectId: string, leaderId: string): Promise<RepositoryResult<void>>;
+  setProjectMembers(projectId: string, memberIds: string[]): Promise<RepositoryResult<void>>;
+  setProjectStatus(projectId: string, status: ProjectStatus): Promise<RepositoryResult<void>>;
+  archiveProject(projectId: string): Promise<RepositoryResult<void>>;
+  restoreProject(projectId: string): Promise<RepositoryResult<void>>;
+  getProjectDetail(projectId: string): Promise<RepositoryResult<ProjectDetail>>;
   approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>>;
   updateUserProfile(input: UpdateUserInput): Promise<RepositoryResult<void>>;
   setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>>;

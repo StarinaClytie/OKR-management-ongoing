@@ -1,6 +1,6 @@
 import type { DashboardData } from '../mocks/repository';
-import type { DailyReport, Role, User } from '../domain/types';
-import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, RepositoryErrorCode, RepositoryResult, SupabaseClientLike, UpdateUserInput } from './types';
+import type { DailyReport, ProjectStatus, Role, User } from '../domain/types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, RepositoryErrorCode, RepositoryResult, SupabaseClientLike, UpdateUserInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
@@ -22,12 +22,18 @@ function failure<T>(error: { code?: string; message: string } | null): Repositor
       ? 'conflict'
       : source === '23505'
         ? 'duplicate'
-        : source.startsWith('22') || source === '23514' || source === '23503'
-          ? 'validation'
-          : error
-            ? 'network'
-            : 'unknown';
+        : source === 'DTC01'
+          ? 'date_conflict'
+          : source.startsWith('22') || source === '23514' || source === '23503'
+            ? 'validation'
+            : error
+              ? 'network'
+              : 'unknown';
   return { ok: false, error: { code, message: code === 'unauthorized' ? '无权访问请求的资源' : '请求未完成，请稍后重试' } };
+}
+
+function notFound<T>(): RepositoryResult<T> {
+  return { ok: false, error: { code: 'not_found', message: '请求的资源不存在' } };
 }
 
 function mapProfile(row: Record<string, unknown>): User | null {
@@ -61,6 +67,7 @@ function mapOrganizationUser(row: Record<string, unknown>): OrganizationUser | n
     jobTitle: typeof row.job_title === 'string' ? row.job_title : '',
     role: role as Role,
     isActive: row.is_active === true,
+    onboardingCompleted: row.onboarding_completed === true,
     projectIds: Array.isArray(row.project_members) ? row.project_members.map((item) => String((item as Record<string, unknown>).project_id)) : [],
   };
 }
@@ -108,7 +115,7 @@ export class SupabaseOkrRepository implements OkrRepository {
 
     const results = await Promise.all([
       this.selectRows('profiles', 'id,display_name,department,job_title,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)'),
-      this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,project_members!project_members_project_id_fkey(profile_id)'),
+      this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,status,project_members!project_members_project_id_fkey(profile_id)'),
       this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date'),
       this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date'),
       this.selectRows('progress_baselines', 'id,key_result_id,planned_for,planned_value'),
@@ -142,6 +149,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       id: String(row.id), name: String(row.name), description: String(row.description ?? ''), leaderId: String(row.leader_id),
       memberIds: Array.isArray(row.project_members) ? row.project_members.map((member) => String((member as Record<string, unknown>).profile_id)) : [],
       classification: row.classification as import('../domain/types').Classification, startDate: dateValue(row.start_date), dueDate: dateValue(row.due_date), status: 'on_track' as const,
+      lifecycle: (row.status as ProjectStatus) ?? 'active',
     }));
     const milestones = milestoneResult.data.flatMap((row) => {
       const keyResult = typeof row.key_result_id === 'string' ? keyResultsById.get(row.key_result_id) : undefined;
@@ -284,7 +292,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     return result.ok ? { ok: true, data: undefined } : result;
   }
   async listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>> {
-    const result = await this.selectRows('profiles', 'id,display_name,email,department,job_title,is_active,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)');
+    const result = await this.selectRows('profiles', 'id,display_name,email,department,job_title,is_active,onboarding_completed,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)');
     if (!result.ok) return result;
     const users = result.data.map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
     return { ok: true, data: users };
@@ -314,6 +322,56 @@ export class SupabaseOkrRepository implements OkrRepository {
   async setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>> {
     const result = await this.callRpc<null>('set_user_active', { p_target_user_id: userId, p_is_active: active });
     return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>> {
+    const result = await this.callRpc<string>('create_project', {
+      p_name: input.name,
+      p_description: input.description,
+      p_leader_id: input.leaderId,
+      p_start_date: input.startDate,
+      p_due_date: input.dueDate,
+      p_classification: input.classification,
+      p_status: input.status,
+      p_member_ids: input.memberIds,
+    });
+    return result.ok ? { ok: true, data: { id: result.data } } : result;
+  }
+  async updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('update_project', {
+      p_project_id: input.projectId,
+      p_name: input.name,
+      p_description: input.description,
+      p_start_date: input.startDate,
+      p_due_date: input.dueDate,
+      p_classification: input.classification,
+      p_status: input.status,
+    });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async setProjectLeader(projectId: string, leaderId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('set_project_leader', { p_project_id: projectId, p_leader_id: leaderId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async setProjectMembers(projectId: string, memberIds: string[]): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('set_project_members', { p_project_id: projectId, p_member_ids: memberIds });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async setProjectStatus(projectId: string, status: ProjectStatus): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('set_project_status', { p_project_id: projectId, p_status: status });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async archiveProject(projectId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('archive_project', { p_project_id: projectId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async restoreProject(projectId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('restore_project', { p_project_id: projectId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async getProjectDetail(projectId: string): Promise<RepositoryResult<ProjectDetail>> {
+    const result = await this.callRpc<ProjectDetail | null>('get_project_detail', { p_project_id: projectId });
+    if (!result.ok) return result;
+    return result.data === null ? notFound() : { ok: true, data: result.data };
   }
   async beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>> {
     return this.callRpc<AttachmentUploadTarget>('begin_attachment_upload', input);

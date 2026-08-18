@@ -90,10 +90,14 @@ select is(
 -- employee profile is referenced by `on delete restrict` foreign keys
 -- (objectives.owner_id, daily_reports.author_id), so the cascade is rejected.
 -- This documents why delete-account revokes auth access instead of hard-deleting.
+-- The DELETE must run under a privileged role rather than `authenticated`, so
+-- PostgreSQL reaches FK enforcement instead of failing first on the 42501
+-- permission check against `auth.users`.
 -- ---------------------------------------------------------------------------
+reset role;
 select throws_ok(
   $$delete from auth.users where id = '12000000-0000-0000-0000-000000000002'$$,
-  '23503', 'violates foreign key constraint', 'hard auth deletion is blocked by restrict foreign keys that preserve business records'
+  '23503', 'update or delete on table "profiles" violates foreign key constraint "objectives_owner_id_fkey" on table "objectives"', 'hard auth deletion is blocked by restrict foreign keys that preserve business records'
 );
 
 select * from finish();

@@ -84,6 +84,24 @@ describe('AdminUserService.inviteUser', () => {
     expect(await service.inviteUser(inviteInput)).toEqual({ ok: false, error: { code: 'invalid_email', message: '请求未完成，请稍后重试' } });
   });
 
+  it('preserves the rate_limited code', async () => {
+    const invoke = vi.fn(async () => ({ data: { ok: false, code: 'rate_limited' }, error: null }));
+    const service = new AdminUserService(clientWithInvoke(invoke));
+    expect(await service.inviteUser(inviteInput)).toEqual({ ok: false, error: { code: 'rate_limited', message: '请求未完成，请稍后重试' } });
+  });
+
+  it('preserves the email_not_authorized code', async () => {
+    const invoke = vi.fn(async () => ({ data: { ok: false, code: 'email_not_authorized' }, error: null }));
+    const service = new AdminUserService(clientWithInvoke(invoke));
+    expect(await service.inviteUser(inviteInput)).toEqual({ ok: false, error: { code: 'email_not_authorized', message: '请求未完成，请稍后重试' } });
+  });
+
+  it('preserves the email_delivery_failed code', async () => {
+    const invoke = vi.fn(async () => ({ data: { ok: false, code: 'email_delivery_failed' }, error: null }));
+    const service = new AdminUserService(clientWithInvoke(invoke));
+    expect(await service.inviteUser(inviteInput)).toEqual({ ok: false, error: { code: 'email_delivery_failed', message: '请求未完成，请稍后重试' } });
+  });
+
   it('preserves the provisioning_failed code', async () => {
     const invoke = vi.fn(async () => ({ data: { ok: false, code: 'provisioning_failed' }, error: null }));
     const service = new AdminUserService(clientWithInvoke(invoke));
