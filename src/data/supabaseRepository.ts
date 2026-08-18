@@ -1,6 +1,6 @@
 import type { DashboardData } from '../mocks/repository';
 import type { DailyReport, ProjectStatus, Role, User } from '../domain/types';
-import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, RepositoryErrorCode, RepositoryResult, SupabaseClientLike, UpdateUserInput } from './types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
@@ -73,6 +73,32 @@ function mapOrganizationUser(row: Record<string, unknown>): OrganizationUser | n
 }
 
 function numberValue(value: unknown): number { return typeof value === 'number' ? value : Number(value) || 0; }
+
+function mapResource(row: Record<string, unknown>): Resource | null {
+  if (typeof row.id !== 'string' || typeof row.name !== 'string' || typeof row.owner_id !== 'string') return null;
+  const owner = row.profiles as Record<string, unknown> | undefined;
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category as Resource['category'],
+    resourceKind: row.resource_kind as Resource['resourceKind'],
+    description: typeof row.description === 'string' ? row.description : '',
+    ownerId: row.owner_id,
+    ownerName: typeof owner?.display_name === 'string' ? owner.display_name : '',
+    location: typeof row.location === 'string' ? row.location : '',
+    purchaseDate: typeof row.purchase_date === 'string' ? row.purchase_date.slice(0, 10) : null,
+    purchaseVendor: typeof row.purchase_vendor === 'string' ? row.purchase_vendor : null,
+    purchaseReference: typeof row.purchase_reference === 'string' ? row.purchase_reference : null,
+    usageNotes: typeof row.usage_notes === 'string' ? row.usage_notes : null,
+    manualUrl: typeof row.manual_url === 'string' ? row.manual_url : null,
+    quantity: row.quantity === null || row.quantity === undefined ? null : numberValue(row.quantity),
+    unit: typeof row.unit === 'string' ? row.unit : null,
+    status: row.status as Resource['status'],
+    createdAt: typeof row.created_at === 'string' ? row.created_at : '',
+    updatedAt: typeof row.updated_at === 'string' ? row.updated_at : '',
+    archivedAt: typeof row.archived_at === 'string' ? row.archived_at : null,
+  };
+}
 function dateValue(value: unknown): string { return typeof value === 'string' ? value.slice(0, 10) : ''; }
 function statusForProgress(progress: number): 'on_track' | 'complete' { return progress >= 100 ? 'complete' : 'on_track'; }
 function riskStatus(probability: number, impact: number, resolved: boolean): 'on_track' | 'at_risk' | 'off_track' {
@@ -373,6 +399,117 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (!result.ok) return result;
     return result.data === null ? notFound() : { ok: true, data: result.data };
   }
+  async listResources(): Promise<RepositoryResult<Resource[]>> {
+    const result = await this.selectRows(
+      'resources',
+      'id,name,category,resource_kind,description,owner_id,location,purchase_date,purchase_vendor,purchase_reference,usage_notes,manual_url,quantity,unit,status,created_at,updated_at,archived_at,profiles!resources_owner_id_fkey(display_name)',
+    );
+    if (!result.ok) return result;
+    const resources = result.data.map(mapResource).filter((resource): resource is Resource => resource !== null);
+    return { ok: true, data: resources };
+  }
+
+  async getResourceDetail(resourceId: string): Promise<RepositoryResult<ResourceDetail>> {
+    const result = await this.callRpc<ResourceDetail | null>('get_resource_detail', { p_resource_id: resourceId });
+    if (!result.ok) return result;
+    return result.data === null ? notFound() : { ok: true, data: result.data };
+  }
+
+  async createResource(input: CreateResourceInput): Promise<RepositoryResult<{ id: string }>> {
+    const result = await this.callRpc<string>('create_resource', {
+      p_name: input.name,
+      p_category: input.category,
+      p_resource_kind: input.resourceKind,
+      p_description: input.description,
+      p_location: input.location,
+      p_purchase_date: input.purchaseDate ?? null,
+      p_purchase_vendor: input.purchaseVendor,
+      p_purchase_reference: input.purchaseReference,
+      p_usage_notes: input.usageNotes,
+      p_manual_url: input.manualUrl,
+      p_quantity: input.quantity,
+      p_unit: input.unit,
+    });
+    return result.ok ? { ok: true, data: { id: result.data } } : result;
+  }
+
+  async updateResource(input: UpdateResourceInput): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('update_resource', {
+      p_resource_id: input.resourceId,
+      p_name: input.name,
+      p_category: input.category,
+      p_resource_kind: input.resourceKind,
+      p_description: input.description,
+      p_location: input.location,
+      p_purchase_date: input.purchaseDate ?? null,
+      p_purchase_vendor: input.purchaseVendor,
+      p_purchase_reference: input.purchaseReference,
+      p_usage_notes: input.usageNotes,
+      p_manual_url: input.manualUrl,
+      p_quantity: input.quantity,
+      p_unit: input.unit,
+      p_status: input.status,
+    });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+
+  async archiveResource(resourceId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('archive_resource', { p_resource_id: resourceId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+
+  async restoreResource(resourceId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('restore_resource', { p_resource_id: resourceId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+
+  async reportResourceProblem(input: ReportResourceProblemInput): Promise<RepositoryResult<ReportResourceProblemResult>> {
+    const result = await this.callRpc<ReportResourceProblemResult>('report_resource_problem', {
+      p_resource_id: input.resourceId,
+      p_problem_type: input.problemType,
+      p_description: input.description,
+    });
+    return result.ok ? { ok: true, data: result.data } : result;
+  }
+
+  async resolveResourceProblem(input: ResolveResourceProblemInput): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('resolve_resource_problem', {
+      p_problem_id: input.problemId,
+      p_resolution_note: input.resolutionNote,
+    });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+
+  async retryResourceProblemNotification(problemId: string): Promise<RepositoryResult<RetryResourceProblemNotificationResult>> {
+    return this.callRpc<RetryResourceProblemNotificationResult>('retry_resource_problem_notification', { p_problem_id: problemId });
+  }
+
+  async beginResourceAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<ResourceUploadTarget>> {
+    return this.callRpc<ResourceUploadTarget>('begin_resource_attachment_upload', input);
+  }
+
+  async finalizeResourceAttachmentUpload(id: string): Promise<RepositoryResult<unknown>> {
+    return this.callRpc('finalize_resource_attachment_upload', { p_attachment_id: id });
+  }
+
+  async createResourceAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>> {
+    const authorized = await this.callRpc<{ bucket: string; path: string; expiresIn: number }>('create_resource_attachment_download', { p_attachment_id: id });
+    if (!authorized.ok) return authorized;
+    const signed = await this.client.storage.from(authorized.data.bucket).createSignedUrl(authorized.data.path, authorized.data.expiresIn);
+    return signed.error || !signed.data ? failure(signed.error) : { ok: true, data: { url: signed.data.signedUrl } };
+  }
+
+  async uploadResourceAttachment(resourceId: string, file: File): Promise<RepositoryResult<{ id: string }>> {
+    const invalid = validateAttachment(file);
+    if (invalid) return { ok: false, error: { code: 'validation', message: invalid.message } };
+    const pending = await this.beginResourceAttachmentUpload({ p_resource_id: resourceId, p_original_name: sanitizeFilename(file.name), p_mime_type: file.type, p_byte_size: file.size });
+    if (!pending.ok) return pending;
+    const uploaded = await this.client.storage.from(pending.data.bucket).upload(pending.data.path, file, { contentType: file.type, upsert: false });
+    if (uploaded.error) return failure(uploaded.error);
+    const finalized = await this.finalizeResourceAttachmentUpload(pending.data.id);
+    return finalized.ok ? { ok: true, data: { id: pending.data.id } } : (finalized as RepositoryResult<{ id: string }>);
+  }
+
   async beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>> {
     return this.callRpc<AttachmentUploadTarget>('begin_attachment_upload', input);
   }

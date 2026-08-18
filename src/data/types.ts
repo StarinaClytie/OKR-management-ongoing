@@ -1,5 +1,5 @@
 import type { DashboardData } from '../mocks/repository';
-import type { Classification, DailyReport, ProjectStatus, ReportStatus, Role, User } from '../domain/types';
+import type { Classification, DailyReport, ProjectStatus, ReportStatus, ResourceCategory, ResourceKind, ResourceNotificationStatus, ResourceProblemStatus, ResourceProblemType, ResourceStatus, Role, User } from '../domain/types';
 
 export type AppMode = 'demo' | 'supabase';
 export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'network' | 'unknown';
@@ -57,6 +57,7 @@ export interface SupabaseClientLike {
 }
 
 export interface AttachmentUploadTarget { id: string; path: string; bucket: 'report-attachments' }
+export interface ResourceUploadTarget { id: string; path: string; bucket: 'resource-documents' }
 
 export interface DailyReportInput {
   projectId: string;
@@ -169,6 +170,112 @@ export interface ApprovePendingUserInput {
   role: Role;
 }
 
+export interface Resource {
+  id: string;
+  name: string;
+  category: ResourceCategory;
+  resourceKind: ResourceKind;
+  description: string;
+  ownerId: string;
+  ownerName: string;
+  location: string;
+  purchaseDate: string | null;
+  purchaseVendor: string | null;
+  purchaseReference: string | null;
+  usageNotes: string | null;
+  manualUrl: string | null;
+  quantity: number | null;
+  unit: string | null;
+  status: ResourceStatus;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+}
+
+export interface ResourceAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface ResourceProblem {
+  id: string;
+  problemType: ResourceProblemType;
+  description: string;
+  status: ResourceProblemStatus;
+  reporterId: string;
+  reporterName: string;
+  reportedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolvedByName: string | null;
+  resolutionNote: string | null;
+  notificationStatus: ResourceNotificationStatus;
+  notificationErrorCode: string | null;
+}
+
+export interface ResourceDetail extends Resource {
+  attachments: ResourceAttachment[];
+  problems: ResourceProblem[];
+}
+
+export interface CreateResourceInput {
+  name: string;
+  category: ResourceCategory;
+  resourceKind: ResourceKind;
+  description: string;
+  location: string;
+  purchaseDate: string | null;
+  purchaseVendor: string;
+  purchaseReference: string;
+  usageNotes: string;
+  manualUrl: string;
+  quantity: number | null;
+  unit: string;
+}
+
+export interface UpdateResourceInput {
+  resourceId: string;
+  name: string;
+  category: ResourceCategory;
+  resourceKind: ResourceKind;
+  description: string;
+  location: string;
+  purchaseDate: string | null;
+  purchaseVendor: string;
+  purchaseReference: string;
+  usageNotes: string;
+  manualUrl: string;
+  quantity: number | null;
+  unit: string;
+  status: ResourceStatus;
+}
+
+export interface ReportResourceProblemInput {
+  resourceId: string;
+  problemType: ResourceProblemType;
+  description: string;
+}
+
+export interface ReportResourceProblemResult {
+  problemId: string;
+  notificationId: string;
+}
+
+export interface ResolveResourceProblemInput {
+  problemId: string;
+  resolutionNote: string;
+}
+
+export interface RetryResourceProblemNotificationResult {
+  problemId: string;
+  notificationId: string;
+  status: ResourceNotificationStatus;
+  errorCode: string | null;
+}
+
 export interface UpdateUserInput {
   userId: string;
   displayName: string;
@@ -192,6 +299,19 @@ export interface OkrRepository {
   archiveProject(projectId: string): Promise<RepositoryResult<void>>;
   restoreProject(projectId: string): Promise<RepositoryResult<void>>;
   getProjectDetail(projectId: string): Promise<RepositoryResult<ProjectDetail>>;
+  listResources(): Promise<RepositoryResult<Resource[]>>;
+  getResourceDetail(resourceId: string): Promise<RepositoryResult<ResourceDetail>>;
+  createResource(input: CreateResourceInput): Promise<RepositoryResult<{ id: string }>>;
+  updateResource(input: UpdateResourceInput): Promise<RepositoryResult<void>>;
+  archiveResource(resourceId: string): Promise<RepositoryResult<void>>;
+  restoreResource(resourceId: string): Promise<RepositoryResult<void>>;
+  reportResourceProblem(input: ReportResourceProblemInput): Promise<RepositoryResult<ReportResourceProblemResult>>;
+  resolveResourceProblem(input: ResolveResourceProblemInput): Promise<RepositoryResult<void>>;
+  retryResourceProblemNotification(problemId: string): Promise<RepositoryResult<RetryResourceProblemNotificationResult>>;
+  beginResourceAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<ResourceUploadTarget>>;
+  finalizeResourceAttachmentUpload(id: string): Promise<RepositoryResult<unknown>>;
+  createResourceAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>>;
+  uploadResourceAttachment(resourceId: string, file: File): Promise<RepositoryResult<{ id: string }>>;
   approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>>;
   updateUserProfile(input: UpdateUserInput): Promise<RepositoryResult<void>>;
   setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>>;
