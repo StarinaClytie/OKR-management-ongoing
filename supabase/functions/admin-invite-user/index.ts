@@ -20,7 +20,7 @@
 // `approve_pending_user` raises 23505 on an existing profile.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { classifyInviteError } from './classifyInviteError.ts';
+import { classifyInviteError } from '../_shared/classifyInviteError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -124,14 +124,31 @@ Deno.serve(async (req) => {
   const existingAuthUser = (userList?.users ?? []).find((authUser) => normalizeEmail(authUser.email ?? '') === email);
 
   // Provision the profile + role atomically in the caller admin's organization.
-  const provision = async (userId: string) => callerClient.rpc('approve_pending_user', {
-    p_target_user_id: userId,
-    p_display_name: displayName,
-    p_email: email,
-    p_department: department,
-    p_job_title: jobTitle,
-    p_role: role,
-  });
+  // Returns null on success or the RPC error. Because the Auth Admin API and
+  // Postgres are not one transaction, a successful `inviteUserByEmail` can be
+  // followed by a provisioning failure — the dangerous partial-success case
+  // (email link is usable, but no profile/role). Deterministic compensation:
+  // retry once to absorb a transient failure, then surface a specific
+  // `provisioning_failed` result the administrator can act on. 23505 ("profile
+  // already exists") is passed through so callers can treat it as the idempotent
+  // already-provisioned case, never as a new duplicate.
+  const provision = async (userId: string): Promise<{ code?: string; message: string } | null> => {
+    let lastError: { code?: string; message: string } | null = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { error } = await callerClient.rpc('approve_pending_user', {
+        p_target_user_id: userId,
+        p_display_name: displayName,
+        p_email: email,
+        p_department: department,
+        p_job_title: jobTitle,
+        p_role: role,
+      });
+      if (!error) return null;
+      lastError = error;
+      if (error.code === '23505') return error;
+    }
+    return lastError;
+  };
 
   // 6. Dispatch on the existing state.
   if (emailAlreadyOwned || (existingAuthUser && profileIds.has(existingAuthUser.id))) {
@@ -141,7 +158,7 @@ Deno.serve(async (req) => {
   if (existingAuthUser) {
     // Recovery: the auth user exists but has no profile. Complete it; never create
     // a duplicate. If they already confirmed their email, no invitation is needed.
-    const { error: provisionError } = await provision(existingAuthUser.id);
+    const provisionError = await provision(existingAuthUser.id);
     if (provisionError) {
       if (provisionError.code === '23505') return json({ ok: true, outcome: 'already_member', email });
       return json({ ok: false, code: 'provisioning_failed' });
@@ -185,7 +202,7 @@ Deno.serve(async (req) => {
   }
 
   const newUserId = inviteData.user.id;
-  const { error: provisionError } = await provision(newUserId);
+  const provisionError = await provision(newUserId);
   if (provisionError) {
     if (provisionError.code === '23505') return json({ ok: true, outcome: 'already_member', email });
     return json({ ok: false, code: 'provisioning_failed' });

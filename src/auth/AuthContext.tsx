@@ -14,7 +14,7 @@ const selectableUserIds = new Set([
 export const selectableUsers = users.filter((user) => selectableUserIds.has(user.id));
 
 export interface AuthContextValue {
-  status: 'loading' | 'signed_out' | 'unassigned' | 'inactive' | 'invite_pending' | 'ready';
+  status: 'loading' | 'signed_out' | 'unassigned' | 'inactive' | 'invite_pending' | 'invite_failed' | 'ready';
   mode: AppMode;
   currentUser: User | undefined;
   email?: string;

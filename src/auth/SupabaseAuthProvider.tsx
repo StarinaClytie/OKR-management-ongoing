@@ -30,8 +30,8 @@ export interface SupabaseAuthProviderProps extends PropsWithChildren {
 //                       email via `resetPasswordForEmail`.
 //
 // gotrue's `detectSessionInUrl` (enabled by default) consumes that payload and
-// clears it asynchronously, so we snapshot it synchronously on the first render —
-// before any network round-trip.
+// clears the hash asynchronously, so we snapshot it synchronously on the first
+// render — before any network round-trip.
 //
 // This snapshot is only a CANDIDATE setup arrival, never proof of one. To be a
 // candidate it must carry the complete token set gotrue itself requires before
@@ -63,40 +63,23 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
   const [status, setStatus] = useState<AuthContextValue['status']>('loading');
   const [currentUser, setCurrentUser] = useState<User>();
   const [email, setEmail] = useState<string | undefined>();
+  // Reason for an `invite_failed` page: an invalid/expired/used link, or a
+  // provisioning error (a valid callback whose application profile/role cannot
+  // be resolved). They render different safe messages but never expose tokens.
+  const [setupFailure, setSetupFailure] = useState<'expired' | 'provisioning'>();
   const requestVersion = useRef(0);
-  // Did the browser arrive at `/auth/invite` carrying a *complete* implicit
-  // invite callback (type=invite + the full token set)? This is only a candidate:
-  // an expired/reused token with the same shape also matches here and is
-  // distinguished later by initialize()'s error (or the absence of SIGNED_IN).
-  const inviteCandidate = useRef(readInviteCandidate());
-  // The authoritative outcome of Supabase's initialization for the candidate
-  // callback, as returned by client.auth.initialize():
-  //   - 'succeeded' → initialize() resolved with { error: null }, so Supabase
-  //                   actually processed the URL callback (it saved the invitee
-  //                   session and will emit SIGNED_IN). This is what lets a
-  //                   subsequent SIGNED_IN validate the candidate.
-  //   - 'failed'    → initialize() resolved with { error }, so the callback was
-  //                   invalid / expired / reused / forged; Supabase preserved any
-  //                   pre-existing session and emitted no SIGNED_IN.
-  //   - undefined   → the callback is still unresolved; nothing may be resolved
-  //                   against the normal profile/role path yet.
-  const inviteResolution = useRef<'succeeded' | 'failed' | undefined>(undefined);
-  // Authoritative proof the candidate callback was real: set only when Supabase
-  // emits SIGNED_IN with a session while the candidate is still open AND
-  // initialize() already reported 'succeeded'. A failed callback falls back to
-  // any pre-existing session WITHOUT emitting SIGNED_IN, so this stays false and
-  // no password setup is exposed.
-  const inviteValidated = useRef(false);
-  // True while a password-setup transaction (updateUser + complete_onboarding)
-  // is in flight. A successful updateUser emits USER_UPDATED — possibly
-  // synchronously, before updateUser even resolves — and that event must NOT
-  // clear the one-shot invite flags: onboarding is only complete once the
-  // complete_onboarding RPC has persisted onboarding_completed. This flag makes
-  // the state machine explicit instead of relying on event timing.
-  const onboardingCompletionInProgress = useRef(false);
+  // Snapshot the setup candidate once, synchronously, before gotrue can consume
+  // or clear the URL hash. Immutable for the lifetime of this mount.
+  const setupCandidate = useRef(readInviteCandidate()).current;
+  // While true, the setup flow owns the status and every auth event except
+  // SIGNED_OUT is ignored: normal profile/role resolution (ready / unassigned /
+  // inactive / the dashboard) is frozen until the callback reaches a definitive
+  // outcome and, if it succeeds, until password setup completes. Only SIGNED_OUT
+  // and the password-setup transaction's explicit completion clear this.
+  const setupHold = useRef(setupCandidate);
   // The latest loadSession(), exposed so the password-setup completion path can
-  // re-resolve the session/profile through the normal profile/role path after
-  // onboarding succeeds (rather than waiting for another auth event).
+  // re-resolve the session/profile through the normal path after onboarding
+  // succeeds (rather than waiting for another auth event).
   const loadSessionRef = useRef<(session: SessionLike | null) => Promise<void>>(async () => {});
   const [locale, setLocale] = useState<Locale>(readStoredLocale);
 
@@ -107,42 +90,17 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
   useEffect(() => {
     let mounted = true;
 
+    // Resolve the normal (non-setup) profile/role path. This is the only place
+    // that reaches `getCurrentProfile` for an already-provisioned identity; a
+    // candidate setup callback is deliberately frozen out of this path until it
+    // reaches a definitive outcome.
     async function loadSession(session: SessionLike | null) {
       const version = ++requestVersion.current;
       setCurrentUser(undefined);
       setEmail(session?.user.email);
       setLocale(readStoredLocale());
       if (!session) {
-        // A candidate invite callback must not resolve to a signed-out state
-        // while the callback is still unresolved (or succeeded but its SIGNED_IN
-        // session has not arrived yet). Hold "verifying"; the initialize()
-        // driver exits invite mode on failure.
-        if (inviteCandidate.current) {
-          setStatus('loading');
-          return;
-        }
-        inviteCandidate.current = false;
-        inviteValidated.current = false;
         setStatus('signed_out');
-        return;
-      }
-      // Invitation acceptance is driven by the invite route, NOT by
-      // `email_confirmed_at === null`: Supabase confirms the email when the
-      // invite link is verified, so `email_confirmed_at` is already set by the
-      // time the browser lands here.
-      //
-      // A candidate callback URL plus a session is NOT enough to enter the
-      // password-setup flow: a failed callback leaves a pre-existing session in
-      // place without emitting SIGNED_IN. Only a session established by a
-      // SIGNED_IN event (inviteValidated) exposes InviteAccept. Until that
-      // confirmation arrives, keep verifying instead of resolving the normal
-      // profile/role path (which could briefly render a pre-existing session).
-      if (inviteCandidate.current) {
-        if (inviteValidated.current) {
-          setStatus('invite_pending');
-          return;
-        }
-        setStatus('loading');
         return;
       }
       setStatus('loading');
@@ -167,32 +125,22 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
     loadSessionRef.current = loadSession;
 
     const { data } = client.auth.onAuthStateChange((event, session) => {
-      // The authoritative proof of a real invite/setup callback: after
-      // initialize() resolves successfully, Supabase emits SIGNED_IN with the
-      // freshly established session (deferred via setTimeout). It does NOT emit
-      // this on a failed exchange (forged/expired/reused token), where it
-      // silently keeps any pre-existing session instead. Gating on `succeeded`
-      // also keeps a pre-existing session (re-auth / session recovery emits
-      // SIGNED_IN too) from validating a candidate that never initialized.
-      if (event === 'SIGNED_IN' && session && inviteCandidate.current && inviteResolution.current === 'succeeded') {
-        inviteValidated.current = true;
-      }
-      // Completing the invite (a successful password update emits USER_UPDATED)
-      // or signing out clears the one-shot invite flags so the next load resolves
-      // the normal profile/role path instead of re-entering the invite form.
-      //
-      // Exception: a USER_UPDATED emitted while a password-setup transaction is
-      // in flight (updateUser + complete_onboarding) must NOT clear the flags —
-      // onboarding is only complete once the RPC succeeds. Clearing here would
-      // let the normal profile/dashboard render before onboarding_completed is
-      // persisted. SIGNED_OUT still clears unconditionally, and USER_UPDATED
-      // outside an in-flight setup keeps its existing behavior.
+      // SIGNED_OUT is a genuine user action and always wins: leave setup mode
+      // and return to the login form.
       if (event === 'SIGNED_OUT') {
-        inviteCandidate.current = false;
-        inviteValidated.current = false;
-      } else if (event === 'USER_UPDATED' && !onboardingCompletionInProgress.current) {
-        inviteCandidate.current = false;
-        inviteValidated.current = false;
+        setupHold.current = false;
+        setSetupFailure(undefined);
+        void loadSession(null);
+        return;
+      }
+      // While the setup flow owns the status (a candidate callback is resolving,
+      // awaiting password setup, or has failed with a definitive error page), no
+      // other auth event may re-resolve the normal profile/dashboard. This makes
+      // the outcome independent of whether SIGNED_IN / INITIAL_SESSION /
+      // PASSWORD_RECOVERY arrive before or after initialize() settles, and
+      // prevents a stale previous-user session from ever replacing it.
+      if (setupHold.current) {
+        return;
       }
       void loadSession(session);
     });
@@ -200,24 +148,23 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
     // The provider is the single owner of auth initialization. The browser
     // client is constructed with `skipAutoInitialize: true`, so the GoTrueClient
     // constructor never starts initialization — this is the first and only call.
-    // It runs AFTER onAuthStateChange above, so no SIGNED_IN / INITIAL_SESSION /
-    // SIGNED_OUT event can be emitted before the subscription is installed.
-    //
-    // A candidate invite callback must not resolve any session until Supabase's
-    // initialization has produced a definitive outcome:
-    //   - `{ error }`      → the callback failed (invalid/expired/reused/forged);
-    //                        Supabase preserved any prior session and emitted no
-    //                        SIGNED_IN.
-    //   - `{ error: null }` → the callback succeeded; the invitee session is
-    //                        delivered by the deferred SIGNED_IN event.
+    // It runs AFTER onAuthStateChange above, so no event can be emitted before
+    // the subscription is installed.
     const initialize = client.auth.initialize;
     if (!initialize) {
-      void client.auth.getSession().then(({ data, error }) => {
+      void client.auth.getSession().then(({ data: sessionData, error: sessionError }) => {
         if (!mounted) return;
-        void loadSession(error ? null : data.session);
+        void loadSession(sessionError ? null : sessionData.session);
       });
     } else {
       void (async () => {
+        // Authoritative initialization outcome, independent of auth-event
+        // ordering. gotrue's initialize() returns `{ error: null }` iff it
+        // successfully exchanged a URL callback (and, for a valid implicit
+        // callback, REPLACED any stored session with the invitee session
+        // produced by that callback). A non-null error means the callback failed
+        // (invalid / expired / reused / forged) and any pre-existing session was
+        // preserved untouched.
         let error: { message: string } | null;
         try {
           ({ error } = await initialize());
@@ -225,21 +172,67 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
           error = { message: 'auth initialization failed' };
         }
         if (!mounted) return;
-        if (inviteCandidate.current) {
-          if (error) {
-            inviteResolution.current = 'failed';
-            inviteCandidate.current = false;
-            inviteValidated.current = false;
-          } else {
-            inviteResolution.current = 'succeeded';
-          }
-        }
-        void client.auth.getSession().then(({ data: sessionData, error: sessionError }) => {
+
+        if (!setupCandidate) {
+          // No setup callback: resolve the normal path.
+          const { data: sessionData, error: sessionError } = await client.auth.getSession();
           if (!mounted) return;
           void loadSession(sessionError ? null : sessionData.session);
-        });
+          return;
+        }
+
+        // A setup candidate is present. Decide a definitive outcome.
+        if (error) {
+          // Invalid / expired / reused / forged callback. Never fall through to
+          // a stale previous-user session or to normal login — show the explicit
+          // expired-invitation page.
+          setSetupFailure('expired');
+          setStatus('invite_failed');
+          return;
+        }
+
+        // Valid callback: the current session IS the invitee session established
+        // by this callback (gotrue overwrote any prior session). Fetch it and
+        // verify the application identity.
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (!mounted) return;
+        const session = sessionError ? null : sessionData.session;
+        if (!session) {
+          // A valid callback always yields a session; treat its absence as an
+          // unusable/expired link rather than falling through.
+          setSetupFailure('expired');
+          setStatus('invite_failed');
+          return;
+        }
+
+        // Resolve the authoritative application profile/role (the database is
+        // the source of truth, NOT raw_user_metadata on the auth user).
+        const result = await repository.getCurrentProfile();
+        if (!mounted) return;
+        if (!result.ok || result.data.kind === 'unassigned') {
+          // A properly administrator-invited user already has a profile + role
+          // before the invitation is usable. A valid callback whose profile/role
+          // cannot be found is therefore a PROVISIONING error, never normal
+          // "waiting for administrator assignment".
+          setSetupFailure('provisioning');
+          setStatus('invite_failed');
+          return;
+        }
+        if (result.data.kind === 'inactive') {
+          // Deactivated before acceptance: the callback may authenticate, but
+          // the account must NOT become active. Deny safely; setting a password
+          // must never reactivate it.
+          setCurrentUser(undefined);
+          setEmail(session.user.email);
+          setStatus('inactive');
+          return;
+        }
+        // Active invitee with a valid callback session: enter account setup.
+        setEmail(session.user.email);
+        setStatus('invite_pending');
       })();
     }
+
     return () => {
       mounted = false;
       requestVersion.current += 1;
@@ -292,12 +285,6 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
           locale={locale}
           email={email}
           setPassword={async (password) => {
-            // Flag the transaction BEFORE updateUser: a successful password
-            // write emits USER_UPDATED (possibly synchronously, inside
-            // updateUser) and that event must not exit invite mode. Onboarding
-            // is complete only after BOTH the password write and the
-            // complete_onboarding RPC have succeeded.
-            onboardingCompletionInProgress.current = true;
             try {
               const { error } = await client.auth.updateUser({ password });
               if (error) return { error };
@@ -311,23 +298,30 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
                 error: { code?: string; message: string } | null;
               }>);
               if (rpcResult.error) return { error: rpcResult.error };
-              // Onboarding is now durable. Explicitly leave invite/setup mode and
-              // re-resolve the session/profile through the normal path (which
-              // reads onboarding_completed=true) instead of waiting for another
-              // auth event.
-              inviteCandidate.current = false;
-              inviteValidated.current = false;
+              // Onboarding is now durable. Release setup mode and re-resolve the
+              // session/profile through the normal path (which reads
+              // onboarding_completed=true and the authoritative DB role) instead
+              // of waiting for another auth event.
+              setupHold.current = false;
               const { data: sessionData, error: sessionError } = await client.auth.getSession();
               await loadSessionRef.current(sessionError ? null : sessionData.session);
               return { error: null };
             } catch (error) {
               return { error: { message: error instanceof Error ? error.message : 'account setup failed' } };
-            } finally {
-              onboardingCompletionInProgress.current = false;
             }
           }}
         />
       </>
+    );
+  } else if (status === 'invite_failed') {
+    const expired = setupFailure === 'expired';
+    content = (
+      <main className="auth-status">
+        {languageSwitcher}
+        <h1>{expired ? t('invite.expired') : t('invite.provisioningError')}</h1>
+        <p>{expired ? t('invite.expiredDescription') : t('invite.provisioningErrorDescription')}</p>
+        <button className="button button--primary" type="button" onClick={() => { void client.auth.signOut(); }}>{t('account.signOut')}</button>
+      </main>
     );
   } else if (status === 'unassigned') {
     content = <main className="auth-status">{languageSwitcher}<h1>{t('auth.unassigned')}</h1><p>{t('auth.unassignedDescription')}</p></main>;
