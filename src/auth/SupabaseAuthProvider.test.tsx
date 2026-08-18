@@ -47,6 +47,7 @@ function createClient(initialSession: SessionLike | null, options: CreateClientO
   let settleInitialize: ((value: { error: { message: string } | null }) => void) | undefined;
   const signInWithPassword = vi.fn(async (): Promise<{ data: { session: SessionLike | null }; error: { message: string } | null }> => ({ data: { session: null }, error: null }));
   const updateUser = vi.fn(async (): Promise<{ data: { user: SessionLike['user'] | null }; error: { message: string } | null }> => ({ data: { user: null }, error: null }));
+  const rpc = vi.fn(async (): Promise<{ data: unknown; error: { message: string } | null }> => ({ data: null, error: null }));
   const initialize = deferred
     ? vi.fn(() => new Promise<{ error: { message: string } | null }>((resolve) => { settleInitialize = resolve; }))
     : vi.fn(async () => ({ error: initializeError }));
@@ -65,13 +66,14 @@ function createClient(initialSession: SessionLike | null, options: CreateClientO
       signOut: vi.fn(async () => ({ error: null })),
     },
     from: vi.fn() as never,
-    rpc: vi.fn() as never,
+    rpc: rpc as never,
     storage: {} as never,
   };
   return {
     client,
     signInWithPassword,
     updateUser,
+    rpc,
     initialize,
     getSession,
     onAuthStateChange,
@@ -111,6 +113,13 @@ const adminSession: SessionLike = {
 // (access_token, refresh_token, expires_in, token_type) plus type=invite.
 function setInviteLocation() {
   window.history.pushState({}, '', '/auth/invite#access_token=abc&expires_in=3600&refresh_token=ref&token_type=bearer&type=invite');
+}
+
+// A genuine implicit recovery callback: the same complete token set plus
+// type=recovery, produced by `resetPasswordForEmail` for a confirmed-but-
+// incomplete user. It must reach the same password-setup form as invite.
+function setRecoveryLocation() {
+  window.history.pushState({}, '', '/auth/invite#access_token=abc&expires_in=3600&refresh_token=ref&token_type=bearer&type=recovery');
 }
 
 // A forged/incomplete implicit callback: only an access_token, missing the rest.
@@ -485,5 +494,194 @@ describe('SupabaseAuthProvider', () => {
     await user.click(screen.getByRole('button', { name: '完成账号设置' }));
 
     expect(await screen.findByRole('heading', { name: 'dashboard reached' })).toBeVisible();
+  });
+
+  it('renders the password-setup form for a recovery callback (confirmed-but-incomplete)', async () => {
+    setRecoveryLocation();
+    // A confirmed-but-incomplete user arrives via resetPasswordForEmail, whose
+    // callback carries type=recovery (not type=invite). It must reach the same
+    // setup form as an invite.
+    const { client, emit, settleInitialize } = createClient(inviteeSession, { deferred: true });
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(inviteeActive)}><StateProbe /></SupabaseAuthProvider>);
+    await act(async () => { settleInitialize(); });
+    act(() => emit(inviteeSession, 'SIGNED_IN'));
+
+    expect(await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' })).toBeVisible();
+    expect(screen.getByDisplayValue('invitee@example.com')).toBeDisabled();
+  });
+
+  it('marks onboarding complete after the invitee sets a password', async () => {
+    const user = userEvent.setup();
+    setInviteLocation();
+    const { client, rpc, updateUser, emit, settleInitialize } = createClient(inviteeSession, { deferred: true });
+    updateUser.mockImplementation(async () => {
+      emit(inviteeSession, 'USER_UPDATED');
+      return { data: { user: inviteeSession.user }, error: null };
+    });
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(inviteeActive)}><StateProbe /></SupabaseAuthProvider>);
+    await act(async () => { settleInitialize(); });
+    act(() => emit(inviteeSession, 'SIGNED_IN'));
+
+    await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' });
+    await user.type(screen.getByLabelText('新密码 *'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码 *'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '完成账号设置' }));
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('complete_onboarding'));
+    expect(updateUser).toHaveBeenCalledWith({ password: 'secret123' });
+  });
+
+  it('does not mark onboarding complete when the password write fails', async () => {
+    const user = userEvent.setup();
+    setInviteLocation();
+    const { client, rpc, updateUser, emit, settleInitialize } = createClient(inviteeSession, { deferred: true });
+    updateUser.mockImplementation(async () => ({ data: { user: null }, error: { message: 'boom' } }));
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(inviteeActive)}><StateProbe /></SupabaseAuthProvider>);
+    await act(async () => { settleInitialize(); });
+    act(() => emit(inviteeSession, 'SIGNED_IN'));
+
+    await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' });
+    await user.type(screen.getByLabelText('新密码 *'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码 *'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '完成账号设置' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('账号设置失败');
+    expect(updateUser).toHaveBeenCalledWith({ password: 'secret123' });
+    expect(rpc).not.toHaveBeenCalled();
+    // The invite form must remain mounted — a failed password write must not
+    // advance the user out of invite/setup mode.
+    expect(screen.getByRole('heading', { name: '欢迎加入 Northstar OKR' })).toBeVisible();
+  });
+
+  it('keeps InviteAccept visible while onboarding RPC is in flight, never rendering the dashboard transiently', async () => {
+    const user = userEvent.setup();
+    setInviteLocation();
+    let resolveRpc: ((value: { data: unknown; error: { message: string } | null }) => void) | undefined;
+    const { client, updateUser, rpc, emit, settleInitialize } = createClient(inviteeSession, { deferred: true });
+    updateUser.mockImplementation(async () => {
+      emit(inviteeSession, 'USER_UPDATED');
+      return { data: { user: inviteeSession.user }, error: null };
+    });
+    rpc.mockImplementation(() => new Promise((resolve) => { resolveRpc = resolve; }));
+    render(
+      <SupabaseAuthProvider client={client} repository={repositoryWithProfile(inviteeActive)}>
+        <MemoryRouter initialEntries={['/auth/invite']}>
+          <Routes>
+            <Route path="/auth/invite" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<h1>dashboard reached</h1>} />
+          </Routes>
+        </MemoryRouter>
+      </SupabaseAuthProvider>,
+    );
+    await act(async () => { settleInitialize(); });
+    act(() => emit(inviteeSession, 'SIGNED_IN'));
+
+    await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' });
+    await user.type(screen.getByLabelText('新密码 *'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码 *'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '完成账号设置' }));
+
+    // USER_UPDATED fired synchronously inside updateUser, before the RPC resolves.
+    // The invite form must stay mounted and no dashboard may render in between.
+    await waitFor(() => expect(updateUser).toHaveBeenCalledWith({ password: 'secret123' }));
+    expect(screen.getByRole('heading', { name: '欢迎加入 Northstar OKR' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'dashboard reached' })).not.toBeInTheDocument();
+
+    await act(async () => { resolveRpc?.({ data: null, error: null }); });
+    expect(await screen.findByRole('heading', { name: 'dashboard reached' })).toBeVisible();
+  });
+
+  it('reloads the profile through the normal path only after onboarding RPC succeeds', async () => {
+    const user = userEvent.setup();
+    setInviteLocation();
+    const repository = repositoryWithProfile(inviteeActive);
+    const { client, updateUser, rpc, emit, settleInitialize } = createClient(inviteeSession, { deferred: true });
+    updateUser.mockImplementation(async () => {
+      emit(inviteeSession, 'USER_UPDATED');
+      return { data: { user: inviteeSession.user }, error: null };
+    });
+    render(<SupabaseAuthProvider client={client} repository={repository}><StateProbe /></SupabaseAuthProvider>);
+    await act(async () => { settleInitialize(); });
+    act(() => emit(inviteeSession, 'SIGNED_IN'));
+
+    await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' });
+    // Invite mode must not resolve the profile yet — that happens only after
+    // onboarding completes.
+    expect(repository.getCurrentProfile).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('新密码 *'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码 *'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '完成账号设置' }));
+
+    expect(await screen.findByText('ready:invitee:invitee@example.com')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('complete_onboarding');
+    expect(repository.getCurrentProfile).toHaveBeenCalled();
+  });
+
+  it('keeps the user on InviteAccept when the onboarding RPC fails, without clearing invite state', async () => {
+    const user = userEvent.setup();
+    setInviteLocation();
+    const { client, updateUser, rpc, emit, settleInitialize } = createClient(inviteeSession, { deferred: true });
+    updateUser.mockImplementation(async () => {
+      emit(inviteeSession, 'USER_UPDATED');
+      return { data: { user: inviteeSession.user }, error: null };
+    });
+    rpc.mockImplementation(async () => ({ data: null, error: { message: 'rpc boom' } }));
+    render(
+      <SupabaseAuthProvider client={client} repository={repositoryWithProfile(inviteeActive)}>
+        <MemoryRouter initialEntries={['/auth/invite']}>
+          <Routes>
+            <Route path="/auth/invite" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<h1>dashboard reached</h1>} />
+          </Routes>
+        </MemoryRouter>
+      </SupabaseAuthProvider>,
+    );
+    await act(async () => { settleInitialize(); });
+    act(() => emit(inviteeSession, 'SIGNED_IN'));
+
+    await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' });
+    await user.type(screen.getByLabelText('新密码 *'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码 *'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '完成账号设置' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('账号设置失败');
+    expect(updateUser).toHaveBeenCalledWith({ password: 'secret123' });
+    expect(rpc).toHaveBeenCalledWith('complete_onboarding');
+    // Invite state must not clear: the form stays mounted, no dashboard renders.
+    expect(screen.getByRole('heading', { name: '欢迎加入 Northstar OKR' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'dashboard reached' })).not.toBeInTheDocument();
+  });
+
+  it('keeps normal USER_UPDATED behavior outside an onboarding transaction', async () => {
+    const { client, emit } = createClient({ user: { id: 'user-one', email: 'one@example.com' } });
+    const repository = repositoryWithProfile(active);
+    render(<SupabaseAuthProvider client={client} repository={repository}><StateProbe /></SupabaseAuthProvider>);
+    expect(await screen.findByText('ready:user-one:one@example.com')).toBeVisible();
+
+    // A USER_UPDATED outside any onboarding transaction resolves the normal path.
+    act(() => emit({ user: { id: 'user-one', email: 'one@example.com' } }, 'USER_UPDATED'));
+    expect(await screen.findByText('ready:user-one:one@example.com')).toBeVisible();
+  });
+
+  it('completes onboarding through the same path for a recovery callback', async () => {
+    const user = userEvent.setup();
+    setRecoveryLocation();
+    const { client, updateUser, rpc, emit, settleInitialize } = createClient(inviteeSession, { deferred: true });
+    updateUser.mockImplementation(async () => {
+      emit(inviteeSession, 'USER_UPDATED');
+      return { data: { user: inviteeSession.user }, error: null };
+    });
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(inviteeActive)}><StateProbe /></SupabaseAuthProvider>);
+    await act(async () => { settleInitialize(); });
+    act(() => emit(inviteeSession, 'SIGNED_IN'));
+
+    await screen.findByRole('heading', { name: '欢迎加入 Northstar OKR' });
+    await user.type(screen.getByLabelText('新密码 *'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码 *'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '完成账号设置' }));
+
+    expect(await screen.findByText('ready:invitee:invitee@example.com')).toBeVisible();
+    expect(rpc).toHaveBeenCalledWith('complete_onboarding');
   });
 });

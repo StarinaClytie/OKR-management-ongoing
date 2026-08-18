@@ -13,26 +13,34 @@ export interface SupabaseAuthProviderProps extends PropsWithChildren {
   repository: OkrRepository;
 }
 
-// The admin invite edge function sends Supabase's invite email with
-// `redirect_to = <origin>/auth/invite`. When the invitee clicks that link,
+// The admin invite / resend edge functions send Supabase emails with
+// `redirect_to = <origin>/auth/invite`. When the recipient clicks the link,
 // Supabase verifies it and redirects the browser back to `/auth/invite`. This
 // app uses Supabase's default *implicit* flow (createClient is not given a
-// flowType, and the edge function uses the stock `auth.admin.inviteUserByEmail`),
-// so a genuine invite callback lands as a hash fragment:
+// flowType, and the edge functions use the stock `auth.admin.inviteUserByEmail`
+// / `auth.resetPasswordForEmail`), so a genuine callback lands as a hash
+// fragment:
 //
 //   /auth/invite#access_token=…&expires_in=…&refresh_token=…&token_type=bearer&type=invite
+//   /auth/invite#access_token=…&expires_in=…&refresh_token=…&token_type=bearer&type=recovery
+//
+// Two callback kinds reach the same password-setup form:
+//   - `type=invite`   — a never-confirmed invitee;
+//   - `type=recovery` — a confirmed-but-incomplete user sent a password-setup
+//                       email via `resetPasswordForEmail`.
 //
 // gotrue's `detectSessionInUrl` (enabled by default) consumes that payload and
 // clears it asynchronously, so we snapshot it synchronously on the first render —
 // before any network round-trip.
 //
-// This snapshot is only a CANDIDATE invite arrival, never proof of one. To be a
+// This snapshot is only a CANDIDATE setup arrival, never proof of one. To be a
 // candidate it must carry the complete token set gotrue itself requires before
 // it will build a session (GoTrueClient._getSessionFromURL requires access_token,
-// refresh_token, expires_in AND token_type) and `type=invite`. Anything less is
-// deliberately NOT a candidate, because a bare `?code=` (PKCE — which this app
-// does not use), a partial `#access_token=`, a stale/expired link, or a normal
-// session-recovery load must never reach the invite state machine.
+// refresh_token, expires_in AND token_type) and a `type` of `invite` or
+// `recovery`. Anything less is deliberately NOT a candidate, because a bare
+// `?code=` (PKCE — which this app does not use), a partial `#access_token=`, a
+// stale/expired link, or a normal session-recovery load must never reach the
+// setup state machine.
 function readInviteCandidate(): boolean {
   if (typeof window === 'undefined') return false;
   if (window.location.pathname !== '/auth/invite') return false;
@@ -41,8 +49,9 @@ function readInviteCandidate(): boolean {
   const refreshToken = params.get('refresh_token');
   const expiresIn = params.get('expires_in');
   const tokenType = params.get('token_type');
+  const type = params.get('type');
   return (
-    params.get('type') === 'invite' &&
+    (type === 'invite' || type === 'recovery') &&
     Boolean(accessToken) &&
     Boolean(refreshToken) &&
     Boolean(expiresIn) &&
@@ -78,6 +87,17 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
   // any pre-existing session WITHOUT emitting SIGNED_IN, so this stays false and
   // no password setup is exposed.
   const inviteValidated = useRef(false);
+  // True while a password-setup transaction (updateUser + complete_onboarding)
+  // is in flight. A successful updateUser emits USER_UPDATED — possibly
+  // synchronously, before updateUser even resolves — and that event must NOT
+  // clear the one-shot invite flags: onboarding is only complete once the
+  // complete_onboarding RPC has persisted onboarding_completed. This flag makes
+  // the state machine explicit instead of relying on event timing.
+  const onboardingCompletionInProgress = useRef(false);
+  // The latest loadSession(), exposed so the password-setup completion path can
+  // re-resolve the session/profile through the normal profile/role path after
+  // onboarding succeeds (rather than waiting for another auth event).
+  const loadSessionRef = useRef<(session: SessionLike | null) => Promise<void>>(async () => {});
   const [locale, setLocale] = useState<Locale>(readStoredLocale);
 
   useLayoutEffect(() => {
@@ -144,22 +164,33 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
       setCurrentUser(state.user);
       setStatus('ready');
     }
+    loadSessionRef.current = loadSession;
 
     const { data } = client.auth.onAuthStateChange((event, session) => {
-      // The authoritative proof of a real invite callback: after initialize()
-      // resolves successfully, Supabase emits SIGNED_IN with the freshly
-      // established session (deferred via setTimeout). It does NOT emit this on
-      // a failed exchange (forged/expired/reused token), where it silently keeps
-      // any pre-existing session instead. Gating on `succeeded` also keeps a
-      // *recovered* session (recovery emits SIGNED_IN too) from validating a
-      // candidate that was never a real callback.
+      // The authoritative proof of a real invite/setup callback: after
+      // initialize() resolves successfully, Supabase emits SIGNED_IN with the
+      // freshly established session (deferred via setTimeout). It does NOT emit
+      // this on a failed exchange (forged/expired/reused token), where it
+      // silently keeps any pre-existing session instead. Gating on `succeeded`
+      // also keeps a pre-existing session (re-auth / session recovery emits
+      // SIGNED_IN too) from validating a candidate that never initialized.
       if (event === 'SIGNED_IN' && session && inviteCandidate.current && inviteResolution.current === 'succeeded') {
         inviteValidated.current = true;
       }
       // Completing the invite (a successful password update emits USER_UPDATED)
       // or signing out clears the one-shot invite flags so the next load resolves
       // the normal profile/role path instead of re-entering the invite form.
-      if (event === 'USER_UPDATED' || event === 'SIGNED_OUT') {
+      //
+      // Exception: a USER_UPDATED emitted while a password-setup transaction is
+      // in flight (updateUser + complete_onboarding) must NOT clear the flags —
+      // onboarding is only complete once the RPC succeeds. Clearing here would
+      // let the normal profile/dashboard render before onboarding_completed is
+      // persisted. SIGNED_OUT still clears unconditionally, and USER_UPDATED
+      // outside an in-flight setup keeps its existing behavior.
+      if (event === 'SIGNED_OUT') {
+        inviteCandidate.current = false;
+        inviteValidated.current = false;
+      } else if (event === 'USER_UPDATED' && !onboardingCompletionInProgress.current) {
         inviteCandidate.current = false;
         inviteValidated.current = false;
       }
@@ -261,8 +292,39 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
           locale={locale}
           email={email}
           setPassword={async (password) => {
-            const { error } = await client.auth.updateUser({ password });
-            return { error };
+            // Flag the transaction BEFORE updateUser: a successful password
+            // write emits USER_UPDATED (possibly synchronously, inside
+            // updateUser) and that event must not exit invite mode. Onboarding
+            // is complete only after BOTH the password write and the
+            // complete_onboarding RPC have succeeded.
+            onboardingCompletionInProgress.current = true;
+            try {
+              const { error } = await client.auth.updateUser({ password });
+              if (error) return { error };
+              // Mark the caller's own onboarding complete. complete_onboarding()
+              // is a SECURITY DEFINER RPC scoped to auth.uid(), so the browser
+              // can only ever complete its own profile — never another user's.
+              // Supabase RPC resolves with { data, error } rather than rejecting
+              // on a database failure, so the error must be inspected here.
+              const rpcResult = await (client.rpc('complete_onboarding') as Promise<{
+                data: unknown;
+                error: { code?: string; message: string } | null;
+              }>);
+              if (rpcResult.error) return { error: rpcResult.error };
+              // Onboarding is now durable. Explicitly leave invite/setup mode and
+              // re-resolve the session/profile through the normal path (which
+              // reads onboarding_completed=true) instead of waiting for another
+              // auth event.
+              inviteCandidate.current = false;
+              inviteValidated.current = false;
+              const { data: sessionData, error: sessionError } = await client.auth.getSession();
+              await loadSessionRef.current(sessionError ? null : sessionData.session);
+              return { error: null };
+            } catch (error) {
+              return { error: { message: error instanceof Error ? error.message : 'account setup failed' } };
+            } finally {
+              onboardingCompletionInProgress.current = false;
+            }
           }}
         />
       </>

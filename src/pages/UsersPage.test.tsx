@@ -6,7 +6,7 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import type { OkrRepository, OrganizationUser, RepositoryResult } from '../data/types';
 import type { User } from '../domain/types';
 import { LocaleProvider } from '../i18n/LocaleProvider';
-import type { AdminUserService, InviteUserResult, PendingUser } from '../services/adminUserService';
+import type { AdminUserService, DeleteUserResult, InviteUserResult, MemberOnboardingState, PendingUser, ResendInvitationResult } from '../services/adminUserService';
 import { UsersPage } from './UsersPage';
 
 const admin: User = { id: 'admin-1', name: '管理员', role: 'administrator', title: '', department: '', projectIds: [] };
@@ -31,10 +31,19 @@ function makeRepository(overrides: Partial<OkrRepository> = {}): OkrRepository {
   } as unknown as OkrRepository;
 }
 
-function makeAdminService(overrides: { listResult?: { ok: true; data: PendingUser[] }; inviteResult?: InviteUserResult } = {}): AdminUserService {
+interface AdminServiceOverrides {
+  overview?: { pendingUsers: PendingUser[]; onboardingStates: MemberOnboardingState[] };
+  inviteResult?: InviteUserResult;
+  resendResult?: ResendInvitationResult;
+  deleteResult?: DeleteUserResult;
+}
+
+function makeAdminService(overrides: AdminServiceOverrides = {}): AdminUserService {
   return {
-    listPendingUsers: vi.fn(async () => overrides.listResult ?? { ok: true, data: pendingUsers }),
+    listAdminUsers: vi.fn(async () => ({ ok: true as const, data: overrides.overview ?? { pendingUsers, onboardingStates: [] } })),
     inviteUser: vi.fn(async (): Promise<InviteUserResult> => overrides.inviteResult ?? { ok: true, outcome: 'invited', email: 'new@example.com', invitationSent: true }),
+    resendInvitation: vi.fn(async (): Promise<ResendInvitationResult> => overrides.resendResult ?? { ok: true, outcome: 'resent', userId: 'u4', email: 'u4@example.com', invitationSent: true }),
+    deleteUser: vi.fn(async (): Promise<DeleteUserResult> => overrides.deleteResult ?? { ok: true, outcome: 'deleted', userId: 'u4', recordsPreserved: true }),
   } as unknown as AdminUserService;
 }
 
@@ -244,5 +253,119 @@ describe('UsersPage', () => {
     await user.click(screen.getByRole('button', { name: '启用' }));
 
     await waitFor(() => expect(repository.setUserActive).toHaveBeenCalledWith('u3', true));
+  });
+});
+
+describe('UsersPage onboarding state', () => {
+  it('labels an invited-but-not-onboarded user as pending onboarding, not active', async () => {
+    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, projectIds: [] };
+    const repository = makeRepository({
+      listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [...activeUsers, onboarding] })),
+    });
+    const adminUsers = makeAdminService({ overview: { pendingUsers, onboardingStates: [{ id: 'u4', onboardingCompleted: false }] } });
+    renderUsersPage({ repository, adminUsers });
+
+    await screen.findByText('待激活用户');
+    expect(screen.getByText('待激活')).toBeVisible();
+    // The two fully-active users still show the "Active" badge, distinct from onboarding.
+    expect(screen.getAllByText('启用')).toHaveLength(2);
+  });
+
+  it('resends an invitation for a pending-onboarding user', async () => {
+    const user = userEvent.setup();
+    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, projectIds: [] };
+    const repository = makeRepository({
+      listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [...activeUsers, onboarding] })),
+    });
+    const adminUsers = makeAdminService({ overview: { pendingUsers, onboardingStates: [{ id: 'u4', onboardingCompleted: false }] } });
+    renderUsersPage({ repository, adminUsers });
+
+    await screen.findByText('待激活用户');
+    await user.click(screen.getByRole('button', { name: '重新发送邀请' }));
+
+    await waitFor(() => expect(adminUsers.resendInvitation).toHaveBeenCalledWith('u4'));
+    expect(await screen.findByText('邀请已重新发送。')).toBeVisible();
+  });
+
+  it('reports when a resend target has already completed onboarding', async () => {
+    const user = userEvent.setup();
+    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, projectIds: [] };
+    const repository = makeRepository({
+      listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [...activeUsers, onboarding] })),
+    });
+    const adminUsers = makeAdminService({
+      overview: { pendingUsers, onboardingStates: [{ id: 'u4', onboardingCompleted: false }] },
+      resendResult: { ok: true, outcome: 'already_completed', userId: 'u4', email: 'u4@example.com', invitationSent: false },
+    });
+    renderUsersPage({ repository, adminUsers });
+
+    await screen.findByText('待激活用户');
+    await user.click(screen.getByRole('button', { name: '重新发送邀请' }));
+
+    expect(await screen.findByText('该账号已完成激活，无需重新发送邀请。')).toBeVisible();
+  });
+
+  it('does not show a resend action for a fully active user', async () => {
+    renderUsersPage();
+    await screen.findByText('员工一');
+    expect(screen.queryByRole('button', { name: '重新发送邀请' })).not.toBeInTheDocument();
+  });
+});
+
+describe('UsersPage delete account', () => {
+  it('opens a confirmation modal and deletes the account on confirm', async () => {
+    const user = userEvent.setup();
+    const { adminUsers } = renderUsersPage();
+
+    await screen.findByText('员工一');
+    await user.click(screen.getAllByRole('button', { name: '删除账号' })[0]);
+
+    expect(screen.getByRole('dialog', { name: '删除账号' })).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() => expect(adminUsers.deleteUser).toHaveBeenCalledWith('u1'));
+    expect(await screen.findByText('账号访问权限已移除，历史记录已保留。')).toBeVisible();
+  });
+
+  it('cancels the confirmation modal without deleting', async () => {
+    const user = userEvent.setup();
+    const { adminUsers } = renderUsersPage();
+
+    await screen.findByText('员工一');
+    await user.click(screen.getAllByRole('button', { name: '删除账号' })[0]);
+
+    expect(screen.getByRole('dialog', { name: '删除账号' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(screen.queryByRole('dialog', { name: '删除账号' })).not.toBeInTheDocument();
+    expect(adminUsers.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it('reports a self-delete rejection', async () => {
+    const self: OrganizationUser = { id: 'admin-1', displayName: '管理员', email: 'admin@example.com', department: '', jobTitle: '', role: 'administrator', isActive: true, projectIds: [] };
+    const repository = makeRepository({
+      listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [self, ...activeUsers] })),
+    });
+    const adminUsers = makeAdminService({ deleteResult: { ok: false, error: { code: 'self_delete', message: '不能删除当前登录的管理员账号' } } });
+    renderUsersPage({ repository, adminUsers });
+
+    await screen.findByText('员工一');
+    // The current administrator is not offered a delete action at all.
+    const deleteButtons = screen.getAllByRole('button', { name: '删除账号' });
+    expect(deleteButtons).toHaveLength(2); // u1 and u2, not the administrator
+  });
+
+  it('does not offer deactivate or delete for the current administrator', async () => {
+    const self: OrganizationUser = { id: 'admin-1', displayName: '当前管理员', email: 'admin@example.com', department: '', jobTitle: '', role: 'administrator', isActive: true, projectIds: [] };
+    const repository = makeRepository({
+      listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [self] })),
+    });
+    renderUsersPage({ repository });
+
+    await screen.findByText('当前管理员');
+    expect(screen.getByRole('button', { name: '编辑' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '停用' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除账号' })).not.toBeInTheDocument();
   });
 });

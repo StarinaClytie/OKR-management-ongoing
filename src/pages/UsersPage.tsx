@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { roleLabels } from '../auth/roleLabels';
 import { DataTable } from '../components/DataTable';
@@ -9,10 +9,12 @@ import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
 import { repositoryErrorKey } from '../i18n/repositoryErrors';
 import { adminUserService, repository } from '../lib/supabase';
-import type { AdminUserService, InviteUserErrorCode, PendingUser } from '../services/adminUserService';
+import type { AdminUserService, DeleteUserErrorCode, InviteUserErrorCode, MemberOnboardingState, PendingUser, ResendInvitationErrorCode } from '../services/adminUserService';
 import { AccessDeniedPage } from './AccessDeniedPage';
 
 type Async<T> = { status: 'loading' } | { status: 'ready'; data: T } | { status: 'error'; code: RepositoryErrorCode };
+
+type UserStatus = 'onboarding' | 'active' | 'inactive';
 
 interface Feedback {
   kind: 'success' | 'error';
@@ -35,6 +37,31 @@ function inviteErrorKey(code: InviteUserErrorCode): MessageKey {
   }
 }
 
+function resendErrorKey(code: ResendInvitationErrorCode): MessageKey {
+  switch (code) {
+    case 'unauthorized':
+      return 'users.resendUnauthorized';
+    default:
+      return 'users.resendFailed';
+  }
+}
+
+function deleteErrorKey(code: DeleteUserErrorCode): MessageKey {
+  switch (code) {
+    case 'unauthorized':
+      return 'users.deleteUnauthorized';
+    case 'self_delete':
+      return 'users.deleteSelf';
+    default:
+      return 'users.deleteFailed';
+  }
+}
+
+function statusOf(user: OrganizationUser, onboardingCompletedById: Map<string, boolean>): UserStatus {
+  if (!user.isActive) return 'inactive';
+  return onboardingCompletedById.get(user.id) === false ? 'onboarding' : 'active';
+}
+
 function formatTimestamp(value: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
@@ -52,9 +79,11 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
   const { currentUser } = useAuth();
   const [activeState, setActiveState] = useState<Async<OrganizationUser[]>>({ status: 'loading' });
   const [pendingState, setPendingState] = useState<Async<PendingUser[]>>({ status: 'loading' });
+  const [onboardingStates, setOnboardingStates] = useState<MemberOnboardingState[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [approveTarget, setApproveTarget] = useState<PendingUser | null>(null);
   const [editTarget, setEditTarget] = useState<OrganizationUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<OrganizationUser | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | undefined>(undefined);
@@ -62,13 +91,23 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
   const load = useCallback(async () => {
     setActiveState({ status: 'loading' });
     setPendingState({ status: 'loading' });
-    const pendingPromise = adminUsers ? adminUsers.listPendingUsers() : Promise.resolve({ ok: true as const, data: [] as PendingUser[] });
-    const [activeResult, pendingResult] = await Promise.all([dataRepository.listOrganizationUsers(), pendingPromise]);
+    const adminPromise = adminUsers
+      ? adminUsers.listAdminUsers()
+      : Promise.resolve({ ok: true as const, data: { pendingUsers: [] as PendingUser[], onboardingStates: [] as MemberOnboardingState[] } });
+    const [activeResult, adminResult] = await Promise.all([dataRepository.listOrganizationUsers(), adminPromise]);
     setActiveState(activeResult.ok ? { status: 'ready', data: activeResult.data } : { status: 'error', code: activeResult.error.code });
-    setPendingState(pendingResult.ok ? { status: 'ready', data: pendingResult.data } : { status: 'error', code: pendingResult.error.code });
+    if (adminResult.ok) {
+      setPendingState({ status: 'ready', data: adminResult.data.pendingUsers });
+      setOnboardingStates(adminResult.data.onboardingStates);
+    } else {
+      setPendingState({ status: 'error', code: adminResult.error.code });
+      setOnboardingStates([]);
+    }
   }, [dataRepository, adminUsers]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const onboardingCompletedById = useMemo(() => new Map(onboardingStates.map((state) => [state.id, state.onboardingCompleted])), [onboardingStates]);
 
   if (!currentUser) return null;
   if (currentUser.role !== 'administrator') return <AccessDeniedPage />;
@@ -83,10 +122,15 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
     setEditTarget(user);
   }
 
+  function openDelete(user: OrganizationUser) {
+    setDeleteTarget(user);
+  }
+
   function closeModal() {
     setApproveTarget(null);
     setEditTarget(null);
     setInviteOpen(false);
+    setDeleteTarget(null);
     setFormError(undefined);
     setSubmitting(false);
   }
@@ -177,6 +221,33 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
     }
   }
 
+  async function handleResend(user: OrganizationUser) {
+    if (!adminUsers) return;
+    const result = await adminUsers.resendInvitation(user.id);
+    if (result.ok) {
+      setFeedback({
+        kind: result.outcome === 'resent' ? 'success' : 'error',
+        key: result.outcome === 'resent' ? 'users.resendSuccess' : 'users.resendAlreadyCompleted',
+      });
+    } else {
+      setFeedback({ kind: 'error', key: resendErrorKey(result.error.code) });
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget || !adminUsers) return;
+    setSubmitting(true);
+    const result = await adminUsers.deleteUser(deleteTarget.id);
+    setSubmitting(false);
+    setDeleteTarget(null);
+    if (result.ok) {
+      setFeedback({ kind: 'success', key: 'users.deleteSuccess' });
+      await load();
+    } else {
+      setFeedback({ kind: 'error', key: deleteErrorKey(result.error.code) });
+    }
+  }
+
   async function toggleActive(user: OrganizationUser) {
     const result = await dataRepository.setUserActive(user.id, !user.isActive);
     if (result.ok) {
@@ -185,6 +256,25 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
     } else {
       setFeedback({ kind: 'error', key: repositoryErrorKey(result.error.code) });
     }
+  }
+
+  function renderActions(user: OrganizationUser) {
+    const isSelf = user.id === currentUser!.id;
+    const status = statusOf(user, onboardingCompletedById);
+    return (
+      <div className="data-table__actions">
+        <button className="button button--secondary" onClick={() => openEdit(user)}>{t('users.edit')}</button>
+        {!isSelf && adminUsers && status === 'onboarding' ? (
+          <button className="button button--secondary" onClick={() => void handleResend(user)}>{t('users.resendInvitation')}</button>
+        ) : null}
+        {!isSelf ? (
+          <button className="button button--secondary" onClick={() => void toggleActive(user)}>{status === 'inactive' ? t('users.reactivate') : t('users.deactivate')}</button>
+        ) : null}
+        {!isSelf && adminUsers ? (
+          <button className="text-button text-button--danger" onClick={() => openDelete(user)}>{t('users.deleteAccount')}</button>
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -239,16 +329,13 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
               { key: 'department', label: t('users.column.department'), render: (user) => user.department },
               { key: 'jobTitle', label: t('users.column.jobTitle'), render: (user) => user.jobTitle },
               { key: 'role', label: t('users.column.role'), render: (user) => t(roleLabels[user.role]) },
-              { key: 'status', label: t('users.column.status'), render: (user) => (
-                <span className={`users-status users-status--${user.isActive ? 'active' : 'inactive'}`}>{user.isActive ? t('users.status.active') : t('users.status.inactive')}</span>
-              ) },
+              { key: 'status', label: t('users.column.status'), render: (user) => {
+                const status = statusOf(user, onboardingCompletedById);
+                const statusLabel = status === 'inactive' ? 'users.status.inactive' : status === 'onboarding' ? 'users.status.pendingOnboarding' : 'users.status.active';
+                return <span className={`users-status users-status--${status}`}>{t(statusLabel)}</span>;
+              } },
               { key: 'projects', label: t('users.column.projects'), render: (user) => `${user.projectIds.length}` },
-              { key: 'actions', label: t('users.column.actions'), render: (user) => (
-                <div className="data-table__actions">
-                  <button className="button button--secondary" onClick={() => openEdit(user)}>{t('users.edit')}</button>
-                  {user.id !== currentUser.id ? <button className="button button--secondary" onClick={() => void toggleActive(user)}>{user.isActive ? t('users.deactivate') : t('users.reactivate')}</button> : null}
-                </div>
-              ) },
+              { key: 'actions', label: t('users.column.actions'), render: (user) => renderActions(user) },
             ]}
           />
         )}
@@ -290,6 +377,20 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
           onSubmit={handleInviteSubmit}
           onClose={closeInvite}
         />
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="modal-scrim" onClick={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}>
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-label={t('users.modal.deleteTitle')}>
+            <h2>{t('users.modal.deleteTitle')}</h2>
+            <p>{t('users.modal.deleteBody')}</p>
+            <p className="users-delete-target">{deleteTarget.displayName} · {deleteTarget.email || '—'}</p>
+            <div className="modal-actions">
+              <button type="button" className="button button--secondary" onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</button>
+              <button type="button" className="button button--danger" disabled={submitting} onClick={() => void handleDeleteConfirm()}>{submitting ? t('common.saving') : t('users.deleteConfirm')}</button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );

@@ -553,6 +553,12 @@ select {
   border-color: #bfdbfe;
 }
 
+.button--danger {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
 .business-page {
   width: min(1180px, 100%);
   margin: 0 auto;
@@ -1813,6 +1819,18 @@ select {
 .users-status--pending {
   color: #1d4ed8;
   background: #dbeafe;
+}
+
+.users-status--onboarding {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.users-delete-target {
+  margin: 0 0 var(--space-4);
+  color: #334155;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .profile-list {
