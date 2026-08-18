@@ -6,6 +6,13 @@ export type ReportStatus = 'draft' | 'submitted' | 'returned' | 'confirmed';
 export type ProgressStatus = 'on_track' | 'at_risk' | 'off_track' | 'complete';
 export type ProjectStatus = 'planned' | 'active' | 'on_hold' | 'completed' | 'archived';
 
+export type ResourceCategory = 'optics' | 'chemicals' | 'vacuum' | 'tools' | 'electronics' | 'mechanical' | 'consumables' | 'safety' | 'other';
+export type ResourceKind = 'durable' | 'consumable';
+export type ResourceStatus = 'available' | 'in_use' | 'maintenance' | 'damaged' | 'missing' | 'out_of_stock' | 'archived';
+export type ResourceProblemType = 'location_incorrect' | 'missing' | 'damaged' | 'malfunction' | 'quantity_incorrect' | 'manual_issue' | 'other';
+export type ResourceProblemStatus = 'open' | 'resolved';
+export type ResourceNotificationStatus = 'pending' | 'sending' | 'sent' | 'failed';
+
 export interface User {
   id: string;
   name: string;

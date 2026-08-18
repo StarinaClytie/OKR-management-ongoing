@@ -2,6 +2,7 @@ import type { AppMode } from '../data/types';
 import { createRepository } from '../data/repositoryFactory';
 import { SupabaseOkrRepository } from '../data/supabaseRepository';
 import { AdminUserService } from '../services/adminUserService';
+import { ResourceNotificationService } from '../services/resourceNotificationService';
 
 export function readAppMode(value: string | undefined): AppMode {
   if (!value || value === 'demo') return 'demo';
@@ -18,4 +19,8 @@ export const repository = createRepository({
 
 export const adminUserService = repository instanceof SupabaseOkrRepository
   ? new AdminUserService(repository.client)
+  : undefined;
+
+export const resourceNotificationService = repository instanceof SupabaseOkrRepository
+  ? new ResourceNotificationService(repository.client)
   : undefined;

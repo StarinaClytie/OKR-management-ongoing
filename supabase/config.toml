@@ -46,3 +46,6 @@ verify_jwt = true
 
 [functions.admin-delete-user]
 verify_jwt = true
+
+[functions.resource-problem-notify]
+verify_jwt = true

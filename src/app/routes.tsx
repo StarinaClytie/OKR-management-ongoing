@@ -11,6 +11,8 @@ import { OkrManagementPage } from '../pages/OkrManagementPage';
 import { ProfilePage } from '../pages/ProfilePage';
 import { ProjectDetailPage } from '../pages/ProjectDetailPage';
 import { ProjectsPage } from '../pages/ProjectsPage';
+import { ResourceDetailPage } from '../pages/ResourceDetailPage';
+import { ResourcesPage } from '../pages/ResourcesPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { TeamPage } from '../pages/TeamPage';
 import { UsersPage } from '../pages/UsersPage';
@@ -19,6 +21,7 @@ import { WeeklyReportsPage } from '../pages/WeeklyReportsPage';
 const pageByPath = {
   '/okrs': OkrManagementPage,
   '/projects': ProjectsPage,
+  '/resources': ResourcesPage,
   '/daily-reports': DailyReportsPage,
   '/weekly-reports': WeeklyReportsPage,
   '/team': TeamPage,
@@ -48,6 +51,7 @@ export function AppRoutes() {
         <Route path="/access-denied" element={<AccessDeniedPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+        <Route path="/resources/:resourceId" element={<ResourceDetailPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

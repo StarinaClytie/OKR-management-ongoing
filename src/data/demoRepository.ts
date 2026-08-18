@@ -1,5 +1,6 @@
 import { mockRepository } from '../mocks/repository';
-import type { ApprovePendingUserInput, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, RepositoryResult, UpdateUserInput } from './types';
+import { getMockResourceDetail, mockResources } from '../mocks/resources';
+import type { ApprovePendingUserInput, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, RetryResourceProblemNotificationResult, UpdateResourceInput, UpdateUserInput } from './types';
 import type { DailyReport, ProjectStatus } from '../domain/types';
 
 function unsupported<T>(): RepositoryResult<T> {
@@ -50,6 +51,29 @@ export class DemoOkrRepository implements OkrRepository {
   async archiveProject(_projectId: string) { return unsupported<void>(); }
   async restoreProject(_projectId: string) { return unsupported<void>(); }
   async getProjectDetail(_projectId: string) { return unsupported<ProjectDetail>(); }
+
+  async listResources(): Promise<RepositoryResult<Resource[]>> {
+    return { ok: true, data: mockResources };
+  }
+
+  async getResourceDetail(resourceId: string): Promise<RepositoryResult<ResourceDetail>> {
+    const detail = getMockResourceDetail(resourceId);
+    return detail
+      ? { ok: true, data: detail }
+      : { ok: false, error: { code: 'not_found', message: '请求的资源不存在' } };
+  }
+
+  async createResource(_input: CreateResourceInput) { return unsupported<{ id: string }>(); }
+  async updateResource(_input: UpdateResourceInput) { return unsupported<void>(); }
+  async archiveResource(_resourceId: string) { return unsupported<void>(); }
+  async restoreResource(_resourceId: string) { return unsupported<void>(); }
+  async reportResourceProblem(_input: ReportResourceProblemInput) { return unsupported<ReportResourceProblemResult>(); }
+  async resolveResourceProblem(_input: ResolveResourceProblemInput) { return unsupported<void>(); }
+  async retryResourceProblemNotification(_problemId: string) { return unsupported<RetryResourceProblemNotificationResult>(); }
+  async beginResourceAttachmentUpload(_input: Record<string, unknown>) { return unsupported<import('./types').ResourceUploadTarget>(); }
+  async finalizeResourceAttachmentUpload(_id: string) { return unsupported<unknown>(); }
+  async createResourceAttachmentDownload(_id: string) { return unsupported<{ url: string }>(); }
+  async uploadResourceAttachment(_resourceId: string, _file: File) { return unsupported<{ id: string }>(); }
 
   async approvePendingUser(_input: ApprovePendingUserInput) { return unsupported<void>(); }
   async updateUserProfile(_input: UpdateUserInput) { return unsupported<void>(); }
