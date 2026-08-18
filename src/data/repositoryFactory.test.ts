@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createClient } from '@supabase/supabase-js';
 import { createRepository } from './repositoryFactory';
+
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => ({})),
+}));
 
 describe('createRepository', () => {
   it('keeps demo mode isolated from Supabase construction', () => {
@@ -51,5 +56,22 @@ describe('createRepository', () => {
 
     expect(repository.mode).toBe('supabase');
     expect(createSupabaseClient).toHaveBeenCalledWith('https://project.supabase.co', 'publishable-key');
+  });
+
+  it('constructs the browser auth client with skipAutoInitialize so the provider owns initialization', () => {
+    const repository = createRepository({
+      mode: 'supabase',
+      supabaseUrl: 'https://project.supabase.co',
+      supabaseAnonKey: 'publishable-key',
+    });
+
+    expect(repository.mode).toBe('supabase');
+    // The default factory must defer the GoTrueClient constructor's automatic
+    // initialize() so SupabaseAuthProvider can subscribe before driving it.
+    expect(vi.mocked(createClient)).toHaveBeenCalledWith(
+      'https://project.supabase.co',
+      'publishable-key',
+      { auth: { skipAutoInitialize: true } },
+    );
   });
 });

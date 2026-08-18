@@ -31,6 +31,18 @@ describe('application routes', () => {
     expect(screen.queryByText('页面框架将在后续迭代中补充。')).not.toBeInTheDocument();
   });
 
+  it('redirects a manual /auth/invite visit to the dashboard', () => {
+    render(
+      <AuthProvider initialUserId="user-employee">
+        <MemoryRouter initialEntries={['/auth/invite']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(screen.getByRole('heading', { name: '我的工作概览' })).toBeVisible();
+  });
+
   it('shows only generic access-denied content when the access-denied URL is opened directly', () => {
     render(
       <AuthProvider initialUserId="user-employee">
