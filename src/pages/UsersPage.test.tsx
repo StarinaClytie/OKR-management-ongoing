@@ -12,8 +12,8 @@ import { UsersPage } from './UsersPage';
 const admin: User = { id: 'admin-1', name: '管理员', role: 'administrator', title: '', department: '', projectIds: [] };
 
 const activeUsers: OrganizationUser[] = [
-  { id: 'u1', displayName: '员工一', email: 'one@example.com', department: '产品部', jobTitle: '工程师', role: 'employee', isActive: true, projectIds: ['p1'] },
-  { id: 'u2', displayName: '经理', email: 'mgr@example.com', department: '管理层', jobTitle: '总监', role: 'management', isActive: true, projectIds: [] },
+  { id: 'u1', displayName: '员工一', email: 'one@example.com', department: '产品部', jobTitle: '工程师', role: 'employee', isActive: true, onboardingCompleted: true, projectIds: ['p1'] },
+  { id: 'u2', displayName: '经理', email: 'mgr@example.com', department: '管理层', jobTitle: '总监', role: 'management', isActive: true, onboardingCompleted: true, projectIds: [] },
 ];
 
 const pendingUsers: PendingUser[] = [
@@ -258,7 +258,7 @@ describe('UsersPage', () => {
 
 describe('UsersPage onboarding state', () => {
   it('labels an invited-but-not-onboarded user as pending onboarding, not active', async () => {
-    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, projectIds: [] };
+    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, onboardingCompleted: false, projectIds: [] };
     const repository = makeRepository({
       listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [...activeUsers, onboarding] })),
     });
@@ -273,7 +273,7 @@ describe('UsersPage onboarding state', () => {
 
   it('resends an invitation for a pending-onboarding user', async () => {
     const user = userEvent.setup();
-    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, projectIds: [] };
+    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, onboardingCompleted: false, projectIds: [] };
     const repository = makeRepository({
       listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [...activeUsers, onboarding] })),
     });
@@ -289,7 +289,7 @@ describe('UsersPage onboarding state', () => {
 
   it('reports when a resend target has already completed onboarding', async () => {
     const user = userEvent.setup();
-    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, projectIds: [] };
+    const onboarding: OrganizationUser = { id: 'u4', displayName: '待激活用户', email: 'u4@example.com', department: '', jobTitle: '', role: 'employee', isActive: true, onboardingCompleted: false, projectIds: [] };
     const repository = makeRepository({
       listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [...activeUsers, onboarding] })),
     });
@@ -343,7 +343,7 @@ describe('UsersPage delete account', () => {
   });
 
   it('reports a self-delete rejection', async () => {
-    const self: OrganizationUser = { id: 'admin-1', displayName: '管理员', email: 'admin@example.com', department: '', jobTitle: '', role: 'administrator', isActive: true, projectIds: [] };
+    const self: OrganizationUser = { id: 'admin-1', displayName: '管理员', email: 'admin@example.com', department: '', jobTitle: '', role: 'administrator', isActive: true, onboardingCompleted: true, projectIds: [] };
     const repository = makeRepository({
       listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [self, ...activeUsers] })),
     });
@@ -357,7 +357,7 @@ describe('UsersPage delete account', () => {
   });
 
   it('does not offer deactivate or delete for the current administrator', async () => {
-    const self: OrganizationUser = { id: 'admin-1', displayName: '当前管理员', email: 'admin@example.com', department: '', jobTitle: '', role: 'administrator', isActive: true, projectIds: [] };
+    const self: OrganizationUser = { id: 'admin-1', displayName: '当前管理员', email: 'admin@example.com', department: '', jobTitle: '', role: 'administrator', isActive: true, onboardingCompleted: true, projectIds: [] };
     const repository = makeRepository({
       listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [self] })),
     });

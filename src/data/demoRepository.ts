@@ -1,6 +1,6 @@
 import { mockRepository } from '../mocks/repository';
-import type { ApprovePendingUserInput, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, RepositoryResult, UpdateUserInput } from './types';
-import type { DailyReport } from '../domain/types';
+import type { ApprovePendingUserInput, AuthProfileState, ClassifiedAttachmentInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, RepositoryResult, UpdateUserInput } from './types';
+import type { DailyReport, ProjectStatus } from '../domain/types';
 
 function unsupported<T>(): RepositoryResult<T> {
   return { ok: false, error: { code: 'validation', message: '当前环境不支持此持久化操作' } };
@@ -36,10 +36,20 @@ export class DemoOkrRepository implements OkrRepository {
         jobTitle: user.title,
         role: user.role,
         isActive: true,
+        onboardingCompleted: true,
         projectIds: user.projectIds,
       })),
     };
   }
+
+  async createProject(_input: ProjectCreateInput) { return unsupported<{ id: string }>(); }
+  async updateProject(_input: ProjectUpdateInput) { return unsupported<void>(); }
+  async setProjectLeader(_projectId: string, _leaderId: string) { return unsupported<void>(); }
+  async setProjectMembers(_projectId: string, _memberIds: string[]) { return unsupported<void>(); }
+  async setProjectStatus(_projectId: string, _status: ProjectStatus) { return unsupported<void>(); }
+  async archiveProject(_projectId: string) { return unsupported<void>(); }
+  async restoreProject(_projectId: string) { return unsupported<void>(); }
+  async getProjectDetail(_projectId: string) { return unsupported<ProjectDetail>(); }
 
   async approvePendingUser(_input: ApprovePendingUserInput) { return unsupported<void>(); }
   async updateUserProfile(_input: UpdateUserInput) { return unsupported<void>(); }

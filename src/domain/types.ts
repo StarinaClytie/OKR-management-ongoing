@@ -4,6 +4,7 @@ export type Role = 'administrator' | 'management' | 'project_leader' | 'employee
 export type Classification = 'public' | 'internal' | 'confidential' | 'restricted';
 export type ReportStatus = 'draft' | 'submitted' | 'returned' | 'confirmed';
 export type ProgressStatus = 'on_track' | 'at_risk' | 'off_track' | 'complete';
+export type ProjectStatus = 'planned' | 'active' | 'on_hold' | 'completed' | 'archived';
 
 export interface User {
   id: string;
@@ -46,6 +47,7 @@ export interface Project {
   startDate: string;
   dueDate: string;
   status: ProgressStatus;
+  lifecycle?: ProjectStatus;
   companyObjectiveId?: string;
 }
 
