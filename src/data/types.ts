@@ -18,6 +18,16 @@ export interface AuthSubscriptionLike {
 
 export interface SupabaseClientLike {
   auth: {
+    /**
+     * Authoritative initialization outcome. Resolves once Supabase has finished
+     * processing any auth callback present in the URL (or recovered a stored
+     * session). `{ error: null }` means a detected callback succeeded (or no
+     * callback was present); a non-null `error` means the callback failed
+     * (invalid / expired / reused / forged) while preserving any existing
+     * session and emitting no SIGNED_IN. Optional so unrelated client stubs
+     * don't have to model it.
+     */
+    initialize?(): Promise<{ error: { message: string } | null }>;
     getSession(): Promise<{ data: { session: SessionLike | null }; error: { message: string } | null }>;
     onAuthStateChange(callback: (event: string, session: SessionLike | null) => void): {
       data: { subscription: AuthSubscriptionLike };
