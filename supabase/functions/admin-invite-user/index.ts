@@ -20,6 +20,7 @@
 // `approve_pending_user` raises 23505 on an existing profile.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { classifyInviteError } from './classifyInviteError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -180,10 +181,7 @@ Deno.serve(async (req) => {
     if (message.includes('already been registered') || message.includes('already been invited')) {
       return json({ ok: true, outcome: 'already_member', email });
     }
-    if (message.includes('email') || message.includes('valid')) {
-      return json({ ok: false, code: 'invalid_email' });
-    }
-    return json({ ok: false, code: 'network' });
+    return json({ ok: false, code: classifyInviteError(inviteError?.message) });
   }
 
   const newUserId = inviteData.user.id;

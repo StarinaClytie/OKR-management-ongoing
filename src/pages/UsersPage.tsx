@@ -28,6 +28,12 @@ function inviteErrorKey(code: InviteUserErrorCode): MessageKey {
       return 'users.inviteUnauthorized';
     case 'invalid_email':
       return 'users.inviteInvalidEmail';
+    case 'rate_limited':
+      return 'users.inviteRateLimited';
+    case 'email_not_authorized':
+      return 'users.inviteEmailNotAuthorized';
+    case 'email_delivery_failed':
+      return 'users.inviteEmailDeliveryFailed';
     case 'provisioning_failed':
       return 'users.inviteProvisioningFailed';
     case 'recovery_invite_failed':
