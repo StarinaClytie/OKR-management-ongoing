@@ -43,7 +43,7 @@ export type InviteUserResult =
   | { ok: false; error: { code: InviteUserErrorCode; message: string } };
 
 export type ResendInvitationOutcome = 'resent' | 'already_completed';
-export type ResendInvitationErrorCode = 'unauthorized' | 'forbidden' | 'resend_failed' | 'network';
+export type ResendInvitationErrorCode = 'unauthorized' | 'forbidden' | 'rate_limited' | 'email_not_authorized' | 'email_delivery_failed' | 'resend_failed' | 'network';
 
 export type ResendInvitationResult =
   | { ok: true; outcome: ResendInvitationOutcome; userId: string; email: string; invitationSent: boolean }
@@ -181,8 +181,11 @@ export class AdminUserService {
         const code = response?.code;
         const normalized: ResendInvitationErrorCode =
           code === 'unauthorized' || code === 'forbidden' ? 'unauthorized'
-            : code === 'resend_failed' ? 'resend_failed'
-              : 'network';
+            : code === 'rate_limited' ? 'rate_limited'
+              : code === 'email_not_authorized' ? 'email_not_authorized'
+                : code === 'email_delivery_failed' ? 'email_delivery_failed'
+                  : code === 'resend_failed' ? 'resend_failed'
+                    : 'network';
         return { ok: false, error: { code: normalized, message: normalized === 'unauthorized' ? '无权访问请求的资源' : '请求未完成，请稍后重试' } };
       }
 

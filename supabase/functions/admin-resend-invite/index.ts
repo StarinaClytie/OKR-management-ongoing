@@ -33,6 +33,7 @@
 //   5. uses the service-role key (server-side only) to send the email.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { classifyInviteError } from '../_shared/classifyInviteError.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -155,7 +156,7 @@ Deno.serve(async (req) => {
       if (message.includes('already been registered') || message.includes('already been invited')) {
         return json({ ok: true, outcome: 'already_completed', userId, email, invitationSent: false });
       }
-      return json({ ok: false, code: 'resend_failed' });
+      return json({ ok: false, code: classifyInviteError(resendError.message) });
     }
     return json({ ok: true, outcome: 'resent', userId, email, invitationSent: true });
   }
@@ -169,7 +170,7 @@ Deno.serve(async (req) => {
     redirectTo,
   });
   if (recoveryError) {
-    return json({ ok: false, code: 'resend_failed' });
+    return json({ ok: false, code: classifyInviteError(recoveryError.message) });
   }
   return json({ ok: true, outcome: 'resent', userId, email, invitationSent: true });
 });

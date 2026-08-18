@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyInviteError } from '../../supabase/functions/admin-invite-user/classifyInviteError';
+import { classifyInviteError } from '../../supabase/functions/_shared/classifyInviteError';
 
 describe('classifyInviteError', () => {
   it('classifies a malformed email as invalid_email', () => {

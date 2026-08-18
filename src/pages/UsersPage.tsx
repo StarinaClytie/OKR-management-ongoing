@@ -47,6 +47,12 @@ function resendErrorKey(code: ResendInvitationErrorCode): MessageKey {
   switch (code) {
     case 'unauthorized':
       return 'users.resendUnauthorized';
+    case 'rate_limited':
+      return 'users.resendRateLimited';
+    case 'email_not_authorized':
+      return 'users.resendEmailNotAuthorized';
+    case 'email_delivery_failed':
+      return 'users.resendEmailDeliveryFailed';
     default:
       return 'users.resendFailed';
   }
