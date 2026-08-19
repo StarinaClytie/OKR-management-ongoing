@@ -5,8 +5,8 @@ import { ProgressRing } from '../../components/ProgressRing';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useLocale } from '../../i18n/LocaleProvider';
-import { can } from '../../auth/permissionService';
 import { deriveExecutionStatuses } from '../../domain/progressStatus';
+import { isKrOwner } from '../../domain/krAssignments';
 
 export interface MyKeyResultsWidgetProps {
   data: DashboardData;
@@ -15,11 +15,8 @@ export interface MyKeyResultsWidgetProps {
 export function MyKeyResultsWidget({ data }: MyKeyResultsWidgetProps) {
   const { t } = useLocale();
   const navigate = useNavigate();
-  const ownedKeyResults = data.keyResults.filter((keyResult) => keyResult.ownerId === data.currentUser.id);
-  const executionStatuses = deriveExecutionStatuses({
-    ...data,
-    risks: data.risks.filter((risk) => can(data.currentUser, 'risk.read', risk).allowed),
-  });
+  const ownedKeyResults = data.keyResults.filter((keyResult) => isKrOwner(data.currentUser.id, keyResult.id, data.krAssignments));
+  const executionStatuses = deriveExecutionStatuses({ ...data, risks: [] });
 
   return (
     <section className="dashboard-widget" aria-labelledby="my-key-results-title">

@@ -2157,8 +2157,214 @@ select {
   font-size: 15px;
 }
 
+/* OKR hierarchy tree — Objective with branch connectors to its Key Results. */
+.okr-tree {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.okr-tree__objective {
+  position: relative;
+}
+
+.okr-tree__krs {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding-left: 28px;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.okr-tree__krs::before {
+  position: absolute;
+  content: '';
+  top: 8px;
+  bottom: 26px;
+  left: 12px;
+  width: 1px;
+  background: #cbd5e1;
+}
+
+.okr-tree__kr {
+  position: relative;
+}
+
+.okr-tree__kr::before {
+  position: absolute;
+  content: '';
+  top: 25px;
+  left: -16px;
+  width: 16px;
+  height: 1px;
+  background: #cbd5e1;
+}
+
+.okr-tree-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border: 1px solid #dbe3ee;
+  border-radius: var(--radius-md);
+}
+
+.okr-tree-node--objective {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.okr-tree-node--kr {
+  background: #fff;
+}
+
+.okr-tree-node__main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.okr-tree-node__number {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.okr-tree-node__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+  text-decoration: none;
+}
+
+.okr-tree-node__title:hover {
+  color: var(--color-primary);
+}
+
+.okr-tree-node__kr-title {
+  font-size: 13px;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.okr-tree-node__meta {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.okr-tree-node__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.okr-tree-node__kr .okr-tree-node__progress {
+  width: 180px;
+}
+
+.okr-tree-node__kr .okr-progress-track {
+  flex: 1;
+}
+
+.okr-tree-node__value {
+  font-weight: 700;
+  color: #1f2937;
+  font-size: 13px;
+}
+
 @media (min-width: 720px) {
   .okr-card-grid {
     grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   }
+}
+
+/* Recorded-hours widget and its filter bar. */
+.hours-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+  padding: var(--space-3) var(--space-4);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+}
+
+.hours-filterbar label {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.hours-filterbar input[type='date'],
+.hours-filterbar select {
+  min-width: 128px;
+}
+
+.hours-summary {
+  margin: var(--space-3) 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.hours-visualization {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.hours-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+}
+
+.hours-card__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 14px;
+}
+
+.hours-card__heading span {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.hours-card dl {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.hours-card dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 13px;
+  color: #475569;
+}
+
+.hours-card dt {
+  color: #334155;
+}
+
+.hours-card dd {
+  margin: 0;
+  font-weight: 700;
+  color: #1f2937;
 }

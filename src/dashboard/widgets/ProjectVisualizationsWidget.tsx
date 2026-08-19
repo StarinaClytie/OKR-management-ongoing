@@ -18,20 +18,16 @@ const ProgressTrendWidget = lazy(async () => {
   const module = await import('./ProgressTrendWidget');
   return { default: module.ProgressTrendWidget };
 });
-const RiskMatrixWidget = lazy(async () => {
-  const module = await import('./RiskMatrixWidget');
-  return { default: module.RiskMatrixWidget };
-});
-const WorkloadWidget = lazy(async () => {
-  const module = await import('./WorkloadWidget');
-  return { default: module.WorkloadWidget };
+const HoursWidget = lazy(async () => {
+  const module = await import('./HoursWidget');
+  return { default: module.HoursWidget };
 });
 
-type VisualizationId = 'alignment' | 'gantt' | 'trend' | 'risk' | 'workload';
+type VisualizationId = 'alignment' | 'gantt' | 'trend' | 'hours';
 
 function defaultTab(role: Role): VisualizationId {
   if (role === 'employee') return 'trend';
-  if (role === 'hr') return 'workload';
+  if (role === 'hr') return 'hours';
   return 'alignment';
 }
 
@@ -40,8 +36,7 @@ function renderPanel(activeTab: VisualizationId, data: DashboardData) {
     case 'alignment': return <AlignmentTreeWidget data={data} />;
     case 'gantt': return <GanttChartWidget data={data} />;
     case 'trend': return <ProgressTrendWidget data={data} />;
-    case 'risk': return <RiskMatrixWidget data={data} />;
-    case 'workload': return <WorkloadWidget data={data} />;
+    case 'hours': return <HoursWidget data={data} />;
   }
 }
 
@@ -97,8 +92,7 @@ export function ProjectVisualizationsWidget({ data }: ProjectVisualizationsWidge
     { id: 'alignment', label: t('visualization.alignment') },
     { id: 'gantt', label: t('visualization.gantt') },
     { id: 'trend', label: t('visualization.trend') },
-    { id: 'risk', label: t('visualization.risk') },
-    { id: 'workload', label: t('visualization.workload') },
+    { id: 'hours', label: t('visualization.hours') },
   ];
   const activeDefinition = tabs.find((tab) => tab.id === activeTab)!;
 

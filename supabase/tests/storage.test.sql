@@ -68,7 +68,7 @@ select is((select count(*) from storage.objects where bucket_id = 'report-attach
 select is((public.create_attachment_download((select id from public.report_attachments limit 1))->>'path'), (select storage_path from public.report_attachments limit 1), 'authorized owner receives a verified download path');
 
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000002', true);
-select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 1::bigint, 'authorized project reader can enumerate permitted object');
+select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 0::bigint, 'project member without a scoped block cannot enumerate the object');
 
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000003', true);
 select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 0::bigint, 'unrelated user cannot enumerate object names');

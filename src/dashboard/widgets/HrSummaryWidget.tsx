@@ -13,7 +13,7 @@ export function HrSummaryWidget({ data }: HrSummaryWidgetProps) {
   const authorizedWorkloads = data.workloads.filter(
     (workload) => can(data.currentUser, 'worklog.read_hours', workload).allowed,
   );
-  const overloadedCount = authorizedWorkloads.filter((workload) => workload.loggedHours > workload.capacityHours).length;
+  const totalLogged = authorizedWorkloads.reduce((sum, workload) => sum + workload.loggedHours, 0);
 
   return (
     <section className="dashboard-widget dashboard-widget--wide" aria-labelledby="hr-summary-title">
@@ -24,14 +24,12 @@ export function HrSummaryWidget({ data }: HrSummaryWidgetProps) {
         </div>
       </div>
       <div className="dashboard-metrics">
-        <MetricCard label={t('hr.overloadedPeople')} value={overloadedCount} detail={t('hr.overloadDetail')} />
         <MetricCard label={t('hr.authorizedRecords')} value={authorizedWorkloads.length} detail={t('hr.fieldsOnly')} />
+        <MetricCard label={t('daily.hours')} value={t('common.hours', { count: totalLogged })} detail={t('hr.logged')} />
       </div>
       <div className="workload-summary" aria-label={t('hr.authorizedList')}>
         {authorizedWorkloads.map((workload) => {
           const user = data.users.find((candidate) => candidate.id === workload.userId);
-          const overloaded = workload.loggedHours > workload.capacityHours;
-
           return (
             <PermissionGate key={workload.id} action="worklog.read_hours" resource={workload}>
               <article className="workload-row">
@@ -40,13 +38,8 @@ export function HrSummaryWidget({ data }: HrSummaryWidgetProps) {
                   <span>{t('hr.period', { start: workload.periodStart, end: workload.periodEnd })}</span>
                 </div>
                 <dl>
-                  <div><dt>{t('hr.planned')}</dt><dd>{t('common.hours', { count: workload.plannedHours })}</dd></div>
                   <div><dt>{t('hr.logged')}</dt><dd>{t('common.hours', { count: workload.loggedHours })}</dd></div>
-                  <div><dt>{t('hr.capacity')}</dt><dd>{t('common.hours', { count: workload.capacityHours })}</dd></div>
                 </dl>
-                <span className={overloaded ? 'workload-state workload-state--warning' : 'workload-state'}>
-                  {overloaded ? t('hr.overloaded') : t('hr.normal')}
-                </span>
               </article>
             </PermissionGate>
           );

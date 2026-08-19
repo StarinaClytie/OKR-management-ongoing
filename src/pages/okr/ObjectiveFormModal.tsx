@@ -46,6 +46,8 @@ export function ObjectiveFormModal({
   const [showAdvanced, setShowAdvanced] = useState(mode === 'edit');
   const firstFieldRef = useRef<HTMLInputElement>(null);
   const isCreate = mode === 'create';
+  // Only project leaders are eligible to lead an Objective (business role).
+  const leaderCandidates = eligibleUsers.filter((user) => user.role === 'project_leader');
 
   useEffect(() => {
     firstFieldRef.current?.focus();
@@ -94,7 +96,7 @@ export function ObjectiveFormModal({
           <span>{t('objective.field.leader')} *</span>
           <select value={values.leaderId} onChange={(event) => set('leaderId', event.target.value)} required>
             <option value="">{t('daily.select')}</option>
-            {eligibleUsers.map((user) => (
+            {leaderCandidates.map((user) => (
               <option key={user.id} value={user.id}>{user.displayName} · {user.role ? t(roleLabels[user.role]) : '—'}</option>
             ))}
           </select>

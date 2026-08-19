@@ -5,18 +5,18 @@ import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
-import { toLocalDailyReport, type DailyEvidenceDraft, type DailyReportDraft } from '../domain/dailyEntry';
-import { getDailyEvidencePermissionScope, getDailyReportBodyPermissionScope } from '../domain/permissions';
+import { toLocalDailyReport, type DailyReportDraft } from '../domain/dailyEntry';
+import { getDailyReportBodyPermissionScope } from '../domain/permissions';
 import { currentBusinessDate } from '../domain/progressStatus';
-import type { Classification, DailyReport, Objective, User } from '../domain/types';
+import type { DailyReport, KeyResult, User } from '../domain/types';
+import { isKrOwner } from '../domain/krAssignments';
 import { DailyReportForm } from './daily-report/DailyReportForm';
 import { dailyReportToDraft } from '../data/dailyReportMapper';
 import { repository } from '../lib/supabase';
 import { RevisionHistory, type RevisionSummary } from './daily-report/RevisionHistory';
-import { DailyReportEvidenceDetails } from './DailyReportEvidenceDetails';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { LocalizedMessage, MessageKey } from '../i18n/messages';
-import type { OkrRepository } from '../data/types';
+import type { DailyReportInput, OkrRepository } from '../data/types';
 import { useDashboardData } from '../data/useDashboardData';
 import { RepositoryDataState } from '../components/RepositoryDataState';
 
@@ -24,57 +24,19 @@ function authorName(authorId: string, users: User[], fallback: string) {
   return users.find((user) => user.id === authorId)?.name ?? fallback;
 }
 
-const classificationLabels: Record<Classification, MessageKey> = {
-  public: 'classification.public',
-  internal: 'classification.internal',
-  confidential: 'classification.confidential',
-  restricted: 'classification.restricted',
-};
-const classificationRank: Record<Classification, number> = { public: 0, internal: 1, confidential: 2, restricted: 3 };
-
-function authorizedEvidence(viewer: User, report: DailyReport): DailyEvidenceDraft[] {
-  const items = report.evidenceItems ?? report.evidence.map((label, index) => ({ id: `legacy-${index + 1}`, label, kind: 'link' as const, classification: report.evidenceClassification }));
-  return items.filter((item) => can(viewer, 'evidence.read', getDailyEvidencePermissionScope(report, item)).allowed);
+function keyResultTitle(keyResultId: string, keyResults: readonly KeyResult[], fallback: string) {
+  return keyResults.find((keyResult) => keyResult.id === keyResultId)?.title ?? fallback;
 }
 
-function authoringResource(authorId: string, objective: Objective): DailyReport {
+function blankBlock(linkedKeyResultId = ''): DailyReportDraft['blocks'][number] {
   return {
-    id: `authoring-${authorId}-${objective.id}`,
-    authorId,
-    projectId: objective.projectId,
-    objectiveId: objective.id,
-    keyResultIds: [],
-    date: currentBusinessDate(),
-    content: '',
-    classification: objective.classification,
+    id: 'block-1',
+    dailyObjective: '',
+    linkedKeyResultId,
     hours: 0,
-    evidence: [],
-    evidenceClassification: 'public',
-    attachmentIds: [],
-    status: 'draft',
+    result: '',
+    keyResults: [{ id: 'block-1-kr-1', title: '' }],
   };
-}
-
-export function resolveDailyAuthoringContext(
-  currentUser: User,
-  ownReports: readonly DailyReport[],
-  linkableObjectives: readonly Objective[],
-): { report: DailyReport; objective: Objective } | undefined {
-  for (const report of ownReports) {
-    const objective = linkableObjectives.find(
-      (candidate) => candidate.id === report.objectiveId && candidate.projectId === report.projectId,
-    );
-    if (objective && can(currentUser, 'daily_report.create', report).allowed) return { report, objective };
-  }
-
-  for (const report of ownReports) {
-    const objective = linkableObjectives.find((candidate) => candidate.projectId === report.projectId);
-    if (objective && can(currentUser, 'daily_report.create', report).allowed) return { report, objective };
-  }
-
-  return linkableObjectives
-    .map((objective) => ({ report: authoringResource(currentUser.id, objective), objective }))
-    .find((candidate) => can(currentUser, 'daily_report.create', candidate.report).allowed);
 }
 
 export function DailyReportsPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
@@ -131,7 +93,6 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
             { key: 'member', label: t('table.member'), render: (workload) => authorName(workload.userId, data.users, t('daily.unknownMember')) },
             { key: 'period', label: t('daily.period'), render: (workload) => t('hr.period', { start: workload.periodStart, end: workload.periodEnd }) },
             { key: 'hours', label: t('daily.hours'), render: (workload) => t('common.hours', { count: workload.loggedHours }) },
-            { key: 'capacity', label: t('daily.capacity'), render: (workload) => t('common.hours', { count: workload.capacityHours }) },
           ]}
         />
       </section>
@@ -140,73 +101,41 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
 
   const ownReports = readableReports.filter((report) => report.authorId === currentUser.id);
   const memberReports = readableReports.filter((report) => can(currentUser, 'daily_report.review', report).allowed);
+  const ownedKeyResults = data.keyResults.filter((keyResult) => isKrOwner(currentUser.id, keyResult.id, data.krAssignments) && can(currentUser, 'okr.read_summary', keyResult).allowed);
   const linkableObjectives = data.objectives.filter((objective) => can(currentUser, 'okr.read_summary', objective).allowed);
-  const linkableKeyResults = data.keyResults.filter((keyResult) => can(currentUser, 'okr.read_summary', keyResult).allowed);
-  const requestedObjectiveId = searchParams.get('objectiveId');
   const requestedKrId = searchParams.get('krId');
-  const requestedObjective = requestedObjectiveId
-    ? linkableObjectives.find((objective) => objective.id === requestedObjectiveId)
-    : undefined;
-  const authoringContext = requestedObjective
-    ? can(currentUser, 'daily_report.create', authoringResource(currentUser.id, requestedObjective)).allowed
-      ? { report: authoringResource(currentUser.id, requestedObjective), objective: requestedObjective }
-      : resolveDailyAuthoringContext(currentUser, ownReports, linkableObjectives)
-    : resolveDailyAuthoringContext(currentUser, ownReports, linkableObjectives);
-  const authoringObjectives = authoringContext
-    ? linkableObjectives.filter((objective) => objective.projectId === authoringContext.report.projectId)
-    : [];
-  const authoringObjectiveIds = new Set(authoringObjectives.map((objective) => objective.id));
-  const authoringKeyResults = linkableKeyResults.filter((keyResult) => authoringObjectiveIds.has(keyResult.objectiveId));
-  const requestedKr = requestedKrId
-    ? data.keyResults.find((keyResult) => keyResult.id === requestedKrId && keyResult.objectiveId === requestedObjective?.id)
-    : undefined;
-  const prefillDraft: DailyReportDraft | undefined = requestedObjective
-    ? {
-        dailyObjective: '',
-        linkedObjectiveId: requestedObjective.id,
-        keyResults: [{
-          id: 'daily-kr-1',
-          title: requestedKr?.title ?? '',
-          type: 'quantity',
-          workNote: '',
-          linkedKeyResultId: requestedKr?.id,
-        }],
-        evidence: [],
-        classification: 'internal',
-      }
+  const requestedKr = requestedKrId ? ownedKeyResults.find((keyResult) => keyResult.id === requestedKrId) : undefined;
+  const canAuthor = ownedKeyResults.length > 0;
+
+  const prefillDraft: DailyReportDraft | undefined = requestedKr
+    ? { blocks: [blankBlock(requestedKr.id)], evidence: [], classification: 'internal' }
     : undefined;
 
   async function handleSubmit(draft: DailyReportDraft) {
-    if (!authoringContext) {
-      return { ok: false as const, error: { key: 'daily.noAuthoringProject' } satisfies LocalizedMessage };
-    }
-
     const conversion = toLocalDailyReport(draft, {
-      authorId: authoringContext.report.authorId,
-      projectId: authoringContext.report.projectId,
-      fallbackObjectiveId: authoringContext.objective.id,
+      authorId: currentUserId,
       date: currentBusinessDate(),
       submissionNonce: nextLocalSubmissionNonce.current,
-      objectives: authoringObjectives,
-      keyResults: authoringKeyResults,
+      keyResults: data.keyResults,
+      objectives: data.objectives,
     });
     if (!conversion.ok) {
-      const errorKey = conversion.error.code === 'OBJECTIVE_NOT_IN_PROJECT'
-        ? 'daily.objectiveMismatch'
-        : conversion.error.code === 'KEY_RESULT_NOT_IN_OBJECTIVE'
-          ? 'daily.krMismatch'
-          : 'daily.fixRequired';
-      return { ok: false as const, error: { key: errorKey } satisfies LocalizedMessage };
+      return { ok: false as const, error: { key: conversion.error.code === 'KEY_RESULT_NOT_AVAILABLE' ? 'daily.krMismatch' : 'daily.fixRequired' } satisfies LocalizedMessage };
     }
 
     if (dataRepository.mode === 'supabase') {
-      const input = {
-        projectId: conversion.report.projectId, objectiveId: conversion.report.objectiveId,
-        reportDate: conversion.report.date, status: conversion.report.status,
-        classification: conversion.report.classification, totalHours: conversion.report.hours,
-        dailyObjective: conversion.report.dailyObjective ?? conversion.report.content,
-        objectiveProgress: conversion.report.objectiveProgress ?? 0,
-        keyResults: conversion.report.dailyKeyResults ?? [], evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
+      const input: DailyReportInput = {
+        reportDate: conversion.report.date,
+        status: conversion.report.status,
+        classification: conversion.report.classification,
+        blocks: draft.blocks.map((block) => ({
+          dailyObjective: block.dailyObjective,
+          linkedKeyResultId: block.linkedKeyResultId,
+          hours: block.hours,
+          result: block.result,
+          keyResults: block.keyResults.map((keyResult) => ({ title: keyResult.title })),
+        })),
+        evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
       const files = draft.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []);
       const persisted = editingReport
@@ -225,29 +154,31 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     return { ok: true as const };
   }
 
+  const reportContent = (report: DailyReport) => {
+    const blocks = report.blocks ?? [];
+    if (blocks.length > 0) {
+      return (
+        <div className="daily-blocks">
+          {blocks.map((block) => (
+            <div key={block.id} className="daily-block">
+              <p><strong>{t('daily.objective')}：</strong>{block.dailyObjective}</p>
+              <p><strong>{t('daily.linkedQuarterlyKr')}：</strong>{keyResultTitle(block.keyResultId, data.keyResults, t('daily.unknownMember'))}</p>
+              {block.keyResults.map((keyResult) => (
+                <p key={keyResult.id}>{t('daily.krSummaryPrefix', { number: keyResult.id, title: keyResult.title })}{keyResult.title}{t('daily.krSummarySuffix')}</p>
+              ))}
+              {block.result ? <p><strong>{t('daily.result')}：</strong>{block.result}</p> : null}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return <p>{report.dailyObjective ?? report.content}</p>;
+  };
+
   const reportColumns = (showOwnActions: boolean) => [
     { key: 'author', label: t('daily.author'), render: (report: DailyReport) => authorName(report.authorId, data.users, t('daily.unknownMember')) },
     { key: 'date', label: t('daily.date'), render: (report: DailyReport) => report.date },
-    {
-      key: 'content',
-      label: t('daily.content'),
-      render: (report: DailyReport) => {
-        const visibleEvidence = authorizedEvidence(currentUser, report);
-        const evidenceClassification = visibleEvidence.reduce<Classification>((highest, item) => classificationRank[item.classification] > classificationRank[highest] ? item.classification : highest, 'public');
-        return <div>
-          <p>{report.dailyObjective ?? report.content}</p>
-          {report.dailyKeyResults?.map((keyResult, index) => (
-            <p key={keyResult.id}>
-              {t('daily.krSummaryPrefix', { number: index + 1, title: keyResult.title })}
-              <span>{keyResult.progress ?? '—'}%</span>
-              {t('daily.krSummarySuffix')}
-            </p>
-          ))}
-          {visibleEvidence.length > 0 && <p>{t('daily.evidenceClassification', { classification: t(classificationLabels[evidenceClassification]) })}</p>}
-          <DailyReportEvidenceDetails viewer={currentUser} report={report} attachments={data.attachments} />
-        </div>;
-      },
-    },
+    { key: 'content', label: t('daily.content'), render: (report: DailyReport) => reportContent(report) },
     { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
     { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
     ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (dataRepository.mode === 'supabase') { const history = await dataRepository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
@@ -258,18 +189,18 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       <PageHeader
         title={t('daily.title')}
         description={t('daily.description')}
-        primaryAction={authoringContext ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { setNotice(null); setIsAuthoring(true); } } : undefined}
+        primaryAction={canAuthor ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { setNotice(null); setIsAuthoring(true); } } : undefined}
       />
       {notice && <p className="page-notice" role="status">{t(notice)}</p>}
-      {!authoringContext && <p className="data-table__empty">{t('daily.noAuthoringContext')}</p>}
-      {isAuthoring && authoringContext && (
+      {!canAuthor && <p className="data-table__empty">{t('daily.noOwnedKr')}</p>}
+      {isAuthoring && canAuthor && (
         <section className="page-section" aria-labelledby="daily-report-authoring">
           <h2 id="daily-report-authoring" ref={authoringHeadingRef} tabIndex={-1}>{editingReport ? t('daily.editMine') : t('daily.fillToday')}</h2>
           <DailyReportForm
             mode={editingReport ? 'edit' : 'create'}
             initialDraft={editingReport ? dailyReportToDraft(editingReport) : prefillDraft}
-            objectives={authoringObjectives}
-            keyResults={authoringKeyResults}
+            ownedKeyResults={ownedKeyResults}
+            objectives={linkableObjectives}
             onCancel={() => { restoreAuthoringFocus.current = true; setEditingReport(undefined); setIsAuthoring(false); }}
             onSubmit={handleSubmit}
           />

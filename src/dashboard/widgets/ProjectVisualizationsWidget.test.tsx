@@ -5,10 +5,6 @@ import { AlignmentTreeWidget } from './AlignmentTreeWidget';
 import { GanttChartWidget } from './GanttChartWidget';
 import { ProgressTrendWidget } from './ProgressTrendWidget';
 import { ProjectVisualizationsWidget, VisualizationLoadingFallback } from './ProjectVisualizationsWidget';
-import { RiskMatrixWidget } from './RiskMatrixWidget';
-import { AuthProvider } from '../../auth/AuthContext';
-import { DemoOkrRepository } from '../../data/demoRepository';
-import { LocaleProvider } from '../../i18n/LocaleProvider';
 
 const leaderData = mockRepository.getDashboardData('user-project-leader');
 
@@ -49,7 +45,7 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.getByRole('status')).toHaveTextContent('正在加载项目视图');
   });
 
-  it.each(['对齐树', '甘特图', '进度趋势', '风险矩阵', '工作负载'])(
+  it.each(['对齐树', '甘特图', '进度趋势', '工时'])(
     'switches visible content to %s without retaining the previous panel',
     async (label) => {
       const user = userEvent.setup();
@@ -69,7 +65,7 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.getByRole('tab', { name: '进度趋势' })).toHaveAttribute('aria-selected', 'true');
 
     rerender(<ProjectVisualizationsWidget data={mockRepository.getDashboardData('user-hr')} />);
-    expect(screen.getByRole('tab', { name: '工作负载' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '工时' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('moves and activates tabs with arrow, Home, and End keys', () => {
@@ -82,9 +78,9 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.getByRole('tabpanel', { name: '甘特图' })).toBeVisible();
 
     fireEvent.keyDown(screen.getByRole('tab', { name: '甘特图' }), { key: 'End' });
-    expect(screen.getByRole('tab', { name: '工作负载' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: '工时' })).toHaveFocus();
 
-    fireEvent.keyDown(screen.getByRole('tab', { name: '工作负载' }), { key: 'Home' });
+    fireEvent.keyDown(screen.getByRole('tab', { name: '工时' }), { key: 'Home' });
     expect(screen.getByRole('tab', { name: '对齐树' })).toHaveFocus();
   });
 
@@ -112,23 +108,11 @@ describe('ProjectVisualizationsWidget', () => {
       }
     }
 
-    await user.click(screen.getByRole('tab', { name: '风险矩阵' }));
-    const riskTab = screen.getByRole('tab', { name: '风险矩阵' });
-    expect(document.getElementById(riskTab.getAttribute('aria-controls')!)).toBe(
-      screen.getByRole('tabpanel', { name: '风险矩阵' }),
+    await user.click(screen.getByRole('tab', { name: '工时' }));
+    const workloadTab = screen.getByRole('tab', { name: '工时' });
+    expect(document.getElementById(workloadTab.getAttribute('aria-controls')!)).toBe(
+      screen.getByRole('tabpanel', { name: '工时' }),
     );
-  });
-
-  it('makes the narrow-screen risk matrix scroll container keyboard reachable', async () => {
-    const user = userEvent.setup();
-    render(<ProjectVisualizationsWidget data={leaderData} />);
-
-    await user.click(screen.getByRole('tab', { name: '风险矩阵' }));
-
-    const scrollRegion = screen.getByRole('region', { name: '风险矩阵，可横向滚动' });
-    expect(scrollRegion).toHaveAttribute('tabindex', '0');
-    scrollRegion.focus();
-    expect(scrollRegion).toHaveFocus();
   });
 
   it('marks a project leader owned KR as mine', () => {
@@ -214,55 +198,6 @@ describe('ProjectVisualizationsWidget', () => {
     expect(container).not.toHaveTextContent(secret);
   });
 
-  it('opens an authorized risk into a real in-place detail panel instead of a fragment-only link', async () => {
-    const user = userEvent.setup();
-    render(<RiskMatrixWidget data={leaderData} />);
-
-    await user.click(screen.getByRole('button', { name: '查看风险详情：实验样本量不足' }));
-
-    const panel = screen.getByRole('region', { name: '风险详情' });
-    expect(panel).toHaveTextContent('实验样本量不足');
-    expect(panel).toHaveTextContent('按周监控流量并准备合并实验方案。');
-    expect(panel).toHaveTextContent('概率 2 × 影响 2 = 4');
-    expect(panel).toHaveTextContent('风险事件严重程度：中风险事件');
-    expect(panel).toHaveTextContent('执行状态影响：不自动升级执行状态。');
-    expect(panel).toHaveTextContent('判断依据');
-    expect(panel).toHaveTextContent('负责人');
-    expect(panel).toHaveTextContent('最近复核');
-  });
-
-  it('renders all nine textual coordinates and a readable upright probability axis', () => {
-    const { container } = render(<RiskMatrixWidget data={leaderData} />);
-    expect(screen.getAllByRole('region', { name: /概率，.*影响/ })).toHaveLength(9);
-    const axis = screen.getByText('发生概率 ↑');
-    expect(axis).toHaveClass('risk-matrix__axis--y');
-    expect(container.querySelector('.risk-matrix__axis--y')).toBe(axis);
-  });
-
-  it('explains matrix event severity separately from execution status', () => {
-    render(<RiskMatrixWidget data={leaderData} />);
-
-    expect(screen.getByText('风险事件 ≠ 执行状态')).toBeVisible();
-    expect(screen.getByText(/纵轴：发生概率/)).toBeVisible();
-    expect(screen.getByText(/横轴：业务影响/)).toBeVisible();
-    expect(screen.getByText('风险分 = 概率 × 影响')).toBeVisible();
-    expect(screen.getByText(/1–2：低风险事件/)).toBeVisible();
-    expect(screen.getByText(/3–4：中风险事件/)).toBeVisible();
-    expect(screen.getByText(/6：高风险事件，执行状态升级为需关注/)).toBeVisible();
-    expect(screen.getByText(/9：严重风险事件，执行状态升级为已偏离/)).toBeVisible();
-    expect(screen.getByText('示例：概率 1 × 影响 3 = 3，为中风险事件，不自动升级执行状态。')).toBeVisible();
-  });
-
-  it('uses locale-appropriate punctuation in the English risk explanation', () => {
-    window.localStorage.setItem('northstar.locale', 'en');
-    render(<AuthProvider><LocaleProvider repository={new DemoOkrRepository()}><RiskMatrixWidget data={leaderData} /></LocaleProvider></AuthProvider>);
-
-    const explanation = screen.getByText(/Risk event ≠ execution status/).closest('p');
-    expect(explanation).toHaveTextContent('Risk event ≠ execution status: The matrix assesses');
-    expect(explanation).not.toHaveTextContent('status：');
-    window.localStorage.clear();
-  });
-
   it('never leaves denied labels in text, accessible names, or hidden panels', async () => {
     const user = userEvent.setup();
     const sensitiveLabel = '禁止泄漏的严格机密任务名称';
@@ -282,26 +217,6 @@ describe('ProjectVisualizationsWidget', () => {
     await user.click(screen.getByRole('tab', { name: '甘特图' }));
     expect(container).not.toHaveTextContent(sensitiveLabel);
     expect(container.querySelector(`[title*="${sensitiveLabel}"]`)).not.toBeInTheDocument();
-  });
-
-  it('does not mount a restricted risk label after opening the risk matrix', async () => {
-    const user = userEvent.setup();
-    const sensitiveLabel = '严格机密风险不应进入风险矩阵';
-    const restrictedData = {
-      ...leaderData,
-      risks: leaderData.risks.map((risk) =>
-        risk.id === 'risk-orion-sample-size'
-          ? { ...risk, title: sensitiveLabel, classification: 'restricted' as const }
-          : risk,
-      ),
-    };
-    const { container } = render(<ProjectVisualizationsWidget data={restrictedData} />);
-
-    await user.click(screen.getByRole('tab', { name: '风险矩阵' }));
-
-    expect(container).not.toHaveTextContent(sensitiveLabel);
-    expect(container.querySelector(`[aria-label*="${sensitiveLabel}"]`)).not.toBeInTheDocument();
-    expect(container.querySelector(`[href*="risk-orion-sample-size"]`)).not.toBeInTheDocument();
   });
 
   it('renders twelve authorized weekly points with directly identified series', () => {
@@ -341,15 +256,13 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.getByLabelText('最新实际进度')).not.toHaveTextContent('0%');
   });
 
-  it('shows HR workload fields without ever rendering report bodies', () => {
+  it('shows HR recorded hours without ever rendering report bodies', () => {
     const hrData = mockRepository.getDashboardData('user-hr');
     const secretReportBody = hrData.dailyReports[0].content;
     render(<ProjectVisualizationsWidget data={hrData} />);
 
-    expect(screen.getByRole('tabpanel', { name: '工作负载' })).toBeVisible();
-    expect(screen.getAllByText('计划工时')[0]).toBeVisible();
-    expect(screen.getAllByText('已记录工时')[0]).toBeVisible();
-    expect(screen.getAllByText('可用容量')[0]).toBeVisible();
+    expect(screen.getByRole('tabpanel', { name: '工时' })).toBeVisible();
+    expect(screen.getAllByText('李然').length).toBeGreaterThan(0);
     expect(screen.queryByText(secretReportBody)).not.toBeInTheDocument();
   });
 });

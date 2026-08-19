@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "build:production": "node scripts/build-production.mjs",
     "verify:config": "node scripts/verify-supabase-config.mjs",
-    "test:smoke:real": "vitest run src/pages/pageFrameworks.test.tsx src/pages/RiskEditor.test.tsx src/pages/KrProgressEditor.test.tsx src/app/routes.test.tsx src/i18n/LocaleProvider.test.tsx",
+    "test:smoke:real": "vitest run src/pages/pageFrameworks.test.tsx src/pages/KrProgressEditor.test.tsx src/app/routes.test.tsx src/i18n/LocaleProvider.test.tsx",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest",
     "test:run": "vitest run"

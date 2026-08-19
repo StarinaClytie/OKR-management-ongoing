@@ -1,9 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { getKrAverageReference, validateDailyReportDraft, validateProgress, type DailyKeyResultDraft, type DailyReportDraft } from '../../domain/dailyEntry';
+import { useMemo, useRef, useState } from 'react';
+import { validateDailyReportDraft, type DailyOkrBlockDraft, type DailyReportDraft } from '../../domain/dailyEntry';
 import type { KeyResult, Objective } from '../../domain/types';
-import { DailyKeyResultEditor } from './DailyKeyResultEditor';
-import { DailyKrHelp } from './DailyKrHelp';
-import { DailyObjectiveField } from './DailyObjectiveField';
 import { DailyReportEvidence } from './DailyReportEvidence';
 import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';
 import type { LocalizedMessage, MessageKey } from '../../i18n/messages';
@@ -15,41 +12,19 @@ export type DailyReportSubmitResult =
 interface DailyReportFormProps {
   mode?: 'create' | 'edit';
   initialDraft?: DailyReportDraft;
+  ownedKeyResults: readonly KeyResult[];
   objectives: readonly Objective[];
-  keyResults: readonly KeyResult[];
   onCancel: () => void;
   onSubmit: (draft: DailyReportDraft) => DailyReportSubmitResult | Promise<DailyReportSubmitResult>;
 }
 
-const initialKeyResult = (id: string): DailyKeyResultDraft => ({
-  id,
-  title: '',
-  type: 'quantity',
-  hours: undefined,
-  progress: undefined,
-  workNote: '',
-});
-
 const validationKeys: Record<string, MessageKey> = {
-  '请填写完成度': 'validation.progressRequired',
-  '完成度需填写 0%～100%': 'validation.progressRange',
+  '请至少添加一组 Daily OKR': 'validation.blockRequired',
   '请填写当日 O': 'validation.objectiveRequired',
+  '请选择关联的季度 KR': 'validation.linkedKrRequired',
+  '工时需填写有限且不小于 0 的数值': 'validation.hoursInvalid',
   '请至少添加一个当日 KR': 'validation.krRequired',
   '请填写 KR 内容': 'validation.krContentRequired',
-  '请填写 KR 工作说明': 'validation.krNoteRequired',
-  '工时需填写有限且不小于 0 的数值': 'validation.hoursInvalid',
-  '请填写数量型 KR 的目标值': 'validation.quantityTarget',
-  '数量型 KR 的目标值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
-  '当前实际值需填写有限且不小于 0 的数值': 'validation.currentActual',
-  '请填写比率型 KR 的起始值': 'validation.ratioBaseline',
-  '比率型 KR 的起始值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
-  '请填写比率型 KR 的目标值': 'validation.ratioTarget',
-  '比率型 KR 的目标值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
-  '请填写比率型 KR 的当前值': 'validation.ratioCurrent',
-  '比率型 KR 的当前值需填写有限且不小于 0 的数值': 'validation.valueInvalid',
-  '请填写里程碑截止日期': 'validation.milestoneDate',
-  '请选择里程碑当前状态': 'validation.milestoneStatus',
-  '请填写主观型 KR 的验收标准': 'validation.subjectiveCriteria',
   '请填写成果名称或链接说明': 'validation.evidenceName',
   '请选择成果类型': 'validation.evidenceType',
   '请选择有效的成果密级': 'validation.evidenceClassification',
@@ -62,92 +37,79 @@ function localizeValidation(message: string | null, t: LocaleContextValue['t']):
   return key ? t(key) : t('common.requestFailed');
 }
 
-function useNarrowDailyForm() {
-  const [narrow, setNarrow] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const query = window.matchMedia('(max-width: 760px)');
-    const update = () => setNarrow(query.matches);
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  }, []);
-
-  return narrow;
+function newBlock(id: string, linkedKeyResultId = ''): DailyOkrBlockDraft {
+  return {
+    id,
+    dailyObjective: '',
+    linkedKeyResultId,
+    hours: 0,
+    result: '',
+    keyResults: [{ id: `${id}-kr-1`, title: '' }],
+  };
 }
 
-export function DailyReportForm({ mode = 'create', initialDraft, objectives, keyResults, onCancel, onSubmit }: DailyReportFormProps) {
+export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults, objectives, onCancel, onSubmit }: DailyReportFormProps) {
   const { t } = useLocale();
-  const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft ? structuredClone(initialDraft) : ({
-    dailyObjective: '',
-    objectiveProgress: undefined,
-    keyResults: [initialKeyResult('daily-kr-1')],
-    evidence: [],
-    classification: 'internal',
-  }));
-  const [activeKrId, setActiveKrId] = useState(initialDraft?.keyResults[0]?.id ?? 'daily-kr-1');
+  const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft
+    ? structuredClone(initialDraft)
+    : { blocks: [newBlock('block-1')], evidence: [], classification: 'internal' });
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
   const [status, setStatus] = useState<LocalizedMessage | null>(null);
-  const nextKrId = useRef(2);
-  const narrow = useNarrowDailyForm();
-  const averageReference = useMemo(() => getKrAverageReference(draft.keyResults), [draft.keyResults]);
+  const nextBlockId = useRef(initialDraft?.blocks.length ?? 1);
+  const nextKrId = useRef(100);
+
   const validationErrors = useMemo(() => showSubmitErrors
     ? Object.fromEntries(validateDailyReportDraft(draft).map((issue) => [issue.field, localizeValidation(issue.message, t)!])) as Record<string, string>
     : {}, [draft, showSubmitErrors, t]);
-  const objectiveProgressValidation = validateProgress(draft.objectiveProgress);
-  const objectiveProgressError = showSubmitErrors || draft.objectiveProgress !== undefined ? localizeValidation(objectiveProgressValidation, t) : null;
-  const activeKr = draft.keyResults.find((keyResult) => keyResult.id === activeKrId);
 
-  const updateKeyResult = (id: string, patch: Partial<DailyKeyResultDraft>) => {
-    setDraft((current) => ({ ...current, keyResults: current.keyResults.map((keyResult) => keyResult.id === id ? { ...keyResult, ...patch } : keyResult) }));
+  const objectiveById = useMemo(() => new Map(objectives.map((objective) => [objective.id, objective])), [objectives]);
+
+  const totalHours = draft.blocks.reduce((sum, block) => sum + (Number.isFinite(block.hours) ? block.hours : 0), 0);
+
+  const updateBlock = (id: string, patch: Partial<DailyOkrBlockDraft>) => {
+    setDraft((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) }));
   };
 
-  const updateKeyResultProgress = (id: string, progress: number | undefined) => {
-    updateKeyResult(id, { progress });
-  };
-
-  const updateObjectiveProgress = (progress: number | undefined) => {
-    setDraft((current) => ({ ...current, objectiveProgress: progress }));
-  };
-
-  const addKeyResult = () => {
-    const id = `daily-kr-${nextKrId.current++}`;
-    setDraft((current) => ({ ...current, keyResults: [...current.keyResults, initialKeyResult(id)] }));
-    setActiveKrId(id);
-  };
-
-  const moveKeyResult = (index: number, offset: -1 | 1) => {
-    setDraft((current) => {
-      const destination = index + offset;
-      if (destination < 0 || destination >= current.keyResults.length) return current;
-      const keyResults = [...current.keyResults];
-      [keyResults[index], keyResults[destination]] = [keyResults[destination]!, keyResults[index]!];
-      return { ...current, keyResults };
-    });
-  };
-
-  const removeKeyResult = (id: string) => {
-    if (draft.keyResults.length === 1) return;
-    const index = draft.keyResults.findIndex((keyResult) => keyResult.id === id);
-    const keyResults = draft.keyResults.filter((keyResult) => keyResult.id !== id);
-    setDraft((current) => ({ ...current, keyResults }));
-    if (id === activeKrId) setActiveKrId(keyResults[Math.min(index, keyResults.length - 1)]!.id);
-  };
-
-  const changeLinkedObjective = (linkedObjectiveId: string | undefined) => {
-    const compatibleKeyResultIds = new Set(
-      keyResults.filter((keyResult) => keyResult.objectiveId === linkedObjectiveId).map((keyResult) => keyResult.id),
-    );
+  const updateBlockKr = (blockId: string, krId: string, title: string) => {
     setDraft((current) => ({
       ...current,
-      linkedObjectiveId,
-      keyResults: current.keyResults.map((keyResult) => keyResult.linkedKeyResultId && !compatibleKeyResultIds.has(keyResult.linkedKeyResultId)
-        ? { ...keyResult, linkedKeyResultId: undefined }
-        : keyResult),
+      blocks: current.blocks.map((block) => block.id === blockId
+        ? { ...block, keyResults: block.keyResults.map((keyResult) => keyResult.id === krId ? { ...keyResult, title } : keyResult) }
+        : block),
     }));
   };
 
-  const saveDraft = () => setStatus({ key: 'daily.draftSaved' });
+  const addBlock = () => {
+    nextBlockId.current += 1;
+    const id = `block-${nextBlockId.current}`;
+    setDraft((current) => ({ ...current, blocks: [...current.blocks, newBlock(id)] }));
+  };
+
+  const removeBlock = (id: string) => {
+    if (draft.blocks.length === 1) return;
+    setDraft((current) => ({ ...current, blocks: current.blocks.filter((block) => block.id !== id) }));
+  };
+
+  const addBlockKr = (blockId: string) => {
+    nextKrId.current += 1;
+    const krId = `daily-kr-${nextKrId.current}`;
+    setDraft((current) => ({
+      ...current,
+      blocks: current.blocks.map((block) => block.id === blockId
+        ? { ...block, keyResults: [...block.keyResults, { id: krId, title: '' }] }
+        : block),
+    }));
+  };
+
+  const removeBlockKr = (blockId: string, krId: string) => {
+    setDraft((current) => ({
+      ...current,
+      blocks: current.blocks.map((block) => block.id === blockId
+        ? (block.keyResults.length === 1 ? block : { ...block, keyResults: block.keyResults.filter((keyResult) => keyResult.id !== krId) })
+        : block),
+    }));
+  };
+
   const submit = async () => {
     setShowSubmitErrors(true);
     if (validateDailyReportDraft(draft).length > 0) {
@@ -161,58 +123,108 @@ export function DailyReportForm({ mode = 'create', initialDraft, objectives, key
   return (
     <form className="daily-entry-layout" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <div className="daily-entry-form">
-        <DailyObjectiveField
-          objective={draft.dailyObjective}
-          objectiveError={validationErrors.dailyObjective ?? null}
-          progress={draft.objectiveProgress}
-          progressError={objectiveProgressError}
-          averageReference={averageReference}
-          onObjectiveChange={(dailyObjective) => setDraft((current) => ({ ...current, dailyObjective }))}
-          onProgressChange={updateObjectiveProgress}
-        />
-        <section className="daily-key-results form-card form-section" aria-labelledby="daily-key-results-heading">
-          <div className="daily-evidence__header">
-            <h2 id="daily-key-results-heading">{t('daily.todayKrs')}</h2>
-            <button type="button" className="button button--secondary" onClick={addKeyResult}>{t('daily.addKr')}</button>
-          </div>
-          {draft.keyResults.map((keyResult, index) => (
-            <DailyKeyResultEditor
-              key={keyResult.id}
-              index={index}
-              keyResult={keyResult}
-              errors={{ title: validationErrors[`keyResults.${index}.title`], hours: validationErrors[`keyResults.${index}.hours`], progress: showSubmitErrors || keyResult.progress !== undefined ? localizeValidation(validateProgress(keyResult.progress), t) ?? undefined : undefined, targetValue: validationErrors[`keyResults.${index}.targetValue`], actualValue: validationErrors[`keyResults.${index}.actualValue`], baselineValue: validationErrors[`keyResults.${index}.baselineValue`], dueDate: validationErrors[`keyResults.${index}.dueDate`], milestoneStatus: validationErrors[`keyResults.${index}.milestoneStatus`], acceptanceCriteria: validationErrors[`keyResults.${index}.acceptanceCriteria`], workNote: validationErrors[`keyResults.${index}.workNote`] }}
-              onChange={(patch) => updateKeyResult(keyResult.id, patch)}
-              onProgressChange={(progress) => updateKeyResultProgress(keyResult.id, progress)}
-              onActivate={() => setActiveKrId(keyResult.id)}
-              onMoveUp={() => moveKeyResult(index, -1)}
-              onMoveDown={() => moveKeyResult(index, 1)}
-              onRemove={() => removeKeyResult(keyResult.id)}
-              canMoveUp={index > 0}
-              canMoveDown={index < draft.keyResults.length - 1}
-              canRemove={draft.keyResults.length > 1}
-              linkedObjectiveId={draft.linkedObjectiveId}
-              availableKeyResults={draft.linkedObjectiveId ? keyResults.filter((candidate) => candidate.objectiveId === draft.linkedObjectiveId) : []}
-              onLinkedKeyResultChange={(linkedKeyResultId) => updateKeyResult(keyResult.id, { linkedKeyResultId })}
-              help={narrow && activeKrId === keyResult.id ? <DailyKrHelp type={keyResult.type} className="daily-entry-help--mobile" /> : undefined}
-            />
-          ))}
-        </section>
+        {draft.blocks.map((block, index) => {
+          const prefix = `blocks.${index}`;
+          const hoursValue = block.hours === 0 ? '' : String(block.hours);
+          return (
+            <section key={block.id} className="form-card form-section daily-okr-block" aria-labelledby={`${block.id}-heading`}>
+              <div className="daily-evidence__header">
+                <h2 id={`${block.id}-heading`}>{t('daily.blockHeading', { number: index + 1 })}</h2>
+                {draft.blocks.length > 1 ? (
+                  <button type="button" className="button button--secondary" onClick={() => removeBlock(block.id)}>{t('daily.removeBlock')}</button>
+                ) : null}
+              </div>
+
+              <label className="modal-field">
+                <span>{t('daily.linkedQuarterlyKr')} *</span>
+                <select
+                  value={block.linkedKeyResultId}
+                  aria-invalid={Boolean(validationErrors[`${prefix}.linkedKeyResultId`])}
+                  onChange={(event) => updateBlock(block.id, { linkedKeyResultId: event.target.value })}
+                >
+                  <option value="">{t('daily.select')}</option>
+                  {ownedKeyResults.map((keyResult) => {
+                    const objective = objectiveById.get(keyResult.objectiveId);
+                    return (
+                      <option key={keyResult.id} value={keyResult.id}>
+                        {objective ? `${objective.title} / ` : ''}{keyResult.title}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+
+              <label className="modal-field">
+                <span>{t('daily.objective')} *</span>
+                <input
+                  value={block.dailyObjective}
+                  aria-invalid={Boolean(validationErrors[`${prefix}.dailyObjective`])}
+                  onChange={(event) => updateBlock(block.id, { dailyObjective: event.target.value })}
+                  placeholder={t('daily.objectivePlaceholder')}
+                />
+              </label>
+
+              <div className="modal-field">
+                <span>{t('daily.todayKrs')}</span>
+                <div className="daily-kr-editor">
+                  {block.keyResults.map((keyResult, krIndex) => (
+                    <div key={keyResult.id} className="daily-kr-editor__row">
+                      <input
+                        aria-label={t('daily.blockKrLabel', { block: index + 1, number: krIndex + 1 })}
+                        value={keyResult.title}
+                        aria-invalid={Boolean(validationErrors[`${prefix}.keyResults.${krIndex}.title`])}
+                        onChange={(event) => updateBlockKr(block.id, keyResult.id, event.target.value)}
+                        placeholder={t('daily.krPlaceholder')}
+                      />
+                      {block.keyResults.length > 1 ? (
+                        <button type="button" className="button button--secondary" onClick={() => removeBlockKr(block.id, keyResult.id)} aria-label={t('daily.removeKr')}>{t('common.cancel')}</button>
+                      ) : null}
+                    </div>
+                  ))}
+                  <button type="button" className="button button--secondary" onClick={() => addBlockKr(block.id)}>{t('daily.addTodayKr')}</button>
+                </div>
+              </div>
+
+              <label className="modal-field">
+                <span>{t('daily.blockHours')} *</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  inputMode="decimal"
+                  value={hoursValue}
+                  aria-invalid={Boolean(validationErrors[`${prefix}.hours`])}
+                  onChange={(event) => updateBlock(block.id, { hours: event.target.value === '' ? 0 : Number(event.target.value) })}
+                />
+              </label>
+
+              <label className="modal-field">
+                <span>{t('daily.result')}</span>
+                <textarea value={block.result} onChange={(event) => updateBlock(block.id, { result: event.target.value })} rows={2} />
+              </label>
+            </section>
+          );
+        })}
+
+        <button type="button" className="button button--secondary" onClick={addBlock}>{t('daily.addBlock')}</button>
+
         <DailyReportEvidence
-          objectives={objectives}
-          linkedObjectiveId={draft.linkedObjectiveId}
+          objectives={[]}
+          linkedObjectiveId={undefined}
           evidence={draft.evidence}
-          onLinkedObjectiveChange={changeLinkedObjective}
+          onLinkedObjectiveChange={() => undefined}
           onEvidenceChange={(evidence) => setDraft((current) => ({ ...current, evidence }))}
           errors={validationErrors}
         />
+
+        <p className="daily-total-hours">{t('daily.totalHours', { count: totalHours })}</p>
+
         <div className="daily-form-actions">
           <button type="button" className="button button--secondary" onClick={onCancel}>{t('common.cancel')}</button>
-          <button type="button" className="button button--secondary" onClick={saveDraft}>{t('daily.saveDraft')}</button>
           <button type="submit" className="button button--primary">{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
         </div>
         {status && <p className="page-notice" role="status">{t(status.key, status.values)}</p>}
       </div>
-      {!narrow && activeKr && <aside className="daily-entry-help-shell" aria-label={t('daily.help')}><DailyKrHelp type={activeKr.type} /></aside>}
     </form>
   );
 }

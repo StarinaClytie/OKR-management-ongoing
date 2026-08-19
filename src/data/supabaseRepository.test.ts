@@ -114,22 +114,22 @@ describe('SupabaseOkrRepository', () => {
   it('sends create input only through the restricted report RPC', async () => {
     const { client, rpc } = createClient({ rpcData: 'report-1' });
     const result = await new SupabaseOkrRepository(client).createDailyReport({
-      projectId: 'project-1', objectiveId: 'objective-1', reportDate: '2026-08-13',
-      status: 'submitted', classification: 'internal', totalHours: 2,
-      dailyObjective: '完成目标', objectiveProgress: 0, keyResults: [], evidenceLinks: [],
+      reportDate: '2026-08-13', status: 'submitted', classification: 'internal',
+      blocks: [{ dailyObjective: '完成目标', linkedKeyResultId: 'kr-1', hours: 2, result: '', keyResults: [{ title: 'KR' }] }],
+      evidenceLinks: [],
     });
     expect(result).toEqual({ ok: true, data: { id: 'report-1', revision: 1 } });
     expect(rpc).toHaveBeenCalledWith('create_daily_report', expect.objectContaining({
-      p_project_id: 'project-1', p_objective_progress: 0,
+      p_report_date: '2026-08-13', p_blocks: expect.any(Array),
     }));
   });
 
   it('maps PostgreSQL serialization errors to revision conflicts', async () => {
     const { client } = createClient({ rpcError: { code: '40001', message: 'Daily report revision conflict' } });
     const result = await new SupabaseOkrRepository(client).updateDailyReport('report-1', 3, {
-      projectId: 'project-1', objectiveId: 'objective-1', reportDate: '2026-08-13',
-      status: 'submitted', classification: 'internal', totalHours: 2,
-      dailyObjective: '更新', objectiveProgress: 10, keyResults: [], evidenceLinks: [],
+      reportDate: '2026-08-13', status: 'submitted', classification: 'internal',
+      blocks: [{ dailyObjective: '更新', linkedKeyResultId: 'kr-1', hours: 2, result: '', keyResults: [{ title: 'KR' }] }],
+      evidenceLinks: [],
     });
     expect(result).toEqual({ ok: false, error: { code: 'conflict', message: '请求未完成，请稍后重试' } });
   });
@@ -286,7 +286,7 @@ describe('SupabaseOkrRepository', () => {
       progressSnapshots: [expect.objectContaining({ id: 'snapshot-1', keyResultId: 'kr-1', actual: 0, planned: 25, weekOf: '2026-08-14' })],
     }) });
     expect(from.mock.calls.map(([table]) => table)).toEqual([
-      'profiles', 'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates',
+      'profiles', 'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_okr_blocks',
     ]);
     if (!result.ok) throw new Error('Expected dashboard data');
     expectTypeOf(result.data.risks[0]).toMatchTypeOf<{ keyResultId?: string; objectiveId?: string; resolved: boolean } | undefined>();
@@ -330,7 +330,7 @@ describe('SupabaseOkrRepository', () => {
     const { client } = createClient();
     client.rpc = rpc;
     client.storage.from = vi.fn(() => ({ upload, createSignedUrl: vi.fn(), remove: vi.fn() }));
-    const input = { projectId: 'project-1', objectiveId: 'objective-1', reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, totalHours: 2, dailyObjective: '目标', objectiveProgress: 10, keyResults: [], evidenceLinks: [] };
+    const input = { reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, blocks: [{ dailyObjective: '目标', linkedKeyResultId: 'kr-1', hours: 2, result: '', keyResults: [{ title: 'KR' }] }], evidenceLinks: [] };
     const result = await new SupabaseOkrRepository(client).createDailyReportWithAttachments(input, [{ file: new File(['x'], 'a.pdf', { type: 'application/pdf' }), classification: 'confidential' }]);
     expect(result).toEqual({ ok: true, data: { id: 'report-shell', revision: 1 } });
     expect(rpc.mock.calls.map((call) => call[0])).toEqual(['begin_daily_report_with_attachments', 'begin_attachment_upload', 'finalize_attachment_upload', 'update_daily_report_with_attachments']);

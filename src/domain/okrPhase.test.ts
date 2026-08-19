@@ -75,7 +75,7 @@ describe('KR assignments', () => {
 describe('objective portfolio filters', () => {
   const krs = [keyResult({ id: 'kr1', objectiveId: 'o1', ownerId: 'emp' })];
   const summaries: ObjectiveSummary[] = [
-    summarizeObjective(objective({ id: 'o1', ownerId: 'leader' }), krs, [], [], '2026-08-19'),
+    summarizeObjective(objective({ id: 'o1', ownerId: 'leader' }), krs, [], '2026-08-19'),
   ];
   const assignments: KrAssignment[] = [{ id: 'a1', krId: 'kr1', userId: 'emp', assignmentRole: 'owner' }];
 
@@ -89,15 +89,13 @@ describe('objective portfolio filters', () => {
   it('shows objectives with owned KRs on the myKrs filter', () => {
     expect(filterObjectiveSummaries('myKrs', summaries, employee, assignments)).toHaveLength(1);
   });
-  it('counts risks and updates per objective', () => {
+  it('counts updates per objective', () => {
     const summary = summarizeObjective(
       objective({ id: 'o1' }),
       krs,
       [{ id: 'u1', krId: 'kr1', authorId: 'emp', previousProgress: 30, newProgress: 40, summary: '推进', createdAt: '2026-08-18T00:00:00Z' }],
-      [{ id: 'r1', projectId: 'p1', keyResultId: 'kr1', title: '风险', description: '', ownerId: 'emp', probability: 3, impact: 3, mitigation: '', status: 'off_track', classification: 'internal', identifiedAt: '', resolved: false }],
       '2026-08-19',
     );
-    expect(summary.riskCount).toBe(1);
     expect(summary.updateCount).toBe(1);
   });
 });
@@ -106,20 +104,22 @@ describe('OKR permissions', () => {
   it('allows only management to create objectives', () => {
     expect(canCreateObjective(management)).toBe(true);
     expect(canCreateObjective(leader)).toBe(false);
+    expect(canCreateObjective({ ...employee, role: 'administrator' })).toBe(false);
   });
-  it('lets a leader edit their own objective but not another', () => {
-    expect(canEditObjective(leader, objective({ ownerId: 'leader' }))).toBe(true);
-    expect(canEditObjective(leader, objective({ ownerId: 'other' }))).toBe(false);
+  it('lets only management edit an objective definition', () => {
+    expect(canEditObjective(leader, objective({ ownerId: 'leader' }))).toBe(false);
     expect(canEditObjective(management, objective({ ownerId: 'other' }))).toBe(true);
   });
   it('lets leaders manage KRs in objectives they lead', () => {
     expect(canManageKeyResults(leader, objective({ ownerId: 'leader' }))).toBe(true);
+    expect(canManageKeyResults(management, objective({ ownerId: 'leader' }))).toBe(false);
     expect(canManageKeyResults(employee, objective({ ownerId: 'leader' }))).toBe(false);
   });
   it('lets a KR owner or leader update progress, but not an unrelated employee', () => {
-    expect(canUpdateKeyResultProgress(employee, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }))).toBe(true);
-    expect(canUpdateKeyResultProgress(leader, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }))).toBe(true);
+    const assignments: KrAssignment[] = [{ id: 'a1', krId: 'kr1', userId: 'emp', assignmentRole: 'owner' }];
+    expect(canUpdateKeyResultProgress(employee, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }), assignments)).toBe(true);
+    expect(canUpdateKeyResultProgress(leader, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }), assignments)).toBe(true);
     const other = { ...employee, id: 'other' };
-    expect(canUpdateKeyResultProgress(other, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }))).toBe(false);
+    expect(canUpdateKeyResultProgress(other, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }), assignments)).toBe(false);
   });
 });

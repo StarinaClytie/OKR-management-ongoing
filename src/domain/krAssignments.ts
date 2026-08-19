@@ -17,3 +17,10 @@ export function isKrCollaborator(userId: string, krId: string, assignments: read
     (assignment) => assignment.krId === krId && assignment.userId === userId && assignment.assignmentRole === 'collaborator',
   );
 }
+
+/** Whether `userId` owns the KR (multi-owner). */
+export function isKrOwner(userId: string, krId: string, assignments: readonly KrAssignment[]): boolean {
+  return assignments.some(
+    (assignment) => assignment.krId === krId && assignment.userId === userId && assignment.assignmentRole === 'owner',
+  );
+}

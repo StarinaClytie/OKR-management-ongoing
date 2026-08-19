@@ -28,17 +28,15 @@ describe('OKR objective detail', () => {
     expect(screen.getByText('9月15日前完成光路设计并通过技术评审')).toBeVisible();
     expect(screen.getByText('完成首轮标定。')).toBeVisible();
     expect(screen.getAllByText('负责人：').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('协作人：').length).toBeGreaterThan(0);
   });
 });
 
 describe('OKR employee contributions', () => {
-  it('shows a multi-objective employee their owned and collaborated KRs without inventing personal objectives', async () => {
+  it('shows a multi-objective employee their owned KRs without inventing personal objectives', async () => {
     renderOkrRoute('user-wang-fang', '/okrs');
 
     expect(await screen.findByRole('heading', { name: '我的工作' })).toBeVisible();
     expect(screen.getAllByText('将检测信噪比提升至 ≥35 dB').length).toBeGreaterThan(0);
     expect(screen.getAllByText('完成缺陷样本数据集标注（≥5000张）').length).toBeGreaterThan(0);
-    expect(screen.getByText('协作')).toBeVisible();
   });
 });

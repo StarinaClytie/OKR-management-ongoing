@@ -6,7 +6,7 @@ describe('DailyReportEvidence', () => {
   it('connects every evidence validation error to its field with a unique visible alert', () => {
     render(<DailyReportEvidence objectives={[]} evidence={[{ id: 'one', label: '', kind: 'invalid' as 'link', classification: 'invalid' as 'internal' }]} onLinkedObjectiveChange={vi.fn()} onEvidenceChange={vi.fn()} errors={{ 'evidence.0.label': '请填写成果名称或链接说明', 'evidence.0.kind': '请选择成果类型', 'evidence.0.classification': '请选择有效的成果密级' }} />);
 
-    for (const field of [screen.getByRole('textbox'), screen.getAllByRole('combobox')[1]!, screen.getAllByRole('combobox')[2]!]) {
+    for (const field of [screen.getByRole('textbox'), screen.getAllByRole('combobox')[0]!, screen.getAllByRole('combobox')[1]!]) {
       expect(field).toHaveAttribute('aria-invalid', 'true');
       const describedBy = field.getAttribute('aria-describedby');
       expect(describedBy).toBeTruthy();

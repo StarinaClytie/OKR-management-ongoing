@@ -22,20 +22,16 @@ describe('DailyReportsPage user changes', () => {
     );
 
     await user.click(screen.getByRole('button', { name: '填写今日日报' }));
-    await user.type(screen.getByLabelText('当日 O'), '只属于原用户的本地日报');
-    await user.type(screen.getByLabelText('当日 O 完成度'), '60');
-    await user.type(screen.getByLabelText('KR1'), '完成可验证的结果');
-    await user.type(screen.getByLabelText('KR1 本日工时'), '2');
-    await user.type(screen.getByLabelText('KR1 完成度'), '60');
-    await user.type(screen.getByLabelText('KR1 目标值'), '10');
-    await user.type(screen.getByLabelText('KR1 当前实际值'), '6');
-    await user.type(screen.getByLabelText('KR1 工作说明'), '已完成验证');
+    await user.selectOptions(screen.getByLabelText(/关联季度 KR/), 'kr-orion-onboarding');
+    await user.type(screen.getByLabelText(/当日 O/), '只属于原用户的本地日报');
+    await user.type(screen.getByLabelText('第 1 组 · 今日 KR 1'), '完成可验证的结果');
+    await user.type(screen.getByLabelText(/记录工时/), '2');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
-    expect(screen.getByText('只属于原用户的本地日报')).toBeVisible();
+    expect(screen.getByText(/只属于原用户的本地日报/)).toBeVisible();
 
     await user.click(screen.getByRole('button', { name: '切换为管理层' }));
 
-    expect(screen.queryByText('只属于原用户的本地日报')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('当日 O')).not.toBeInTheDocument();
+    expect(screen.queryByText(/只属于原用户的本地日报/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/当日 O/)).not.toBeInTheDocument();
   });
 });

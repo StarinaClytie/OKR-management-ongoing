@@ -79,7 +79,7 @@ describe('verify-supabase-config', () => {
     const packageManifest = JSON.parse(readFileSync(resolve(projectRoot, 'package.json'), 'utf8'));
 
     expect(packageManifest.scripts['test:smoke:real']).toContain('src/pages/pageFrameworks.test.tsx');
-    expect(packageManifest.scripts['test:smoke:real']).toContain('src/pages/RiskEditor.test.tsx');
+    expect(packageManifest.scripts['test:smoke:real']).toContain('src/pages/KrProgressEditor.test.tsx');
     expect(packageManifest.scripts['test:smoke:real']).toContain('src/app/routes.test.tsx');
     expect(packageManifest.scripts['test:smoke:real']).toContain('src/i18n/LocaleProvider.test.tsx');
   });

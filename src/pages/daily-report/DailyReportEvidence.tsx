@@ -31,15 +31,17 @@ export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, o
   return (
     <section className="daily-evidence form-card form-section" aria-labelledby="daily-evidence-heading">
       <h2 id="daily-evidence-heading">{t('daily.evidenceTitle')}</h2>
-      <div className="daily-form-grid daily-form-grid--single">
-        <label htmlFor="linked-objective">
-          {t('daily.linkObjective')}
-          <select id="linked-objective" value={linkedObjectiveId ?? ''} onChange={(event) => onLinkedObjectiveChange(event.target.value || undefined)}>
-            <option value="">{t('daily.notLinked')}</option>
-            {objectives.map((objective) => <option key={objective.id} value={objective.id}>{objective.title}</option>)}
-          </select>
-        </label>
-      </div>
+      {objectives.length > 0 ? (
+        <div className="daily-form-grid daily-form-grid--single">
+          <label htmlFor="linked-objective">
+            {t('daily.linkObjective')}
+            <select id="linked-objective" value={linkedObjectiveId ?? ''} onChange={(event) => onLinkedObjectiveChange(event.target.value || undefined)}>
+              <option value="">{t('daily.notLinked')}</option>
+              {objectives.map((objective) => <option key={objective.id} value={objective.id}>{objective.title}</option>)}
+            </select>
+          </label>
+        </div>
+      ) : null}
       <div className="daily-evidence__header">
         <h3>{t('daily.evidenceAttachmentLink')}</h3>
         <button type="button" className="button button--secondary" onClick={addEvidence}>{t('daily.addEvidence')}</button>

@@ -157,6 +157,16 @@ export interface KrProgressUpdate {
   createdAt: string;
 }
 
+export interface DailyOkrBlock {
+  id: string;
+  dailyObjective: string;
+  /** The linked quarterly Key Result (an assigned KR the author owns). */
+  keyResultId: string;
+  hours: number;
+  result: string;
+  keyResults: Array<{ id: string; title: string }>;
+}
+
 export interface DailyReport {
   id: string;
   authorId: string;
@@ -168,6 +178,7 @@ export interface DailyReport {
   dailyObjective?: string;
   objectiveProgress?: number;
   dailyKeyResults?: DailyKeyResultDraft[];
+  blocks?: DailyOkrBlock[];
   classification: Classification;
   hours: number;
   evidence: string[];
