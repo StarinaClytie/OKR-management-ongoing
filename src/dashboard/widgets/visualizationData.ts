@@ -7,7 +7,7 @@ import type {
   ProgressSnapshot,
   ProgressStatus,
 } from '../../domain/types';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { scoreRisk } from '../../domain/riskScore';
 import { deriveExecutionStatuses } from '../../domain/progressStatus';
 

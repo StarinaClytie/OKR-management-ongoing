@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { getRiskCoordinate, type RiskLevel } from '../../domain/riskScore';
 import { prepareVisualizationData } from './visualizationData';
 import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';

@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { PermissionGate } from '../../auth/PermissionGate';
 import { RestrictedContent } from '../../components/RestrictedContent';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useLocale } from '../../i18n/LocaleProvider';
 

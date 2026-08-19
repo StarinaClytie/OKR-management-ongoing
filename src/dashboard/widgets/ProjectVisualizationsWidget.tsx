@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useId, useState } from 'react';
 import type { Role } from '../../domain/types';
 import { useMediaQuery } from '../../layout/useMediaQuery';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { WidgetTabs, type WidgetTab } from './WidgetTabs';
 import { prepareVisualizationData } from './visualizationData';
 import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';

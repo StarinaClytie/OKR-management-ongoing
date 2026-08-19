@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { PermissionGate } from '../../auth/PermissionGate';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { ProgressRing } from '../../components/ProgressRing';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';

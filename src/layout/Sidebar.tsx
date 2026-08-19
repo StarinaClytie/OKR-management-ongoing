@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import type { Ref } from 'react';
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import { PermissionGate } from '../auth/PermissionGate';
 import { navigationItems } from '../navigation/navigation';
 import { useLocale } from '../i18n/LocaleProvider';
@@ -15,8 +16,10 @@ export interface SidebarProps {
 
 export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, drawerRef }: SidebarProps) {
   const { t } = useLocale();
+  const { currentUser } = useAuth();
   const isMobileDrawer = variant === 'mobile';
   const dashboardPath = navigationItems[0].path;
+  const visibleItems = navigationItems.filter((item) => !item.roles || (currentUser && item.roles.includes(currentUser.role)));
 
   return (
     <aside
@@ -45,7 +48,7 @@ export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, draw
       </NavLink>
 
       <nav className="app-sidebar__nav" aria-label={t('navigation.workspace')}>
-        {navigationItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
 
           return (

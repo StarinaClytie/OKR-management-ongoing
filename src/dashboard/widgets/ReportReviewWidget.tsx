@@ -2,7 +2,7 @@ import { PermissionGate } from '../../auth/PermissionGate';
 import { can } from '../../auth/permissionService';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { useLocale } from '../../i18n/LocaleProvider';
 
 export interface ReportReviewWidgetProps {

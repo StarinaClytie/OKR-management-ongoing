@@ -4,7 +4,7 @@ import { ConfidentialityBadge } from '../../components/ConfidentialityBadge';
 import { MetricCard } from '../../components/MetricCard';
 import { RestrictedContent } from '../../components/RestrictedContent';
 import { StatusBadge } from '../../components/StatusBadge';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { useLocale } from '../../i18n/LocaleProvider';
 import { deriveExecutionStatuses } from '../../domain/progressStatus';
 

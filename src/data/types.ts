@@ -1,5 +1,56 @@
-import type { DashboardData } from '../mocks/repository';
-import type { Classification, DailyReport, KrMetricType, OkrPriority, ProjectStatus, ReportStatus, ResourceCategory, ResourceKind, ResourceNotificationStatus, ResourceProblemStatus, ResourceProblemType, ResourceStatus, Role, User } from '../domain/types';
+import type {
+  Classification,
+  CompanyObjective,
+  DailyReport,
+  DocumentRecord,
+  KeyResult,
+  KrAssignment,
+  KrMetricType,
+  KrProgressUpdate,
+  Milestone,
+  Objective,
+  OkrPriority,
+  ProgressSnapshot,
+  Project,
+  ProjectStatus,
+  ProjectTask,
+  ReportStatus,
+  ResourceCategory,
+  ResourceKind,
+  ResourceNotificationStatus,
+  ResourceProblemStatus,
+  ResourceProblemType,
+  ResourceStatus,
+  Risk,
+  Role,
+  User,
+  WeeklyReport,
+  WorkloadEntry,
+} from '../domain/types';
+
+/**
+ * The aggregate dataset every business page and dashboard widget consumes.
+ * This is the shared production data contract — defined here, not in the demo
+ * mocks — so real (Supabase) and demo repositories return the same shape.
+ */
+export interface DashboardData {
+  currentUser: User;
+  users: User[];
+  dailyReports: DailyReport[];
+  weeklyReports?: WeeklyReport[];
+  projects: Project[];
+  objectives: Objective[];
+  keyResults: KeyResult[];
+  krAssignments: KrAssignment[];
+  krProgressUpdates: KrProgressUpdate[];
+  milestones: Milestone[];
+  risks: Risk[];
+  progressSnapshots: ProgressSnapshot[];
+  workloads: WorkloadEntry[];
+  attachments: DocumentRecord[];
+  companyObjectives: CompanyObjective[];
+  projectTasks: ProjectTask[];
+}
 
 export type AppMode = 'demo' | 'supabase';
 export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'network' | 'unknown';

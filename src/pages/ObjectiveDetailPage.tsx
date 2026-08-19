@@ -11,11 +11,11 @@ import { deriveObjectiveProgress, describeKeyResultMetric } from '../domain/okrM
 import { canArchiveObjective, canEditObjective, canManageKeyResults, canUpdateKeyResultProgress } from '../domain/okrPermissions';
 import { resolveOkrStatus } from '../domain/okrStatus';
 import { currentBusinessDate } from '../domain/progressStatus';
-import type { KeyResult, KrAssignment } from '../domain/types';
+import type { KeyResult } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
 import { repository } from '../lib/supabase';
-import { mockRepository, type DashboardData } from '../mocks/repository';
+import type { DashboardData } from '../data/types';
 import { AccessDeniedPage } from './AccessDeniedPage';
 import { KeyResultFormModal, type KeyResultFormValues } from './okr/KeyResultFormModal';
 import { KrProgressUpdateEditor, type KrProgressUpdateInput } from './okr/KrProgressUpdateEditor';
@@ -46,7 +46,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const { objectiveId } = useParams();
   const { t } = useLocale();
   const { currentUser, mode } = useAuth();
-  const [data, setData] = useState<DashboardData | null>(() => currentUser && mode === 'demo' ? mockRepository.getDashboardData(currentUser.id) : null);
+  const [data, setData] = useState<DashboardData | null>(() => currentUser ? dataRepository.getCachedDashboardData?.(currentUser.id) ?? null : null);
   const [loading, setLoading] = useState(mode === 'supabase');
   const [notice, setNotice] = useState<MessageKey | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
@@ -72,12 +72,8 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
 
   useEffect(() => {
     if (!currentUser) return;
-    if (mode === 'demo') {
-      setData(mockRepository.getDashboardData(currentUser.id));
-      return;
-    }
     void refresh();
-  }, [currentUser, mode, refresh]);
+  }, [currentUser, refresh]);
 
   const evaluationDate = useMemo(() => currentBusinessDate(), []);
   const objective = data?.objectives.find((candidate) => candidate.id === objectiveId);
@@ -113,51 +109,9 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
     setSubmitting(false);
   };
 
-  const applyKeyResult = (values: KeyResultFormValues) => {
-    const notes = values.metricType === 'milestone' ? values.milestoneDefinition : values.notes;
-    const currentValue = values.metricType === 'numeric' ? values.currentValue : values.metricType === 'percentage' ? values.percentageCurrent : undefined;
-    const targetValue = values.metricType === 'numeric' ? values.targetValue : values.metricType === 'percentage' ? values.percentageTarget : undefined;
-    const id = `kr-preview-${Date.now()}`;
-    const keyResult: KeyResult = {
-      id,
-      objectiveId: objectiveData.id,
-      title: values.title,
-      ownerId: values.ownerId,
-      progress: 0,
-      status: 'on_track',
-      startDate: objectiveData.startDate,
-      dueDate: values.deadline,
-      classification: objectiveData.classification,
-      metricType: values.metricType,
-      currentValue,
-      targetValue,
-      unit: values.unit || undefined,
-      notes: notes || undefined,
-      confidenceIndex: values.confidenceIndex,
-      priority: values.priority,
-      okrStatus: 'not_started',
-    };
-    const assignments: KrAssignment[] = [
-      { id: `${id}-owner`, krId: id, userId: values.ownerId, assignmentRole: 'owner' },
-      ...values.collaboratorIds.map((userId, index) => ({ id: `${id}-collab-${index}`, krId: id, userId, assignmentRole: 'collaborator' as const })),
-    ];
-    setData((current) => current ? {
-      ...current,
-      keyResults: [...current.keyResults, keyResult],
-      krAssignments: [...current.krAssignments, ...assignments],
-    } : current);
-  };
-
   const handleSaveKeyResult = async (values: KeyResultFormValues) => {
     setSubmitting(true);
     setFormError(undefined);
-    if (mode === 'demo') {
-      applyKeyResult(values);
-      setNotice('kr.createSuccess');
-      setKrOpen(false);
-      setSubmitting(false);
-      return;
-    }
     const notes = values.metricType === 'milestone' ? values.milestoneDefinition : values.notes;
     const currentValue = values.metricType === 'numeric' ? values.currentValue : values.metricType === 'percentage' ? values.percentageCurrent : undefined;
     const targetValue = values.metricType === 'numeric' ? values.targetValue : values.metricType === 'percentage' ? values.percentageTarget : undefined;
@@ -187,28 +141,6 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   };
 
   const handleSaveProgressUpdate = async (keyResult: KeyResult, input: KrProgressUpdateInput) => {
-    if (mode === 'demo') {
-      setData((current) => current ? {
-        ...current,
-        keyResults: current.keyResults.map((item) => item.id === keyResult.id ? { ...item, progress: input.newProgress, status: input.newProgress >= 100 ? 'complete' as const : 'on_track' as const } : item),
-        krProgressUpdates: [{
-          id: `update-preview-${Date.now()}`,
-          krId: keyResult.id,
-          authorId: signedInUser.id,
-          previousProgress: keyResult.progress,
-          newProgress: input.newProgress,
-          summary: input.summary,
-          blocker: input.blocker,
-          reason: input.reason,
-          nextAction: input.nextAction,
-          evidence: input.evidence,
-          createdAt: new Date().toISOString(),
-        }, ...current.krProgressUpdates],
-      } : current);
-      setNotice('krProgress.saved');
-      setUpdatingKrId(null);
-      return;
-    }
     const result = await dataRepository.saveKrProgressUpdate({
       keyResultId: keyResult.id,
       previousProgress: keyResult.progress,
@@ -230,13 +162,6 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
 
   const handleArchiveObjective = async () => {
     setSubmitting(true);
-    if (mode === 'demo') {
-      setData((current) => current ? { ...current, objectives: current.objectives.map((item) => item.id === objectiveData.id ? { ...item, archivedAt: isArchived ? null : new Date().toISOString() } : item) } : current);
-      setNotice(isArchived ? 'objective.restoreSuccess' : 'objective.archiveSuccess');
-      setArchiveConfirm(false);
-      setSubmitting(false);
-      return;
-    }
     const result = isArchived ? await dataRepository.restoreObjective(objectiveData.id) : await dataRepository.archiveObjective(objectiveData.id);
     setSubmitting(false);
     setArchiveConfirm(false);
@@ -251,18 +176,6 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const handleEditObjective = async (values: ObjectiveFormValues) => {
     setSubmitting(true);
     setFormError(undefined);
-    if (mode === 'demo') {
-      setData((current) => current ? {
-        ...current,
-        objectives: current.objectives.map((item) => item.id === objectiveData.id
-          ? { ...item, title: values.name, ownerId: values.leaderId, quarter: values.quarter, startDate: values.startDate, dueDate: values.dueDate, priority: values.priority, description: values.description, number: values.number || item.number }
-          : item),
-      } : current);
-      setNotice('objective.updateSuccess');
-      setEditObjective(false);
-      setSubmitting(false);
-      return;
-    }
     const result = await dataRepository.updateObjective({
       objectiveId: objectiveData.id,
       name: values.name,

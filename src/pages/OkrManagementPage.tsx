@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
+import { EmptyState } from '../components/EmptyState';
 import { OkrStatusBadge } from '../components/OkrStatusBadge';
 import { PageHeader } from '../components/PageHeader';
 import { ProgressRing } from '../components/ProgressRing';
@@ -16,7 +17,7 @@ import type { Risk } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
 import { repository } from '../lib/supabase';
-import { mockRepository, type DashboardData } from '../mocks/repository';
+import type { DashboardData } from '../data/types';
 import { getEditableRiskSubjects, RiskEditor, type RiskEditorInput } from './RiskEditor';
 import { ObjectiveFormModal, type ObjectiveFormValues } from './okr/ObjectiveFormModal';
 
@@ -31,12 +32,6 @@ const filterLabels: Record<ObjectiveFilter, MessageKey> = {
   myKrs: 'okr.myKrs',
   risk: 'okr.riskItems',
 };
-
-function riskStatus(input: Pick<OwnedRiskInput, 'probability' | 'impact' | 'resolved'>): Risk['status'] {
-  if (input.resolved) return 'on_track';
-  const score = input.probability * input.impact;
-  return score === 9 ? 'off_track' : score >= 6 ? 'at_risk' : 'on_track';
-}
 
 export function ObjectiveCard({ summary, users, readableKrIds }: { summary: ObjectiveSummary; users: DashboardData['users']; readableKrIds: ReadonlySet<string> }) {
   const { t } = useLocale();
@@ -81,7 +76,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
   const { t } = useLocale();
   const { currentUser, mode } = useAuth();
   const [searchParams] = useSearchParams();
-  const [data, setData] = useState<DashboardData | null>(() => currentUser && mode === 'demo' ? mockRepository.getDashboardData(currentUser.id) : null);
+  const [data, setData] = useState<DashboardData | null>(() => currentUser ? dataRepository.getCachedDashboardData?.(currentUser.id) ?? null : null);
   const [loading, setLoading] = useState(mode === 'supabase');
   const [notice, setNotice] = useState<MessageKey | null>(null);
   const [filter, setFilter] = useState<ObjectiveFilter>('all');
@@ -108,13 +103,8 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
 
   useEffect(() => {
     if (!currentUser) return;
-    if (mode === 'demo') {
-      setData(mockRepository.getDashboardData(currentUser.id));
-      setLoading(false);
-      return;
-    }
     void refresh();
-  }, [currentUser, mode, refresh]);
+  }, [currentUser, refresh]);
 
   const evaluationDate = useMemo(() => currentBusinessDate(), []);
   const summaries = useMemo(() => {
@@ -190,26 +180,6 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
     setSubmitting(true);
     setFormError(undefined);
     const number = values.number.trim() || generateObjectiveNumber(values.quarter);
-    if (mode === 'demo') {
-      const projectId = `project-${Date.now()}`;
-      const objectiveId = `objective-${Date.now()}`;
-      setData((current) => current ? {
-        ...current,
-        projects: [...current.projects, {
-          id: projectId, name: values.name, description: values.description, leaderId: values.leaderId,
-          memberIds: [values.leaderId], classification: 'internal', startDate: values.startDate, dueDate: values.dueDate, status: 'on_track',
-        }],
-        objectives: [...current.objectives, {
-          id: objectiveId, projectId, title: values.name, description: values.description, ownerId: values.leaderId,
-          progress: 0, status: 'on_track', startDate: values.startDate, dueDate: values.dueDate, classification: 'internal',
-          number, quarter: values.quarter, priority: values.priority, okrStatus: 'not_started',
-        }],
-      } : current);
-      setNotice('objective.createSuccess');
-      setCreateOpen(false);
-      setSubmitting(false);
-      return;
-    }
     const result = await dataRepository.createObjective({
       name: values.name, number, leaderId: values.leaderId, quarter: values.quarter,
       startDate: values.startDate, dueDate: values.dueDate, priority: values.priority,
@@ -227,25 +197,6 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
 
   const saveRisk = async (input: RiskEditorInput): Promise<RepositoryResult<{ id: string }>> => {
     setNotice(null);
-    if (mode === 'demo') {
-      const previewId = input.id ?? `preview-risk-${Date.now()}`;
-      setData((current) => current ? {
-        ...current,
-        risks: [
-          ...current.risks.filter((risk) => risk.id !== previewId),
-          {
-            id: previewId, projectId: input.projectId, keyResultId: input.keyResultId ?? undefined, objectiveId: input.objectiveId ?? undefined,
-            title: input.title, description: input.reason, ownerId: signedInUser.id, probability: input.probability, impact: input.impact,
-            mitigation: input.mitigation, reason: input.reason, lastReviewedAt: input.lastReviewedAt,
-            status: riskStatus(input), classification: input.classification, identifiedAt: input.lastReviewedAt, resolved: input.resolved,
-          },
-        ],
-      } : current);
-      setNotice('okr.previewUpdated');
-      setActiveEditor(null);
-      setEditingRisk(undefined);
-      return { ok: true, data: { id: previewId } };
-    }
     const result = await dataRepository.saveOwnedRisk(input);
     if (result.ok) {
       await refresh();
@@ -264,14 +215,9 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
       mitigation: risk.mitigation, lastReviewedAt: risk.lastReviewedAt ?? risk.identifiedAt,
       classification: risk.classification, resolved: true,
     };
-    if (mode === 'demo') {
-      setData((current) => current ? { ...current, risks: current.risks.map((item) => item.id === risk.id ? { ...item, resolved: true, status: 'on_track' } : item) } : current);
-      setNotice('okr.previewUpdated');
-    } else {
-      const result = await dataRepository.saveOwnedRisk(input);
-      setNotice(result.ok ? 'okr.riskResolvedNotice' : 'common.requestFailed');
-      if (result.ok) await refresh();
-    }
+    const result = await dataRepository.saveOwnedRisk(input);
+    setNotice(result.ok ? 'okr.riskResolvedNotice' : 'common.requestFailed');
+    if (result.ok) await refresh();
     setResolvingRiskId(undefined);
   };
 
@@ -296,7 +242,11 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
       </div>
 
       {visibleSummaries.length === 0 ? (
-        <p className="data-table__empty">{t('okr.noObjectives')}</p>
+        <EmptyState
+          title={t('okr.emptyTitle')}
+          description={canCreateObjective(signedInUser) ? t('okr.emptyCreateDescription') : t('okr.emptyWaitDescription')}
+          primaryAction={canCreateObjective(signedInUser) ? { label: t('okr.createObjective'), onClick: () => void openCreate() } : undefined}
+        />
       ) : (
         <div className="okr-card-grid">
           {visibleSummaries.map((summary) => <ObjectiveCard key={summary.objective.id} summary={summary} users={dashboardData.users} readableKrIds={readableKrIds} />)}

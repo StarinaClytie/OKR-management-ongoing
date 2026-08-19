@@ -5,7 +5,7 @@ import { AppRoutes } from '../app/routes';
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import type { User } from '../domain/types';
 import { LocaleProvider } from '../i18n/LocaleProvider';
-import type { DashboardData } from '../mocks/repository';
+import type { DashboardData } from '../data/types';
 import type { OkrRepository } from '../data/types';
 
 const repositoryMock = vi.hoisted(() => ({
@@ -97,7 +97,7 @@ describe('Supabase production page data paths', () => {
     ['/reports', 'RLS 日报正文'],
     ['/reports?tab=weekly', 'RLS 周报摘要'],
     ['/team', 'RLS 团队成员'],
-    ['/analytics', '9 小时'],
+    ['/analytics', 'RLS 真实 KR'],
   ])('renders %s from the RLS-backed repository for a real UUID profile', async (path, expectedText) => {
     renderRoute(path);
 
@@ -128,6 +128,6 @@ describe('Supabase production page data paths', () => {
 
     renderRoute('/projects');
 
-    expect(await screen.findByText('当前没有可查看的项目。')).toBeVisible();
+    expect(await screen.findByText('当前没有进行中的项目')).toBeVisible();
   });
 });

@@ -1,5 +1,6 @@
 import { PermissionGate } from '../../auth/PermissionGate';
 import { MetricCard } from '../../components/MetricCard';
+import type { DashboardData } from '../../data/types';
 import type { SystemAction, SystemPermissionScope } from '../../domain/permissions';
 import { useLocale } from '../../i18n/LocaleProvider';
 
@@ -12,7 +13,7 @@ function systemResource(systemAction: SystemAction): SystemPermissionScope {
   };
 }
 
-export function AdminSystemWidget() {
+export function AdminSystemWidget({ data }: { data: DashboardData }) {
   const { t } = useLocale();
   return (
     <PermissionGate action="audit.read" resource={systemResource('audit.read')}>
@@ -25,18 +26,8 @@ export function AdminSystemWidget() {
         </div>
         <div className="dashboard-metrics">
           <PermissionGate action="user.manage" resource={systemResource('user.manage')}>
-            <MetricCard label={t('widget.activeAccounts')} value={6} detail={t('widget.organizationAccounts')} />
+            <MetricCard label={t('widget.activeAccounts')} value={data.users.length} detail={t('widget.organizationAccounts')} />
           </PermissionGate>
-          <PermissionGate action="permission.manage" resource={systemResource('permission.manage')}>
-            <MetricCard label={t('widget.permissionExceptions')} value={1} detail={t('widget.permissionReview')} />
-          </PermissionGate>
-          <PermissionGate action="audit.read" resource={systemResource('audit.read')}>
-            <MetricCard label={t('widget.auditEvents')} value={12} detail={t('widget.operationMetadata')} />
-          </PermissionGate>
-        </div>
-        <div className="system-status">
-          <strong>{t('widget.systemConfigStatus')}</strong>
-          <span>{t('widget.systemHealthy')}</span>
         </div>
         <p className="dashboard-widget__notice">{t('widget.adminScopeNotice')}</p>
       </section>

@@ -4,6 +4,12 @@ export type Role = 'administrator' | 'management' | 'project_leader' | 'employee
 export type Classification = 'public' | 'internal' | 'confidential' | 'restricted';
 export type ReportStatus = 'draft' | 'submitted' | 'returned' | 'confirmed';
 export type ProgressStatus = 'on_track' | 'at_risk' | 'off_track' | 'complete';
+/**
+ * Project-management lifecycle for the backing `Project` record. Because an
+ * Objective is a Project, `Project.lifecycle` and `Objective.okrStatus` describe
+ * the same entity's lifecycle from two angles; `status`/`ProgressStatus` is the
+ * single execution-health derivation both share.
+ */
 export type ProjectStatus = 'planned' | 'active' | 'on_hold' | 'completed' | 'archived';
 
 /**

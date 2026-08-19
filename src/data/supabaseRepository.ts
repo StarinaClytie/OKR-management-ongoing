@@ -1,4 +1,4 @@
-import type { DashboardData } from '../mocks/repository';
+import type { DashboardData } from '../data/types';
 import type { DailyReport, ProjectStatus, Role, User } from '../domain/types';
 import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
@@ -212,12 +212,19 @@ export class SupabaseOkrRepository implements OkrRepository {
     const projectIdByObjectiveId = new Map(objectives.map((objective) => [objective.id, objective.projectId]));
     const baselineByKeyAndDate = new Map(baselineResult.data.map((row) => [`${String(row.key_result_id)}:${dateValue(row.planned_for)}`, numberValue(row.planned_value)]));
 
-    const projects = projectResult.data.map((row) => ({
-      id: String(row.id), name: String(row.name), description: String(row.description ?? ''), leaderId: String(row.leader_id),
-      memberIds: Array.isArray(row.project_members) ? row.project_members.map((member) => String((member as Record<string, unknown>).profile_id)) : [],
-      classification: row.classification as import('../domain/types').Classification, startDate: dateValue(row.start_date), dueDate: dateValue(row.due_date), status: 'on_track' as const,
-      lifecycle: (row.status as ProjectStatus) ?? 'active',
-    }));
+    const projects = projectResult.data.map((row) => {
+      // Objective = Project: derive execution-health from the objective (single
+      // source of truth) rather than hard-coding it. `lifecycle` still carries
+      // the project-management lifecycle from the DB.
+      const objective = objectives.find((candidate) => candidate.projectId === String(row.id));
+      return {
+        id: String(row.id), name: String(row.name), description: String(row.description ?? ''), leaderId: String(row.leader_id),
+        memberIds: Array.isArray(row.project_members) ? row.project_members.map((member) => String((member as Record<string, unknown>).profile_id)) : [],
+        classification: row.classification as import('../domain/types').Classification, startDate: dateValue(row.start_date), dueDate: dateValue(row.due_date),
+        status: objective?.status ?? 'on_track',
+        lifecycle: (row.status as ProjectStatus) ?? 'active',
+      };
+    });
     const milestones = milestoneResult.data.flatMap((row) => {
       const keyResult = typeof row.key_result_id === 'string' ? keyResultsById.get(row.key_result_id) : undefined;
       if (!keyResult) return [];

@@ -1,4 +1,4 @@
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { prepareVisualizationData } from './visualizationData';
 import { useLocale } from '../../i18n/LocaleProvider';
 

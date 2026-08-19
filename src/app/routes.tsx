@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { DashboardPage } from '../dashboard/DashboardPage';
 import { AppShell } from '../layout/AppShell';
@@ -9,7 +10,6 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 import { ObjectiveDetailPage } from '../pages/ObjectiveDetailPage';
 import { OkrManagementPage } from '../pages/OkrManagementPage';
 import { ProfilePage } from '../pages/ProfilePage';
-import { ProjectDetailPage } from '../pages/ProjectDetailPage';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { ReportsPage } from '../pages/ReportsPage';
 import { ResourceDetailPage } from '../pages/ResourceDetailPage';
@@ -30,7 +30,11 @@ const pageByPath = {
 } as const;
 
 function ProtectedNavigationRoute({ item }: { item: NavigationItem }) {
+  const { currentUser } = useAuth();
   const Page = item.path === '/dashboard' ? DashboardPage : pageByPath[item.path as keyof typeof pageByPath];
+  if (item.roles && (!currentUser || !item.roles.includes(currentUser.role))) {
+    return <Navigate to="/access-denied" replace />;
+  }
   return (
     <ProtectedRoute action={item.action} resource={item.resource}>
       <Page />
@@ -51,7 +55,6 @@ export function AppRoutes() {
         <Route path="/weekly-reports" element={<Navigate to="/reports" replace />} />
         <Route path="/access-denied" element={<AccessDeniedPage />} />
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
         <Route path="/okrs/:objectiveId" element={<ObjectiveDetailPage />} />
         <Route path="/resources/:resourceId" element={<ResourceDetailPage />} />
         <Route path="*" element={<NotFoundPage />} />

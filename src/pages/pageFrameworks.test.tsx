@@ -34,7 +34,7 @@ describe('business route frameworks', () => {
     expect(screen.queryByText('页面框架将在后续迭代中补充。')).not.toBeInTheDocument();
   });
 
-  it.each(['user-employee', 'user-hr'])('does not expose inaccessible project metadata to %s', (userId) => {
+  it.each(['user-employee'])('does not expose inaccessible project metadata to %s', (userId) => {
     renderRoute(userId, '/projects');
 
     expect(screen.getByRole('heading', { name: '项目' })).toBeVisible();
@@ -44,6 +44,13 @@ describe('business route frameworks', () => {
     expect(screen.queryByLabelText('受限内容')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('严格机密内容')).not.toBeInTheDocument();
     expect(screen.queryByText(/隐藏.*项目|项目.*隐藏/)).not.toBeInTheDocument();
+  });
+
+  it('redirects HR away from the project execution view it has no detail access to', () => {
+    renderRoute('user-hr', '/projects');
+
+    expect(screen.getByRole('heading', { name: '访问受限' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: '项目' })).not.toBeInTheDocument();
   });
 
   it('shows management the full Objective portfolio and the ability to create a new Objective', () => {

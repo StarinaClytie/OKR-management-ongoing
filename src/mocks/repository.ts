@@ -24,25 +24,7 @@ import { dailyReports, weeklyReports, workloads } from './reports';
 import { krAssignments, krProgressUpdates } from './assignments';
 import { activeShares, attachments, collaborationRelations, documents } from './security';
 import { organizationRelations, projectMemberships, users } from './users';
-
-export interface DashboardData {
-  currentUser: User;
-  users: User[];
-  dailyReports: DailyReport[];
-  weeklyReports?: WeeklyReport[];
-  projects: Project[];
-  objectives: Objective[];
-  keyResults: KeyResult[];
-  krAssignments: KrAssignment[];
-  krProgressUpdates: KrProgressUpdate[];
-  milestones: Milestone[];
-  risks: Risk[];
-  progressSnapshots: ProgressSnapshot[];
-  workloads: WorkloadEntry[];
-  attachments: DocumentRecord[];
-  companyObjectives: CompanyObjective[];
-  projectTasks: ProjectTask[];
-}
+import type { DashboardData } from '../data/types';
 
 export interface MockData {
   users: User[];

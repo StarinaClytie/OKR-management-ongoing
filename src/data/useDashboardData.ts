@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DashboardData } from '../mocks/repository';
+import type { DashboardData } from '../data/types';
 import type { OkrRepository, RepositoryErrorCode } from './types';
 
 export type DashboardLoadState =
