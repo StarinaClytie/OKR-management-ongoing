@@ -1,4 +1,4 @@
-import { Bell, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AccountMenu } from './AccountMenu';
@@ -9,13 +9,10 @@ import { useAuth } from '../auth/AuthContext';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useLocale } from '../i18n/LocaleProvider';
 
-const quarters = ['topbar.quarter1', 'topbar.quarter2', 'topbar.quarter3', 'topbar.quarter4'] as const;
-
 export function AppShell() {
   const { t } = useLocale();
   const { mode } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [quarter, setQuarter] = useState<(typeof quarters)[number]>('topbar.quarter3');
   const isMobile = useMediaQuery('(max-width: 767px)');
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
@@ -104,17 +101,8 @@ export function AppShell() {
               <Menu size={20} aria-hidden="true" />
             </button>
           ) : null}
-          <label className="quarter-selector">
-            <span className="app-topbar__eyebrow">{t('topbar.period')}</span>
-            <select aria-label={t('topbar.selectQuarter')} value={quarter} onChange={(event) => setQuarter(event.target.value as typeof quarter)}>
-              {quarters.map((option) => <option key={option} value={option}>{t(option)}</option>)}
-            </select>
-          </label>
           <div className="app-topbar__actions">
             <LanguageSwitcher />
-            <button className="icon-button" type="button" aria-label={t('topbar.notifications')}>
-              <Bell size={19} />
-            </button>
             <RoleSwitcher />
             {mode === 'supabase' ? <AccountMenu /> : null}
           </div>

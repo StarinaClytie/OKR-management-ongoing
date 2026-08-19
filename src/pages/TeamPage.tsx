@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { can, getUserPermissionScope } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
@@ -10,6 +11,7 @@ import { RepositoryDataState } from '../components/RepositoryDataState';
 
 export function TeamPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
   const { t } = useLocale();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const dashboard = useDashboardData(dataRepository, currentUser?.id);
   if (!currentUser) return null;
@@ -21,7 +23,7 @@ export function TeamPage({ dataRepository = repository }: { dataRepository?: Okr
 
   return (
     <section className="business-page" aria-labelledby="team-page-title">
-      <PageHeader title={t('team.title')} description={t('team.description')} primaryAction={currentUser.role === 'administrator' ? { label: t('team.manage'), onClick: () => undefined } : undefined} />
+      <PageHeader title={t('team.title')} description={t('team.description')} primaryAction={currentUser.role === 'administrator' ? { label: t('team.manage'), onClick: () => navigate('/users') } : undefined} />
       <DataTable
         ariaLabel={t('team.members')}
         rows={teamMembers}

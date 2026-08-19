@@ -10,6 +10,7 @@ import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
 import { repositoryErrorKey } from '../i18n/repositoryErrors';
 import { repository, resourceNotificationService } from '../lib/supabase';
+import { resourceRoles } from '../navigation/navigation';
 import { AccessDeniedPage } from './AccessDeniedPage';
 
 type LoadState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: ResourceDetail };
@@ -58,6 +59,7 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
   useEffect(() => { void refresh(); }, [refresh]);
 
   if (!currentUser) return null;
+  if (!resourceRoles.includes(currentUser.role)) return <AccessDeniedPage />;
 
   if (state.status === 'loading') {
     return (

@@ -275,7 +275,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
                 <div className="filter-row">
                   <ProgressRing value={keyResult.progress} size="small" />
                   {canUpdate ? <button className="button button--secondary" type="button" onClick={() => setUpdatingKrId(keyResult.id)}>{t('kr.updateProgress')}</button> : null}
-                  <Link className="button button--secondary" to="/reports?tab=daily">{t('okr.writeReport')}</Link>
+                  <Link className="button button--secondary" to={`/reports?tab=daily&objectiveId=${objectiveData.id}&krId=${keyResult.id}`}>{t('okr.writeReport')}</Link>
                 </div>
                 {updatingKrId === keyResult.id ? (
                   <KrProgressUpdateEditor
@@ -319,7 +319,6 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
               ))}
             </ul>
           )}
-          <Link className="button button--secondary" to="/reports?tab=daily">{t('okr.writeReport')}</Link>
         </section>
       ) : null}
 

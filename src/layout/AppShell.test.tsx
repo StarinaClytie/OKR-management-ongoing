@@ -37,22 +37,6 @@ function mockResponsiveViewport(initialMatches: boolean) {
 describe('application shell', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('offers every quarter and updates the selected mock quarter', async () => {
-    const user = userEvent.setup();
-
-    renderShell();
-
-    const quarterSelect = screen.getByLabelText('选择季度');
-    expect(screen.getByRole('option', { name: '第一季度' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '第二季度' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '第三季度' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: '第四季度' })).toBeInTheDocument();
-
-    await user.selectOptions(quarterSelect, 'topbar.quarter4');
-
-    expect(quarterSelect).toHaveValue('topbar.quarter4');
-  });
-
   it('renders only the desktop sidebar above the mobile breakpoint', () => {
     mockResponsiveViewport(false);
     renderShell();
