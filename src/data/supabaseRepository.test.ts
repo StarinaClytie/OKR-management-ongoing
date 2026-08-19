@@ -72,17 +72,36 @@ describe('SupabaseOkrRepository', () => {
 
   it('rejects an unknown role instead of widening it into the domain', async () => {
     const { client } = createClient({ rpcData: { state: 'active' }, profile: { id: 'profile-1', display_name: '未知', user_roles: [{ role: 'owner' }] } });
-    expect(await new SupabaseOkrRepository(client).getCurrentProfile()).toEqual({ ok: true, data: { kind: 'unassigned' } });
+    expect(await new SupabaseOkrRepository(client).getCurrentProfile()).toEqual({ ok: true, data: { kind: 'error' } });
   });
 
-  it('distinguishes an inactive profile from an unassigned one', async () => {
+  it('distinguishes an inactive profile from a pending one', async () => {
     const { client } = createClient({ rpcData: { state: 'inactive' } });
     expect(await new SupabaseOkrRepository(client).getCurrentProfile()).toEqual({ ok: true, data: { kind: 'inactive' } });
   });
 
-  it('treats a missing profile as unassigned', async () => {
-    const { client } = createClient({ rpcData: { state: 'missing' } });
-    expect(await new SupabaseOkrRepository(client).getCurrentProfile()).toEqual({ ok: true, data: { kind: 'unassigned' } });
+  it('recovers a missing profile by creating the caller pending profile', async () => {
+    const { client } = createClient();
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { state: 'missing' }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { state: 'pending' }, error: null });
+    client.rpc = rpc as never;
+    const result = await new SupabaseOkrRepository(client).getCurrentProfile();
+    expect(result).toEqual({ ok: true, data: { kind: 'pending' } });
+    expect(rpc).toHaveBeenNthCalledWith(1, 'get_my_profile_state', {});
+    expect(rpc).toHaveBeenNthCalledWith(2, 'create_pending_profile', { p_display_name: '' });
+    expect(rpc).toHaveBeenNthCalledWith(3, 'get_my_profile_state', {});
+  });
+
+  it('treats an approved profile with no role as an account error', async () => {
+    const { client } = createClient({ rpcData: { state: 'error' } });
+    expect(await new SupabaseOkrRepository(client).getCurrentProfile()).toEqual({ ok: true, data: { kind: 'error' } });
+  });
+
+  it('treats a pending profile as pending approval', async () => {
+    const { client } = createClient({ rpcData: { state: 'pending' } });
+    expect(await new SupabaseOkrRepository(client).getCurrentProfile()).toEqual({ ok: true, data: { kind: 'pending' } });
   });
 
   it('returns a generic unauthorized error without protected resource labels', async () => {
@@ -193,9 +212,23 @@ describe('SupabaseOkrRepository', () => {
 
   it('approves a pending user through the restricted RPC', async () => {
     const { client, rpc } = createClient({ rpcData: null });
-    const result = await new SupabaseOkrRepository(client).approvePendingUser({ userId: 'u1', displayName: '新员工', email: 'new@example.com', department: '产品', jobTitle: '工程师', role: 'employee' });
+    const result = await new SupabaseOkrRepository(client).approvePendingUser({ userId: 'u1', role: 'employee', department: '产品', jobTitle: '工程师' });
     expect(result).toEqual({ ok: true, data: undefined });
-    expect(rpc).toHaveBeenCalledWith('approve_pending_user', { p_target_user_id: 'u1', p_display_name: '新员工', p_email: 'new@example.com', p_department: '产品', p_job_title: '工程师', p_role: 'employee' });
+    expect(rpc).toHaveBeenCalledWith('approve_pending_user', { p_target_user_id: 'u1', p_role: 'employee', p_department: '产品', p_job_title: '工程师' });
+  });
+
+  it('rejects a pending user through the restricted RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const result = await new SupabaseOkrRepository(client).rejectPendingUser('u1');
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(rpc).toHaveBeenCalledWith('reject_pending_user', { p_target_user_id: 'u1' });
+  });
+
+  it('creates a pending profile through the restricted RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const result = await new SupabaseOkrRepository(client).createPendingProfile('新员工');
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(rpc).toHaveBeenCalledWith('create_pending_profile', { p_display_name: '新员工' });
   });
 
   it('updates a user profile and role through the restricted RPC', async () => {
@@ -214,7 +247,7 @@ describe('SupabaseOkrRepository', () => {
 
   it('maps duplicate-profile errors to a distinct code', async () => {
     const { client } = createClient({ rpcError: { code: '23505', message: 'Profile already exists for this user' } });
-    const result = await new SupabaseOkrRepository(client).approvePendingUser({ userId: 'u1', displayName: '重复', email: '', department: '', jobTitle: '', role: 'employee' });
+    const result = await new SupabaseOkrRepository(client).approvePendingUser({ userId: 'u1', role: 'employee', department: '', jobTitle: '' });
     expect(result).toEqual({ ok: false, error: { code: 'duplicate', message: '请求未完成，请稍后重试' } });
   });
 

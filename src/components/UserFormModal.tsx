@@ -14,6 +14,7 @@ export interface UserFormValues {
 export interface UserFormModalProps {
   title: string;
   initial: UserFormValues;
+  nameReadOnly?: boolean;
   emailReadOnly?: boolean;
   emailRequired?: boolean;
   submitLabel: string;
@@ -32,6 +33,7 @@ function isValidEmail(value: string): boolean {
 export function UserFormModal({
   title,
   initial,
+  nameReadOnly = false,
   emailReadOnly = false,
   emailRequired = false,
   submitLabel,
@@ -84,7 +86,7 @@ export function UserFormModal({
         <h2>{title}</h2>
         <label className="modal-field">
           <span>{t('users.field.displayName')} *</span>
-          <input ref={firstFieldRef} value={values.displayName} onChange={(event) => set('displayName', event.target.value)} required />
+          <input ref={firstFieldRef} value={values.displayName} onChange={(event) => set('displayName', event.target.value)} disabled={nameReadOnly} required />
         </label>
         <label className="modal-field">
           <span>{t('users.field.email')}{emailRequired ? ' *' : ''}</span>

@@ -25,24 +25,16 @@ enabled = true
 site_url = "http://127.0.0.1:5173"
 additional_redirect_urls = ["http://localhost:5173"]
 jwt_expiry = 3600
-# Northstar OKR is administrator-provisioned only: there is no public
-# self-registration. Admin invite (`auth.admin.inviteUserByEmail`) still works
-# with signup disabled. Must match the Authentication > Providers > Email
-# setting in the Supabase Dashboard for the linked project.
-enable_signup = false
+# Northstar OKR now uses public self-registration followed by administrator
+# approval. Self-registered accounts start `approval_status = 'pending'` with no
+# role and gain access only after an administrator approves them. Must match the
+# Authentication > Providers > Email setting in the Supabase Dashboard for the
+# linked project (enable email/password signup, disable email confirmation).
+enable_signup = true
 
 [storage]
 enabled = true
 file_size_limit = "10MiB"
-
-[functions.admin-users]
-verify_jwt = true
-
-[functions.admin-invite-user]
-verify_jwt = true
-
-[functions.admin-resend-invite]
-verify_jwt = true
 
 [functions.admin-delete-user]
 verify_jwt = true

@@ -58,6 +58,11 @@ from (values
   ('14000000-0000-0000-0000-000000000012'::uuid, '21000000-0000-0000-0000-000000000001'::uuid, 'Administrator A2', 'confidential'::public.classification, true, true)
 ) as p(id, organization_id, display_name, clearance, is_active, onboarding_completed);
 
+-- Backfill mirrors the migration: onboarding-complete members are explicitly
+-- approved; "Onboarding A" (onboarding_completed = false) keeps the pending
+-- fail-closed default, so it is not an eligible assignee.
+update public.profiles set approval_status = 'approved' where onboarding_completed = true;
+
 insert into public.user_roles (organization_id, profile_id, role, is_active) values
   ('21000000-0000-0000-0000-000000000001', '14000000-0000-0000-0000-000000000001', 'management', true),
   ('21000000-0000-0000-0000-000000000001', '14000000-0000-0000-0000-000000000002', 'administrator', true),
@@ -140,7 +145,7 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.create_project('OnboardingLeader', '', '14000000-0000-0000-0000-000000000008', current_date, current_date + 30, 'confidential', 'active', '{}'::uuid[])$$,
-  '22023', 'Project leader is not an eligible organization member', 'onboarding-incomplete leader is rejected'
+  '22023', 'Project leader is not an eligible organization member', 'pending-approval leader is rejected'
 );
 select throws_ok(
   $$select public.create_project('CrossOrgMember', '', '14000000-0000-0000-0000-000000000003', current_date, current_date + 30, 'confidential', 'active', array['14000000-0000-0000-0000-000000000010']::uuid[])$$,
@@ -152,7 +157,7 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.create_project('OnboardingMember', '', '14000000-0000-0000-0000-000000000003', current_date, current_date + 30, 'confidential', 'active', array['14000000-0000-0000-0000-000000000008']::uuid[])$$,
-  '22023', 'Project member is not an eligible organization member', 'onboarding-incomplete member is rejected'
+  '22023', 'Project member is not an eligible organization member', 'pending-approval member is rejected'
 );
 select throws_ok(
   $$select public.create_project('BadDates', '', '14000000-0000-0000-0000-000000000003', current_date + 30, current_date, 'confidential', 'active', '{}'::uuid[])$$,

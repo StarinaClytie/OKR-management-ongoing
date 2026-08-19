@@ -31,11 +31,11 @@ const detail: ProjectDetail = {
 };
 
 const eligibleUsers: OrganizationUser[] = [
-  { id: 'user-project-leader', displayName: '李然', email: '', department: '产品部', jobTitle: '项目负责人', role: 'project_leader', isActive: true, onboardingCompleted: true, projectIds: [] },
-  { id: 'user-employee', displayName: '周琳', email: '', department: '产品部', jobTitle: '产品经理', role: 'employee', isActive: true, onboardingCompleted: true, projectIds: [] },
-  { id: 'user-project-peer', displayName: '赵峰', email: '', department: '数据部', jobTitle: '数据分析师', role: 'employee', isActive: true, onboardingCompleted: true, projectIds: [] },
-  { id: 'user-new', displayName: '新成员', email: '', department: '产品部', jobTitle: '工程师', role: 'employee', isActive: true, onboardingCompleted: true, projectIds: [] },
-  { id: 'user-inactive', displayName: '停用成员', email: '', department: '', jobTitle: '', role: 'employee', isActive: false, onboardingCompleted: true, projectIds: [] },
+  { id: 'user-project-leader', displayName: '李然', email: '', department: '产品部', jobTitle: '项目负责人', role: 'project_leader', isActive: true, approvalStatus: 'approved', createdAt: '', projectIds: [] },
+  { id: 'user-employee', displayName: '周琳', email: '', department: '产品部', jobTitle: '产品经理', role: 'employee', isActive: true, approvalStatus: 'approved', createdAt: '', projectIds: [] },
+  { id: 'user-project-peer', displayName: '赵峰', email: '', department: '数据部', jobTitle: '数据分析师', role: 'employee', isActive: true, approvalStatus: 'approved', createdAt: '', projectIds: [] },
+  { id: 'user-new', displayName: '新成员', email: '', department: '产品部', jobTitle: '工程师', role: 'employee', isActive: true, approvalStatus: 'approved', createdAt: '', projectIds: [] },
+  { id: 'user-inactive', displayName: '停用成员', email: '', department: '', jobTitle: '', role: 'employee', isActive: false, approvalStatus: 'approved', createdAt: '', projectIds: [] },
 ];
 
 function makeRepository(overrides: Record<string, unknown> = {}): OkrRepository {

@@ -18,6 +18,8 @@ insert into public.profiles (id, organization_id, display_name, clearance) value
   ('71000000-0000-0000-0000-000000000002', '72000000-0000-0000-0000-000000000001', 'Reader', 'confidential'),
   ('71000000-0000-0000-0000-000000000003', '72000000-0000-0000-0000-000000000001', 'Unrelated', 'confidential'),
   ('71000000-0000-0000-0000-000000000004', '72000000-0000-0000-0000-000000000001', 'HR', 'confidential');
+-- Existing operational users are explicitly approved (fail-closed default).
+update public.profiles set approval_status = 'approved';
 insert into public.user_roles (organization_id, profile_id, role) values
   ('72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000001', 'employee'),
   ('72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000002', 'employee'),

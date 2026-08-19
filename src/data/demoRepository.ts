@@ -15,7 +15,7 @@ export class DemoOkrRepository implements OkrRepository {
   }
 
   async getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>> {
-    return { ok: true, data: { kind: 'unassigned' } };
+    return { ok: true, data: { kind: 'error' } };
   }
 
   async getDashboardData(userId = 'user-employee') {
@@ -37,7 +37,8 @@ export class DemoOkrRepository implements OkrRepository {
         jobTitle: user.title,
         role: user.role,
         isActive: true,
-        onboardingCompleted: true,
+        approvalStatus: 'approved',
+        createdAt: '',
         projectIds: user.projectIds,
       })),
     };
@@ -76,6 +77,8 @@ export class DemoOkrRepository implements OkrRepository {
   async uploadResourceAttachment(_resourceId: string, _file: File) { return unsupported<{ id: string }>(); }
 
   async approvePendingUser(_input: ApprovePendingUserInput) { return unsupported<void>(); }
+  async rejectPendingUser(_userId: string) { return unsupported<void>(); }
+  async createPendingProfile(_displayName: string) { return unsupported<void>(); }
   async updateUserProfile(_input: UpdateUserInput) { return unsupported<void>(); }
   async setUserActive(_userId: string, _active: boolean) { return unsupported<void>(); }
 

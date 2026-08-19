@@ -51,6 +51,9 @@ from (values
 insert into public.profiles (id, organization_id, display_name) values
   ('10000000-0000-0000-0000-000000000010', '20000000-0000-0000-0000-000000000002', 'Other Org');
 
+-- Existing operational users are explicitly approved (fail-closed default).
+update public.profiles set approval_status = 'approved';
+
 insert into public.user_roles (organization_id, profile_id, role) values
   ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'administrator'),
   ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', 'management'),

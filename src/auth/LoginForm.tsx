@@ -7,6 +7,7 @@ export interface SignInResult {
 
 export interface LoginFormProps {
   signIn: (email: string, password: string) => Promise<SignInResult>;
+  onRegister?: () => void;
   locale?: Locale;
 }
 
@@ -21,7 +22,7 @@ function authErrorMessage(error: { message: string }, t: (key: MessageKey) => st
   return t('auth.failed');
 }
 
-export function LoginForm({ signIn, locale = 'zh-CN' }: LoginFormProps) {
+export function LoginForm({ signIn, onRegister, locale = 'zh-CN' }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -80,6 +81,11 @@ export function LoginForm({ signIn, locale = 'zh-CN' }: LoginFormProps) {
           {submitting ? t('auth.submitting') : t('auth.submit')}
         </button>
       </form>
+      {onRegister ? (
+        <p className="auth-login__register">
+          <button type="button" className="text-button" onClick={onRegister}>{t('auth.noAccount')}</button>
+        </p>
+      ) : null}
     </main>
   );
 }

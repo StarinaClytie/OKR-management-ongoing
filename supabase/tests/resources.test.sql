@@ -54,6 +54,11 @@ from (values
   ('15000000-0000-0000-0000-000000000010'::uuid, '23000000-0000-0000-0000-000000000002'::uuid, 'Employee B', 'empb@resource.test', 'confidential'::public.classification, true, true)
 ) as p(id, organization_id, display_name, email, clearance, is_active, onboarding_completed);
 
+-- Backfill mirrors the migration: onboarding-complete members are explicitly
+-- approved; "Onboarding A" (onboarding_completed = false) keeps the pending
+-- fail-closed default and therefore has no operational access.
+update public.profiles set approval_status = 'approved' where onboarding_completed = true;
+
 insert into public.user_roles (organization_id, profile_id, role, is_active) values
   ('23000000-0000-0000-0000-000000000001', '15000000-0000-0000-0000-000000000001', 'administrator', true),
   ('23000000-0000-0000-0000-000000000001', '15000000-0000-0000-0000-000000000002', 'management', true),
@@ -156,7 +161,7 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000008', true);
 select throws_ok(
   $$select public.create_resource('Nope', 'tools', 'durable', '', 'Nowhere', null, null, null, '', null, null, null)$$,
-  '42501', 'Resources are not writable by the current user', 'onboarding-incomplete user cannot create'
+  '42501', 'Resources are not writable by the current user', 'pending-approval user cannot create'
 );
 
 -- ---------------------------------------------------------------------------

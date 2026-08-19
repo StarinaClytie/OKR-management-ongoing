@@ -36,6 +36,10 @@ export interface SupabaseClientLike {
       data: { session: SessionLike | null };
       error: { message: string } | null;
     }>;
+    signUp(credentials: { email: string; password: string; options?: { data?: Record<string, unknown> } }): Promise<{
+      data: { session: SessionLike | null };
+      error: { message: string } | null;
+    }>;
     updateUser(attributes: { password: string }): Promise<{
       data: { user: SessionLike['user'] | null };
       error: { message: string } | null;
@@ -98,8 +102,9 @@ export interface OwnedRiskInput {
 
 export type AuthProfileState =
   | { kind: 'active'; user: User }
-  | { kind: 'unassigned' }
-  | { kind: 'inactive' };
+  | { kind: 'pending' }
+  | { kind: 'inactive' }
+  | { kind: 'error' };
 
 export interface OrganizationUser {
   id: string;
@@ -107,9 +112,10 @@ export interface OrganizationUser {
   email: string;
   department: string;
   jobTitle: string;
-  role: Role;
+  role: Role | null;
   isActive: boolean;
-  onboardingCompleted: boolean;
+  approvalStatus: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
   projectIds: string[];
 }
 
@@ -163,11 +169,9 @@ export interface ProjectDetail {
 
 export interface ApprovePendingUserInput {
   userId: string;
-  displayName: string;
-  email: string;
+  role: Role;
   department: string;
   jobTitle: string;
-  role: Role;
 }
 
 export interface Resource {
@@ -313,6 +317,8 @@ export interface OkrRepository {
   createResourceAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>>;
   uploadResourceAttachment(resourceId: string, file: File): Promise<RepositoryResult<{ id: string }>>;
   approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>>;
+  rejectPendingUser(userId: string): Promise<RepositoryResult<void>>;
+  createPendingProfile(displayName: string): Promise<RepositoryResult<void>>;
   updateUserProfile(input: UpdateUserInput): Promise<RepositoryResult<void>>;
   setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>>;
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;
