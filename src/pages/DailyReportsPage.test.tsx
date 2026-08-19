@@ -136,20 +136,19 @@ describe('DailyReportsPage', () => {
     }
   });
 
-  it('offers review actions but not edit for a member report', () => {
+  it('shows member reports read-only without review or edit actions', () => {
     renderPageAs('user-project-leader');
 
-    expect(screen.getByRole('button', { name: '确认成员日报' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: '退回成员日报' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: '添加评论' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '退回成员日报' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '添加评论' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '编辑成员日报' })).not.toBeInTheDocument();
   });
 
-  it('keeps a project leader in author mode for self and review-only mode for members', () => {
+  it('keeps a project leader in author mode for self and read-only for members', () => {
     renderPageAs('user-project-leader');
 
     expect(screen.getByRole('button', { name: '填写今日日报' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: '确认成员日报' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: '编辑成员日报' })).not.toBeInTheDocument();
   });
 

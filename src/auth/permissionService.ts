@@ -1,8 +1,43 @@
-import type { Action, PermissionDecision, PermissionResource, ResourceType, UserPermissionScope } from '../domain/permissions';
-import type { Classification, Role, User } from '../domain/types';
-import { mockData } from '../mocks/repository';
+import type { Action, ActiveShare, PermissionDecision, PermissionResource, ResourceType, UserPermissionScope } from '../domain/permissions';
+import type { Classification, CollaborationRelation, Objective, OrganizationRelation, ProjectMembership, Role, User, WorkloadEntry } from '../domain/types';
 
 export type { Action, PermissionDecision, PermissionResource } from '../domain/permissions';
+
+/**
+ * Relationship/reference data the client-side permission evaluator needs that is
+ * NOT carried on the resource itself (project membership roles, manager
+ * reporting lines, explicit shares, collaboration relations, workloads, and the
+ * objective→project lookup). In demo mode this is populated from the demo seed;
+ * in Supabase mode the server (RLS) is authoritative and this stays empty.
+ */
+export interface PermissionDataSource {
+  projectMemberships: readonly ProjectMembership[];
+  organizationRelations: readonly OrganizationRelation[];
+  activeShares: readonly ActiveShare[];
+  collaborationRelations: readonly CollaborationRelation[];
+  workloads: readonly WorkloadEntry[];
+  objectives: readonly Objective[];
+}
+
+const emptyPermissionSource: PermissionDataSource = {
+  projectMemberships: [],
+  organizationRelations: [],
+  activeShares: [],
+  collaborationRelations: [],
+  workloads: [],
+  objectives: [],
+};
+
+let permissionSource: PermissionDataSource = emptyPermissionSource;
+
+/** Point the client permission evaluator at a live relationship dataset. */
+export function configurePermissionSource(source: PermissionDataSource): void {
+  permissionSource = source;
+}
+
+export function getPermissionSource(): PermissionDataSource {
+  return permissionSource;
+}
 
 const roleActions: Record<Role, ReadonlySet<Action>> = {
   administrator: new Set([
@@ -216,7 +251,7 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
   }
 
   if ('dependencyIds' in resource) {
-    const objective = mockData.objectives.find((candidate) => candidate.id === resource.objectiveId);
+    const objective = permissionSource.objectives.find((candidate) => candidate.id === resource.objectiveId);
     return {
       id: resource.id,
       type: 'milestone',
@@ -247,7 +282,7 @@ function getResourceContext(resource: PermissionResource, action: Action): Resou
   }
 
   if ('objectiveId' in resource && 'ownerId' in resource) {
-    const objective = mockData.objectives.find((candidate) => candidate.id === resource.objectiveId);
+    const objective = permissionSource.objectives.find((candidate) => candidate.id === resource.objectiveId);
     return {
       id: resource.id,
       type: 'key_result',
@@ -319,7 +354,7 @@ export function getUserPermissionScope(user: User): UserPermissionScope {
 function hasProjectRole(userId: string, projectId: string | undefined, membershipRole?: 'leader' | 'member'): boolean {
   if (!projectId) return false;
 
-  return mockData.projectMemberships.some(
+  return permissionSource.projectMemberships.some(
     (membership) =>
       membership.userId === userId &&
       membership.projectId === projectId &&
@@ -329,7 +364,7 @@ function hasProjectRole(userId: string, projectId: string | undefined, membershi
 
 function isManagerOf(managerId: string, subordinateId: string | undefined): boolean {
   if (!subordinateId) return false;
-  return mockData.organizationRelations.some(
+  return permissionSource.organizationRelations.some(
     (relation) => relation.managerId === managerId && relation.subordinateId === subordinateId,
   );
 }
@@ -342,7 +377,7 @@ function isSameProject(userId: string, ownerId: string | undefined, projectId: s
 function hasActiveShare(userId: string, action: Action, context: ResourceContext): boolean {
   const shareResourceType = context.type === 'daily_report_body' ? 'daily_report' : context.type;
 
-  return mockData.activeShares.some(
+  return permissionSource.activeShares.some(
     (share) =>
       share.active &&
       share.grantedToUserId === userId &&
@@ -355,7 +390,7 @@ function hasActiveShare(userId: string, action: Action, context: ResourceContext
 function hasExplicitCollaboration(userId: string, context: ResourceContext): boolean {
   if (!context.ownerId) return false;
 
-  return mockData.collaborationRelations.some(
+  return permissionSource.collaborationRelations.some(
     (relation) =>
       relation.viewerId === userId &&
       relation.subjectUserId === context.ownerId &&
@@ -393,7 +428,7 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
   if (action === 'worklog.read_hours') {
     if (user.role === 'hr') {
       const sourceReportId = 'sourceReportId' in resource ? resource.sourceReportId : context.id;
-      const hasAuthorizedHours = mockData.workloads.some(
+      const hasAuthorizedHours = permissionSource.workloads.some(
         (workload) => workload.sourceReportId === sourceReportId && workload.hrVisibility === 'hours_only',
       );
       return hasAuthorizedHours ? allow('仅可查看授权工时字段') : deny();

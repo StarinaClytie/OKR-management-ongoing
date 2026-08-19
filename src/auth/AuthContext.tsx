@@ -9,6 +9,10 @@ const selectableUserIds = new Set([
   'user-project-leader',
   'user-employee',
   'user-hr',
+  'user-zhang-san',
+  'user-li-ming',
+  'user-wang-fang',
+  'user-chen-hao',
 ]);
 
 export const selectableUsers = users.filter((user) => selectableUserIds.has(user.id));

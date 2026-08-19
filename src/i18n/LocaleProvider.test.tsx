@@ -183,10 +183,6 @@ describe('application locale', () => {
 
     await user.click(screen.getByRole('link', { name: 'OKR Management' }));
     expect(screen.getByRole('heading', { name: 'OKR Management' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Update My KR' }));
-    await user.clear(screen.getByLabelText('Actual progress (0–100)'));
-    await user.click(screen.getByRole('button', { name: 'Save KR Progress' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Actual progress must be between 0 and 100.');
 
     await user.click(screen.getByRole('link', { name: 'View Full Risk Matrix' }));
     expect(screen.getByRole('region', { name: 'Full Risk Matrix' })).toBeVisible();

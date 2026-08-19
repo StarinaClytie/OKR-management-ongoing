@@ -1,7 +1,7 @@
 import { PermissionGate } from '../../auth/PermissionGate';
 import { can } from '../../auth/permissionService';
 import { MetricCard } from '../../components/MetricCard';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { useLocale } from '../../i18n/LocaleProvider';
 
 export interface HrSummaryWidgetProps {
@@ -14,7 +14,6 @@ export function HrSummaryWidget({ data }: HrSummaryWidgetProps) {
     (workload) => can(data.currentUser, 'worklog.read_hours', workload).allowed,
   );
   const overloadedCount = authorizedWorkloads.filter((workload) => workload.loggedHours > workload.capacityHours).length;
-  const submissionRate = 100;
 
   return (
     <section className="dashboard-widget dashboard-widget--wide" aria-labelledby="hr-summary-title">
@@ -25,7 +24,6 @@ export function HrSummaryWidget({ data }: HrSummaryWidgetProps) {
         </div>
       </div>
       <div className="dashboard-metrics">
-        <MetricCard label={t('hr.submissionRate')} value={`${submissionRate}%`} detail={t('hr.weekScope')} />
         <MetricCard label={t('hr.overloadedPeople')} value={overloadedCount} detail={t('hr.overloadDetail')} />
         <MetricCard label={t('hr.authorizedRecords')} value={authorizedWorkloads.length} detail={t('hr.fieldsOnly')} />
       </div>

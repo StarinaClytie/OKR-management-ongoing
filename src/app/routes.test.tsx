@@ -27,7 +27,7 @@ describe('application routes', () => {
     );
 
     expect(screen.getByRole('heading', { name: '项目执行概览' })).toBeVisible();
-    expect(screen.getByRole('tablist', { name: '项目可视化视图' })).toBeVisible();
+    expect(screen.getByText('我的关键结果')).toBeVisible();
     expect(screen.queryByText('页面框架将在后续迭代中补充。')).not.toBeInTheDocument();
   });
 
@@ -59,7 +59,7 @@ describe('application routes', () => {
     expect(screen.queryByText('机密')).not.toBeInTheDocument();
   });
 
-  it('opens the real dashboard from the sidebar and switches all five project views', async () => {
+  it('opens the real dashboard from the sidebar and switches all five project views in Analytics', async () => {
     const user = userEvent.setup();
     render(
       <AuthProvider initialUserId="user-project-leader">
@@ -71,8 +71,9 @@ describe('application routes', () => {
     expect(screen.getByRole('heading', { name: '项目' })).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '仪表盘' }));
-
     expect(screen.getByRole('heading', { name: '项目执行概览' })).toBeVisible();
+
+    await user.click(screen.getByRole('link', { name: '分析' }));
     for (const label of ['对齐树', '甘特图', '进度趋势', '风险矩阵', '工作负载']) {
       await user.click(screen.getByRole('tab', { name: label }));
       expect(screen.getByRole('tabpanel', { name: label })).toBeVisible();

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { StatusBadge } from '../../components/StatusBadge';
-import type { DashboardData } from '../../mocks/repository';
+import type { DashboardData } from '../../data/types';
 import { prepareVisualizationData, type PreparedKeyResult } from './visualizationData';
 import { useLocale } from '../../i18n/LocaleProvider';
 
@@ -8,22 +8,37 @@ export interface GanttChartWidgetProps {
   data: DashboardData;
 }
 
-const weekDates = ['2026-06-01', '2026-06-15', '2026-06-29', '2026-07-13', '2026-07-27', '2026-08-10', '2026-08-24', '2026-09-07'];
-const rangeStart = new Date('2026-06-01T00:00:00Z').getTime();
-const rangeEnd = new Date('2026-09-14T00:00:00Z').getTime();
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-function offsetPercent(date: string): number {
-  const point = new Date(`${date}T00:00:00Z`).getTime();
+function toTimestamp(date: string): number {
+  return new Date(`${date}T00:00:00Z`).getTime();
+}
+
+function offsetPercent(date: string, rangeStart: number, rangeEnd: number): number {
+  if (rangeEnd <= rangeStart) return 0;
+  const point = toTimestamp(date);
   return Math.max(0, Math.min(100, ((point - rangeStart) / (rangeEnd - rangeStart)) * 100));
 }
 
-function barStyle(keyResult: PreparedKeyResult, actual: boolean): CSSProperties {
-  const left = offsetPercent(keyResult.startDate);
-  const fullWidth = Math.max(3, offsetPercent(keyResult.dueDate) - left);
+function barStyle(keyResult: PreparedKeyResult, actual: boolean, rangeStart: number, rangeEnd: number): CSSProperties {
+  const left = offsetPercent(keyResult.startDate, rangeStart, rangeEnd);
+  const fullWidth = Math.max(3, offsetPercent(keyResult.dueDate, rangeStart, rangeEnd) - left);
   return {
     left: `${left}%`,
     width: `${actual ? fullWidth * (keyResult.progress / 100) : fullWidth}%`,
   };
+}
+
+/** Generate evenly spaced week labels covering [rangeStart, rangeEnd]. */
+function weekLabels(rangeStart: number, rangeEnd: number): string[] {
+  const days = Math.max(1, Math.round((rangeEnd - rangeStart) / MS_PER_DAY));
+  const count = Math.max(1, Math.min(12, Math.ceil(days / 14)));
+  const step = (rangeEnd - rangeStart) / count;
+  const labels: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    labels.push(new Date(rangeStart + step * i).toISOString().slice(0, 10));
+  }
+  return labels;
 }
 
 export function GanttChartWidget({ data }: GanttChartWidgetProps) {
@@ -37,6 +52,16 @@ export function GanttChartWidget({ data }: GanttChartWidgetProps) {
     return <p className="visualization-empty">{t('gantt.empty')}</p>;
   }
 
+  // Derive the timeline window from the data instead of a fixed quarter.
+  const dates = [
+    ...keyResults.flatMap((keyResult) => [keyResult.startDate, keyResult.dueDate]),
+    ...tasks.flatMap((task) => [task.startDate, task.dueDate]),
+    ...milestones.map((milestone) => milestone.dueDate),
+  ].filter(Boolean);
+  const rangeStart = dates.length ? Math.min(...dates.map(toTimestamp)) : 0;
+  const rangeEnd = dates.length ? Math.max(...dates.map(toTimestamp)) + MS_PER_DAY : MS_PER_DAY;
+  const labels = weekLabels(rangeStart, rangeEnd);
+
   return (
     <div className="gantt-scroll" tabIndex={0} aria-label={t('gantt.timeline')}>
       <div className="gantt-chart">
@@ -47,7 +72,7 @@ export function GanttChartWidget({ data }: GanttChartWidgetProps) {
         </div>
         <details><summary>{t('gantt.calculation')}</summary><p>{t('gantt.calculationDetail')}</p></details>
         <div className="gantt-chart__weeks" aria-hidden="true">
-          {weekDates.map((week) => <span key={week}>{new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${week}T00:00:00Z`))}</span>)}
+          {labels.map((week) => <span key={week}>{new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${week}T00:00:00Z`))}</span>)}
         </div>
         <div className="gantt-chart__rows">
           {keyResults.map((keyResult) => (
@@ -59,18 +84,34 @@ export function GanttChartWidget({ data }: GanttChartWidgetProps) {
               <div className="gantt-row__track">
                 <span
                   className="gantt-bar gantt-bar--baseline"
-                  style={barStyle(keyResult, false)}
+                  style={barStyle(keyResult, false, rangeStart, rangeEnd)}
                   aria-label={t('gantt.baselineLabel', { start: keyResult.startDate, end: keyResult.dueDate })}
                 />
                 <span
                   className="gantt-bar gantt-bar--actual"
-                  style={barStyle(keyResult, true)}
+                  style={barStyle(keyResult, true, rangeStart, rangeEnd)}
                   aria-label={t('gantt.actualLabel', { progress: keyResult.progress })}
                 />
               </div>
             </article>
           ))}
-          {tasks.map((task) => <article className="gantt-row gantt-row--task" key={task.id}><div className="gantt-row__label"><strong>{t('gantt.task', { title: task.title })}</strong><span>{t('gantt.relatedKr', { title: task.keyResultTitle })}</span></div><div className="gantt-row__track"><span className="gantt-bar gantt-bar--baseline" style={{ left: `${offsetPercent(task.startDate)}%`, width: `${Math.max(3, offsetPercent(task.dueDate) - offsetPercent(task.startDate))}%` }} aria-label={t('gantt.taskPlan', { start: task.startDate, end: task.dueDate })} /><span className="gantt-bar gantt-bar--actual" style={{ left: `${offsetPercent(task.startDate)}%`, width: `${Math.max(3, offsetPercent(task.dueDate) - offsetPercent(task.startDate)) * task.progress / 100}%` }} aria-label={t('gantt.taskActual', { progress: task.progress })} /></div></article>)}
+          {tasks.map((task) => (
+            <article className="gantt-row gantt-row--task" key={task.id}>
+              <div className="gantt-row__label"><strong>{t('gantt.task', { title: task.title })}</strong><span>{t('gantt.relatedKr', { title: task.keyResultTitle })}</span></div>
+              <div className="gantt-row__track">
+                <span
+                  className="gantt-bar gantt-bar--baseline"
+                  style={{ left: `${offsetPercent(task.startDate, rangeStart, rangeEnd)}%`, width: `${Math.max(3, offsetPercent(task.dueDate, rangeStart, rangeEnd) - offsetPercent(task.startDate, rangeStart, rangeEnd))}%` }}
+                  aria-label={t('gantt.taskPlan', { start: task.startDate, end: task.dueDate })}
+                />
+                <span
+                  className="gantt-bar gantt-bar--actual"
+                  style={{ left: `${offsetPercent(task.startDate, rangeStart, rangeEnd)}%`, width: `${Math.max(3, offsetPercent(task.dueDate, rangeStart, rangeEnd) - offsetPercent(task.startDate, rangeStart, rangeEnd)) * task.progress / 100}%` }}
+                  aria-label={t('gantt.taskActual', { progress: task.progress })}
+                />
+              </div>
+            </article>
+          ))}
           {milestones.map((milestone) => (
             <article className="gantt-row gantt-row--milestone" key={milestone.id}>
               <div className="gantt-row__label">
@@ -84,7 +125,7 @@ export function GanttChartWidget({ data }: GanttChartWidgetProps) {
               <div className="gantt-row__track">
                 <span
                   className="gantt-milestone"
-                  style={{ left: `${offsetPercent(milestone.dueDate)}%` }}
+                  style={{ left: `${offsetPercent(milestone.dueDate, rangeStart, rangeEnd)}%` }}
                   aria-label={t('gantt.milestoneDate', { date: milestone.dueDate })}
                 />
                 <StatusBadge status={milestone.status} />

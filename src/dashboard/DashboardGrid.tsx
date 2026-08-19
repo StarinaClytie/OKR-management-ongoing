@@ -1,5 +1,5 @@
 import { WidgetErrorBoundary } from '../components/WidgetErrorBoundary';
-import type { DashboardData } from '../mocks/repository';
+import type { DashboardData } from '../data/types';
 import type { WidgetId } from './types';
 import { AdminSystemWidget } from './widgets/AdminSystemWidget';
 import { CompanyHealthWidget } from './widgets/CompanyHealthWidget';
@@ -7,7 +7,6 @@ import { HrSummaryWidget } from './widgets/HrSummaryWidget';
 import { MyKeyResultsWidget } from './widgets/MyKeyResultsWidget';
 import { ReportReviewWidget } from './widgets/ReportReviewWidget';
 import { TodayFocusWidget } from './widgets/TodayFocusWidget';
-import { ProjectVisualizationsWidget } from './widgets/ProjectVisualizationsWidget';
 
 export interface DashboardGridProps {
   data: DashboardData;
@@ -27,9 +26,7 @@ function renderWidget(widgetId: WidgetId, data: DashboardData) {
     case 'hr-summary':
       return <HrSummaryWidget data={data} />;
     case 'admin-system':
-      return <AdminSystemWidget />;
-    case 'project-visualizations':
-      return <ProjectVisualizationsWidget data={data} />;
+      return <AdminSystemWidget data={data} />;
   }
 }
 

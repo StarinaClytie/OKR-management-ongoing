@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
@@ -6,6 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { toLocalDailyReport, type DailyEvidenceDraft, type DailyReportDraft } from '../domain/dailyEntry';
 import { getDailyEvidencePermissionScope, getDailyReportBodyPermissionScope } from '../domain/permissions';
+import { currentBusinessDate } from '../domain/progressStatus';
 import type { Classification, DailyReport, Objective, User } from '../domain/types';
 import { DailyReportForm } from './daily-report/DailyReportForm';
 import { dailyReportToDraft } from '../data/dailyReportMapper';
@@ -42,7 +44,7 @@ function authoringResource(authorId: string, objective: Objective): DailyReport 
     projectId: objective.projectId,
     objectiveId: objective.id,
     keyResultIds: [],
-    date: '2026-08-11',
+    date: currentBusinessDate(),
     content: '',
     classification: objective.classification,
     hours: 0,
@@ -88,6 +90,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const authoringHeadingRef = useRef<HTMLHeadingElement>(null);
   const restoreAuthoringFocus = useRef(false);
   const dashboard = useDashboardData(dataRepository, currentUser?.id);
+  const [searchParams] = useSearchParams();
   useEffect(() => {
     setIsAuthoring(false);
     setEditingReport(undefined);
@@ -139,12 +142,39 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const memberReports = readableReports.filter((report) => can(currentUser, 'daily_report.review', report).allowed);
   const linkableObjectives = data.objectives.filter((objective) => can(currentUser, 'okr.read_summary', objective).allowed);
   const linkableKeyResults = data.keyResults.filter((keyResult) => can(currentUser, 'okr.read_summary', keyResult).allowed);
-  const authoringContext = resolveDailyAuthoringContext(currentUser, ownReports, linkableObjectives);
+  const requestedObjectiveId = searchParams.get('objectiveId');
+  const requestedKrId = searchParams.get('krId');
+  const requestedObjective = requestedObjectiveId
+    ? linkableObjectives.find((objective) => objective.id === requestedObjectiveId)
+    : undefined;
+  const authoringContext = requestedObjective
+    ? can(currentUser, 'daily_report.create', authoringResource(currentUser.id, requestedObjective)).allowed
+      ? { report: authoringResource(currentUser.id, requestedObjective), objective: requestedObjective }
+      : resolveDailyAuthoringContext(currentUser, ownReports, linkableObjectives)
+    : resolveDailyAuthoringContext(currentUser, ownReports, linkableObjectives);
   const authoringObjectives = authoringContext
     ? linkableObjectives.filter((objective) => objective.projectId === authoringContext.report.projectId)
     : [];
   const authoringObjectiveIds = new Set(authoringObjectives.map((objective) => objective.id));
   const authoringKeyResults = linkableKeyResults.filter((keyResult) => authoringObjectiveIds.has(keyResult.objectiveId));
+  const requestedKr = requestedKrId
+    ? data.keyResults.find((keyResult) => keyResult.id === requestedKrId && keyResult.objectiveId === requestedObjective?.id)
+    : undefined;
+  const prefillDraft: DailyReportDraft | undefined = requestedObjective
+    ? {
+        dailyObjective: '',
+        linkedObjectiveId: requestedObjective.id,
+        keyResults: [{
+          id: 'daily-kr-1',
+          title: requestedKr?.title ?? '',
+          type: 'quantity',
+          workNote: '',
+          linkedKeyResultId: requestedKr?.id,
+        }],
+        evidence: [],
+        classification: 'internal',
+      }
+    : undefined;
 
   async function handleSubmit(draft: DailyReportDraft) {
     if (!authoringContext) {
@@ -155,7 +185,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       authorId: authoringContext.report.authorId,
       projectId: authoringContext.report.projectId,
       fallbackObjectiveId: authoringContext.objective.id,
-      date: '2026-08-11',
+      date: currentBusinessDate(),
       submissionNonce: nextLocalSubmissionNonce.current,
       objectives: authoringObjectives,
       keyResults: authoringKeyResults,
@@ -195,7 +225,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     return { ok: true as const };
   }
 
-  const reportColumns = (showReviewActions: boolean, showOwnActions: boolean) => [
+  const reportColumns = (showOwnActions: boolean) => [
     { key: 'author', label: t('daily.author'), render: (report: DailyReport) => authorName(report.authorId, data.users, t('daily.unknownMember')) },
     { key: 'date', label: t('daily.date'), render: (report: DailyReport) => report.date },
     {
@@ -221,7 +251,6 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
     { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
     ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (dataRepository.mode === 'supabase') { const history = await dataRepository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
-    ...(showReviewActions ? [{ key: 'actions', label: t('daily.review'), render: () => <span className="inline-actions"><button type="button" className="button button--secondary" onClick={() => setNotice('daily.confirmedNotice')}>{t('daily.confirm')}</button><button type="button" className="text-button" onClick={() => setNotice('daily.returnedNotice')}>{t('daily.return')}</button><button type="button" className="text-button" onClick={() => setNotice('daily.commentedNotice')}>{t('daily.comment')}</button></span> }] : []),
   ];
 
   return (
@@ -232,12 +261,13 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
         primaryAction={authoringContext ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { setNotice(null); setIsAuthoring(true); } } : undefined}
       />
       {notice && <p className="page-notice" role="status">{t(notice)}</p>}
+      {!authoringContext && <p className="data-table__empty">{t('daily.noAuthoringContext')}</p>}
       {isAuthoring && authoringContext && (
         <section className="page-section" aria-labelledby="daily-report-authoring">
           <h2 id="daily-report-authoring" ref={authoringHeadingRef} tabIndex={-1}>{editingReport ? t('daily.editMine') : t('daily.fillToday')}</h2>
           <DailyReportForm
             mode={editingReport ? 'edit' : 'create'}
-            initialDraft={editingReport ? dailyReportToDraft(editingReport) : undefined}
+            initialDraft={editingReport ? dailyReportToDraft(editingReport) : prefillDraft}
             objectives={authoringObjectives}
             keyResults={authoringKeyResults}
             onCancel={() => { restoreAuthoringFocus.current = true; setEditingReport(undefined); setIsAuthoring(false); }}
@@ -246,8 +276,8 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
           {editingReport && revisions.length > 0 && <RevisionHistory revisions={revisions} />}
         </section>
       )}
-      <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">{t('daily.myReports')}</h2><DataTable ariaLabel={t('daily.myReports')} rows={ownReports} getRowKey={(report) => report.id} emptyMessage={t('daily.myReportsEmpty')} columns={reportColumns(false, true)} /></section>
-      {currentUser.role === 'project_leader' && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">{t('daily.memberReports')}</h2><DataTable ariaLabel={t('daily.memberReports')} rows={memberReports} getRowKey={(report) => report.id} emptyMessage={t('daily.memberReportsEmpty')} columns={reportColumns(true, false)} /></section>}
+      <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">{t('daily.myReports')}</h2><DataTable ariaLabel={t('daily.myReports')} rows={ownReports} getRowKey={(report) => report.id} emptyMessage={t('daily.myReportsEmpty')} columns={reportColumns(true)} /></section>
+      {currentUser.role === 'project_leader' && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">{t('daily.memberReports')}</h2><DataTable ariaLabel={t('daily.memberReports')} rows={memberReports} getRowKey={(report) => report.id} emptyMessage={t('daily.memberReportsEmpty')} columns={reportColumns(false)} /></section>}
     </section>
   );
 }

@@ -127,7 +127,7 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
       <PageHeader
         title={t('resources.title')}
         description={t('resources.description')}
-        primaryAction={{ label: t('resources.create'), onClick: () => { setFormError(undefined); setCreateOpen(true); } }}
+        primaryAction={dataRepository.mode === 'supabase' ? { label: t('resources.create'), onClick: () => { setFormError(undefined); setCreateOpen(true); } } : undefined}
       />
       {notice ? <p className="page-notice" role="status">{t(notice)}</p> : null}
 

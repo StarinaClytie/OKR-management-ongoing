@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
 import { DailyReportsPage } from './DailyReportsPage';
 
@@ -14,7 +15,9 @@ describe('DailyReportsPage user changes', () => {
     render(
       <AuthProvider initialUserId="user-employee">
         <UserControls />
-        <DailyReportsPage />
+        <MemoryRouter>
+          <DailyReportsPage />
+        </MemoryRouter>
       </AuthProvider>,
     );
 

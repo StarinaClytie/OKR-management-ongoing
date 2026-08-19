@@ -13,8 +13,8 @@ vi.mock('../lib/supabase', () => ({
   resourceNotificationService: { notify: notifyMock },
 }));
 
-const owner: User = { id: 'user-employee', name: '周琳', role: 'employee', title: '产品经理', department: '产品部', projectIds: ['project-orion'] };
-const peer: User = { id: 'user-project-peer', name: '赵峰', role: 'employee', title: '数据分析师', department: '数据部', projectIds: ['project-orion'] };
+const owner: User = { id: 'user-employee', name: '周琳', role: 'project_leader', title: '项目负责人', department: '产品部', projectIds: ['project-orion'] };
+const peer: User = { id: 'user-project-peer', name: '赵峰', role: 'project_leader', title: '项目负责人', department: '数据部', projectIds: ['project-orion'] };
 const management: User = { id: 'user-management', name: '王敏', role: 'management', title: '运营总监', department: '管理层', projectIds: ['project-nova'] };
 
 const detail: ResourceDetail = {
@@ -191,5 +191,10 @@ describe('ResourceDetailPage', () => {
     renderDetail(peer, makeRepository());
     expect(await screen.findByRole('heading', { name: 'Vacuum Pump A' })).toBeVisible();
     expect(screen.queryByRole('button', { name: '重新发送通知' })).not.toBeInTheDocument();
+  });
+
+  it('denies resource detail to roles without resource access', async () => {
+    renderDetail({ ...owner, role: 'employee' }, makeRepository());
+    expect(await screen.findByRole('heading', { name: '访问受限' })).toBeVisible();
   });
 });

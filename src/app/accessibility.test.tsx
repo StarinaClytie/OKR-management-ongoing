@@ -4,10 +4,10 @@ import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthContext';
 import { AppRoutes } from './routes';
 
-function renderAppAs(userId: string) {
+function renderAppAt(userId: string, path: string) {
   return render(
     <AuthProvider initialUserId={userId}>
-      <MemoryRouter initialEntries={['/dashboard']}>
+      <MemoryRouter initialEntries={[path]}>
         <AppRoutes />
       </MemoryRouter>
     </AuthProvider>,
@@ -18,13 +18,13 @@ describe('application accessibility contracts', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('gives every visualization tab an accessible selected state', () => {
-    renderAppAs('user-project-leader');
+    renderAppAt('user-project-leader', '/analytics');
 
     expect(screen.getByRole('tab', { name: '对齐树' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('has one primary Dashboard action for the employee role', () => {
-    const { container } = renderAppAs('user-employee');
+    const { container } = renderAppAt('user-employee', '/dashboard');
 
     expect(container.querySelectorAll('.dashboard-page .button--primary')).toHaveLength(1);
     expect(within(screen.getByRole('region', { name: '今日重点' })).getByRole('button', { name: '填写今日日报' })).toHaveClass('button--primary');
@@ -36,7 +36,7 @@ describe('application accessibility contracts', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }));
-    renderAppAs('user-project-leader');
+    renderAppAt('user-project-leader', '/analytics');
 
     expect(await screen.findByText('OKR 对齐摘要')).toBeVisible();
     expect(screen.getByText('查看详情')).toBeVisible();
@@ -49,7 +49,7 @@ describe('application accessibility contracts', () => {
       removeEventListener: vi.fn(),
     }));
     const user = userEvent.setup();
-    const { container } = renderAppAs('user-employee');
+    const { container } = renderAppAt('user-employee', '/dashboard');
 
     const menuButton = screen.getByRole('button', { name: '打开导航' });
     await user.click(menuButton);

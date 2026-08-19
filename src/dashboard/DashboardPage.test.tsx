@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthContext';
+import { mockRepository } from '../mocks/repository';
 import { DashboardPage } from './DashboardPage';
 import { AdminSystemWidget } from './widgets/AdminSystemWidget';
 
@@ -38,7 +39,7 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('heading', { name: '组织经营概览' })).toBeVisible();
     expect(screen.getByText('公司 OKR 健康度')).toBeVisible();
-    expect(screen.getByText('项目专业视图')).toBeVisible();
+    expect(screen.queryByText('项目专业视图')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
   });
 
@@ -65,7 +66,7 @@ describe('DashboardPage', () => {
   it('does not expose system metadata when the admin widget is reused for an unauthorized role', () => {
     render(
       <AuthProvider initialUserId="user-employee">
-        <AdminSystemWidget />
+        <AdminSystemWidget data={mockRepository.getDashboardData('user-administrator')} />
       </AuthProvider>,
     );
 
