@@ -71,7 +71,7 @@ export function ProjectsPage({ dataRepository = repository }: { dataRepository?:
 
   async function loadEligibleUsers(): Promise<OrganizationUser[]> {
     const result = await dataRepository.listOrganizationUsers();
-    return result.ok ? result.data.filter((user) => user.isActive && user.onboardingCompleted) : [];
+    return result.ok ? result.data.filter((user) => user.isActive && user.approvalStatus === 'approved') : [];
   }
 
   function closeModals() {

@@ -43,6 +43,8 @@ insert into public.profiles (id, organization_id, display_name) values
   ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000003', 'Schema Tester');
 insert into public.profiles (id, organization_id, display_name) values
   ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000009', 'Other Schema Tester');
+-- Existing operational users are explicitly approved (fail-closed default).
+update public.profiles set approval_status = 'approved';
 insert into public.projects (id, organization_id, name, leader_id, start_date, due_date) values
   ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000003', 'Schema Test Project', '00000000-0000-0000-0000-000000000002', current_date, current_date);
 insert into public.projects (id, organization_id, name, leader_id, start_date, due_date) values

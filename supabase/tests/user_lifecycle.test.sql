@@ -33,6 +33,8 @@ insert into public.organizations (id, name) values
 insert into public.profiles (id, organization_id, display_name, is_active) values
   ('12000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000021', 'Admin', true),
   ('12000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000021', 'Employee', true);
+-- Existing operational users are explicitly approved (fail-closed default).
+update public.profiles set approval_status = 'approved';
 
 insert into public.user_roles (organization_id, profile_id, role, is_active) values
   ('20000000-0000-0000-0000-000000000021', '12000000-0000-0000-0000-000000000001', 'administrator', true),

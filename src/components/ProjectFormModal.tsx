@@ -136,7 +136,7 @@ export function ProjectFormModal({
             <select value={values.leaderId} onChange={(event) => set('leaderId', event.target.value)} required>
               <option value="">{t('daily.select')}</option>
               {eligibleUsers.map((user) => (
-                <option key={user.id} value={user.id}>{user.displayName} · {t(roleLabels[user.role])}</option>
+                <option key={user.id} value={user.id}>{user.displayName} · {user.role ? t(roleLabels[user.role]) : '—'}</option>
               ))}
             </select>
           </label>
@@ -180,7 +180,7 @@ export function ProjectFormModal({
                       checked={values.memberIds.includes(user.id)}
                       onChange={() => toggleMember(user.id)}
                     />
-                    <span>{user.displayName} · {t(roleLabels[user.role])}</span>
+                    <span>{user.displayName} · {user.role ? t(roleLabels[user.role]) : '—'}</span>
                   </label>
                 ))}
               </div>

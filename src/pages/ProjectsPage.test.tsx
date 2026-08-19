@@ -14,8 +14,8 @@ const employee: User = { id: 'user-employee', name: '周琳', role: 'employee', 
 const hr: User = { id: 'user-hr', name: '孙悦', role: 'hr', title: '人力伙伴', department: '人力资源部', projectIds: [] };
 
 const eligibleUsers: OrganizationUser[] = [
-  { id: 'user-project-leader', displayName: '李然', email: '', department: '产品部', jobTitle: '项目负责人', role: 'project_leader', isActive: true, onboardingCompleted: true, projectIds: [] },
-  { id: 'user-employee', displayName: '周琳', email: '', department: '产品部', jobTitle: '产品经理', role: 'employee', isActive: true, onboardingCompleted: true, projectIds: [] },
+  { id: 'user-project-leader', displayName: '李然', email: '', department: '产品部', jobTitle: '项目负责人', role: 'project_leader', isActive: true, approvalStatus: 'approved', createdAt: '', projectIds: [] },
+  { id: 'user-employee', displayName: '周琳', email: '', department: '产品部', jobTitle: '产品经理', role: 'employee', isActive: true, approvalStatus: 'approved', createdAt: '', projectIds: [] },
 ];
 
 const activeProject = {

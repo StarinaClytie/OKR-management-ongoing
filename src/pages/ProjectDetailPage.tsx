@@ -74,7 +74,7 @@ export function ProjectDetailPage({ dataRepository = repository }: { dataReposit
 
   async function loadEligibleUsers(): Promise<OrganizationUser[]> {
     const result = await dataRepository.listOrganizationUsers();
-    return result.ok ? result.data.filter((user) => user.isActive && user.onboardingCompleted) : [];
+    return result.ok ? result.data.filter((user) => user.isActive && user.approvalStatus === 'approved') : [];
   }
 
   function closeModals() {
@@ -276,7 +276,7 @@ export function ProjectDetailPage({ dataRepository = repository }: { dataReposit
               <span>{t('projects.field.leader')} *</span>
               <select value={leaderSelection} onChange={(event) => setLeaderSelection(event.target.value)}>
                 {eligibleUsers.map((user) => (
-                  <option key={user.id} value={user.id}>{user.displayName} · {t(roleLabels[user.role])}</option>
+                  <option key={user.id} value={user.id}>{user.displayName} · {user.role ? t(roleLabels[user.role]) : '—'}</option>
                 ))}
               </select>
             </label>
@@ -322,7 +322,7 @@ export function ProjectDetailPage({ dataRepository = repository }: { dataReposit
                           current.includes(user.id) ? current.filter((id) => id !== user.id) : [...current, user.id]
                         ))}
                       />
-                      <span>{user.displayName} · {t(roleLabels[user.role])}</span>
+                      <span>{user.displayName} · {user.role ? t(roleLabels[user.role]) : '—'}</span>
                     </label>
                   ))}
                 </div>

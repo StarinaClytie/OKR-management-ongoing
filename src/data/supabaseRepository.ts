@@ -58,16 +58,21 @@ function mapOrganizationUser(row: Record<string, unknown>): OrganizationUser | n
   const roles: readonly Role[] = ['administrator', 'management', 'project_leader', 'employee', 'hr'];
   const roleRow = Array.isArray(row.user_roles) ? row.user_roles[0] as Record<string, unknown> | undefined : undefined;
   const role = roleRow?.role;
-  if (typeof row.id !== 'string' || typeof row.display_name !== 'string' || !roles.includes(role as Role)) return null;
+  if (typeof row.id !== 'string' || typeof row.display_name !== 'string') return null;
+  const approvalStatus: OrganizationUser['approvalStatus'] =
+    row.approval_status === 'pending' ? 'pending'
+      : row.approval_status === 'rejected' ? 'rejected'
+        : 'approved';
   return {
     id: row.id,
     displayName: row.display_name,
     email: typeof row.email === 'string' ? row.email : '',
     department: typeof row.department === 'string' ? row.department : '',
     jobTitle: typeof row.job_title === 'string' ? row.job_title : '',
-    role: role as Role,
+    role: roles.includes(role as Role) ? role as Role : null,
     isActive: row.is_active === true,
-    onboardingCompleted: row.onboarding_completed === true,
+    approvalStatus,
+    createdAt: typeof row.created_at === 'string' ? row.created_at : '',
     projectIds: Array.isArray(row.project_members) ? row.project_members.map((item) => String((item as Record<string, unknown>).project_id)) : [],
   };
 }
@@ -114,11 +119,26 @@ export class SupabaseOkrRepository implements OkrRepository {
   async getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>> {
     const session = await this.client.auth.getSession();
     if (session.error) return failure(session.error);
-    if (!session.data.session) return { ok: true, data: { kind: 'unassigned' } };
-    const state = await this.callRpc<{ state: string }>('get_my_profile_state', {});
+    if (!session.data.session) return { ok: true, data: { kind: 'error' } };
+    let state = await this.callRpc<{ state: string }>('get_my_profile_state', {});
     if (!state.ok) return state;
-    if (state.data.state === 'missing') return { ok: true, data: { kind: 'unassigned' } };
-    if (state.data.state === 'inactive') return { ok: true, data: { kind: 'inactive' } };
+    let resolved = state.data.state;
+
+    if (resolved === 'missing') {
+      // Recoverable partial signup: the auth account exists but no application
+      // profile was created (e.g. the signup profile RPC failed transiently).
+      // Idempotently create the caller's own pending profile — organization,
+      // email, and display name are all derived server-side — then re-resolve.
+      const created = await this.createPendingProfile('');
+      if (!created.ok) return { ok: false, error: created.error };
+      state = await this.callRpc<{ state: string }>('get_my_profile_state', {});
+      if (!state.ok) return state;
+      resolved = state.data.state;
+    }
+
+    if (resolved === 'error') return { ok: true, data: { kind: 'error' } };
+    if (resolved === 'pending') return { ok: true, data: { kind: 'pending' } };
+    if (resolved === 'inactive' || resolved === 'rejected') return { ok: true, data: { kind: 'inactive' } };
     const query = this.client.from('profiles') as ProfileQuery;
     const { data, error } = await query
       .select('id,display_name,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)')
@@ -126,7 +146,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       .maybeSingle();
     if (error) return failure(error);
     const user = data ? mapProfile(data) : null;
-    return { ok: true, data: user ? { kind: 'active', user } : { kind: 'unassigned' } };
+    return { ok: true, data: user ? { kind: 'active', user } : { kind: 'error' } };
   }
 
   private async selectRows(table: string, columns: string): Promise<RepositoryResult<Record<string, unknown>[]>> {
@@ -318,7 +338,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     return result.ok ? { ok: true, data: undefined } : result;
   }
   async listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>> {
-    const result = await this.selectRows('profiles', 'id,display_name,email,department,job_title,is_active,onboarding_completed,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)');
+    const result = await this.selectRows('profiles', 'id,display_name,email,department,job_title,is_active,approval_status,created_at,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)');
     if (!result.ok) return result;
     const users = result.data.map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
     return { ok: true, data: users };
@@ -326,12 +346,18 @@ export class SupabaseOkrRepository implements OkrRepository {
   async approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>> {
     const result = await this.callRpc<null>('approve_pending_user', {
       p_target_user_id: input.userId,
-      p_display_name: input.displayName,
-      p_email: input.email,
+      p_role: input.role,
       p_department: input.department,
       p_job_title: input.jobTitle,
-      p_role: input.role,
     });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async rejectPendingUser(userId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('reject_pending_user', { p_target_user_id: userId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async createPendingProfile(displayName: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('create_pending_profile', { p_display_name: displayName });
     return result.ok ? { ok: true, data: undefined } : result;
   }
   async updateUserProfile(input: UpdateUserInput): Promise<RepositoryResult<void>> {

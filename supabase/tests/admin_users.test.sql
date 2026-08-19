@@ -2,12 +2,13 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(42);
 
 -- ---------------------------------------------------------------------------
--- Fixtures: two organizations, one administrator each, plus an unassigned
--- auth user (pending), a profile without a role (roleless), and an inactive
--- profile. All auth.user rows mirror the shape the existing RLS tests use.
+-- Fixtures: two organizations. Org A has an administrator, a manager, an
+-- employee, a deactivated member, two pending self-registered users, an
+-- approved-but-roleless member, and a self-registered user with no profile.
+-- Org B has its own administrator/employee for cross-organization rejection.
 -- ---------------------------------------------------------------------------
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -19,33 +20,40 @@ select
   'not-used',
   now(),
   '{}'::jsonb,
-  '{}'::jsonb,
+  metadata,
   now(),
   now()
 from (values
-  ('11000000-0000-0000-0000-000000000001'::uuid, 'admin@admin.test'),
-  ('11000000-0000-0000-0000-000000000002'::uuid, 'mgr@admin.test'),
-  ('11000000-0000-0000-0000-000000000003'::uuid, 'emp@admin.test'),
-  ('11000000-0000-0000-0000-000000000004'::uuid, 'inactive@admin.test'),
-  ('11000000-0000-0000-0000-000000000005'::uuid, 'pending@admin.test'),
-  ('11000000-0000-0000-0000-000000000006'::uuid, 'roleless@admin.test'),
-  ('11000000-0000-0000-0000-000000000007'::uuid, 'other-admin@admin.test'),
-  ('11000000-0000-0000-0000-000000000008'::uuid, 'other-user@admin.test'),
-  ('11000000-0000-0000-0000-000000000009'::uuid, 'pending2@admin.test')
-) as users(id, email);
+  ('11000000-0000-0000-0000-000000000001'::uuid, 'admin@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000002'::uuid, 'mgr@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000003'::uuid, 'emp@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000004'::uuid, 'inactive@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000005'::uuid, 'pending@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000006'::uuid, 'roleless@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000007'::uuid, 'other-admin@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000008'::uuid, 'other-user@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000009'::uuid, 'pending2@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000010'::uuid, 'selfreg@admin.test', '{}'::jsonb),
+  ('11000000-0000-0000-0000-000000000011'::uuid, 'meta@admin.test', '{"role":"administrator"}'::jsonb),
+  ('11000000-0000-0000-0000-000000000012'::uuid, 'recover@admin.test', '{"display_name":"Recovered Name"}'::jsonb),
+  ('11000000-0000-0000-0000-000000000013'::uuid, 'victim@admin.test', '{}'::jsonb)
+) as users(id, email, metadata);
 
 insert into public.organizations (id, name) values
   ('20000000-0000-0000-0000-000000000011', 'Admin Organization'),
   ('20000000-0000-0000-0000-000000000012', 'Other Organization');
 
-insert into public.profiles (id, organization_id, display_name, is_active) values
-  ('11000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000011', 'Admin', true),
-  ('11000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000011', 'Manager', true),
-  ('11000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000011', 'Employee', true),
-  ('11000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000011', 'Inactive', false),
-  ('11000000-0000-0000-0000-000000000006', '20000000-0000-0000-0000-000000000011', 'Roleless', true),
-  ('11000000-0000-0000-0000-000000000007', '20000000-0000-0000-0000-000000000012', 'Other Admin', true),
-  ('11000000-0000-0000-0000-000000000008', '20000000-0000-0000-0000-000000000012', 'Other User', true);
+insert into public.profiles (id, organization_id, display_name, is_active, approval_status) values
+  ('11000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000011', 'Admin', true, 'approved'),
+  ('11000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000011', 'Manager', true, 'approved'),
+  ('11000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000011', 'Employee', true, 'approved'),
+  ('11000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000011', 'Inactive', false, 'approved'),
+  ('11000000-0000-0000-0000-000000000005', '20000000-0000-0000-0000-000000000011', 'Pending', true, 'pending'),
+  ('11000000-0000-0000-0000-000000000006', '20000000-0000-0000-0000-000000000011', 'Roleless', true, 'approved'),
+  ('11000000-0000-0000-0000-000000000007', '20000000-0000-0000-0000-000000000012', 'Other Admin', true, 'approved'),
+  ('11000000-0000-0000-0000-000000000008', '20000000-0000-0000-0000-000000000012', 'Other User', true, 'approved'),
+  ('11000000-0000-0000-0000-000000000009', '20000000-0000-0000-0000-000000000011', 'Pending Two', true, 'pending'),
+  ('11000000-0000-0000-0000-000000000011', '20000000-0000-0000-0000-000000000011', 'Metadata Claimant', true, 'pending');
 
 insert into public.user_roles (organization_id, profile_id, role, is_active) values
   ('20000000-0000-0000-0000-000000000011', '11000000-0000-0000-0000-000000000001', 'administrator', true),
@@ -55,150 +63,241 @@ insert into public.user_roles (organization_id, profile_id, role, is_active) val
   ('20000000-0000-0000-0000-000000000012', '11000000-0000-0000-0000-000000000007', 'administrator', true),
   ('20000000-0000-0000-0000-000000000012', '11000000-0000-0000-0000-000000000008', 'employee', true);
 
+-- A project and a resource in Org A, owned by the approved employee, so the
+-- pending-user RLS denials below are exercised against real business rows.
+insert into public.projects (id, organization_id, name, leader_id, classification, start_date, due_date) values
+  ('30000000-0000-0000-0000-000000000011', '20000000-0000-0000-0000-000000000011', 'Visible Project', '11000000-0000-0000-0000-000000000003', 'internal', current_date - 1, current_date + 30);
+
+insert into public.resources (id, organization_id, name, owner_id, location, created_by) values
+  ('40000000-0000-0000-0000-000000000011', '20000000-0000-0000-0000-000000000011', 'Visible Resource', '11000000-0000-0000-0000-000000000003', 'Lab A', '11000000-0000-0000-0000-000000000003');
+
 set local role authenticated;
 
 -- ---------------------------------------------------------------------------
--- get_my_profile_state discriminates missing / inactive / unassigned / active.
+-- get_my_profile_state discriminates all six account states.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
-select is((select public.get_my_profile_state()->>'state'), 'active', 'administrator sees an active state');
-
+select is((select public.get_my_profile_state()->>'state'), 'active', 'approved administrator reports active');
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000004', true);
-select is((select public.get_my_profile_state()->>'state'), 'inactive', 'deactivated profile reports an inactive state, not unassigned');
-
+select is((select public.get_my_profile_state()->>'state'), 'inactive', 'deactivated member reports inactive');
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000005', true);
-select is((select public.get_my_profile_state()->>'state'), 'missing', 'auth user without a profile reports a missing state');
-
+select is((select public.get_my_profile_state()->>'state'), 'pending', 'self-registered pending member reports pending');
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000006', true);
-select is((select public.get_my_profile_state()->>'state'), 'unassigned', 'active profile without a role reports an unassigned state');
+select is((select public.get_my_profile_state()->>'state'), 'error', 'approved member without a role reports error, not pending');
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000010', true);
+select is((select public.get_my_profile_state()->>'state'), 'missing', 'authenticated user without a profile reports missing');
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000011', true);
+select is((select public.get_my_profile_state()->>'state'), 'pending', 'raw_user_meta_data role grants no privilege');
 
 -- ---------------------------------------------------------------------------
--- approve_pending_user is administrator-only, atomic, and duplicate-safe.
+-- approve_pending_user: administrator-only, atomic, role-required, pending-only.
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
 select lives_ok(
-  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000005', 'New Person', 'pending@admin.test', '产品部', '工程师', 'employee')$$,
+  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000005', 'employee', '产品部', '工程师')$$,
   'administrator approves a pending user'
 );
 select is(
-  (select organization_id from public.profiles where id = '11000000-0000-0000-0000-000000000005'),
-  '20000000-0000-0000-0000-000000000011'::uuid,
-  'approved profile lands in the administrator organization'
-);
-select is(
-  (select display_name from public.profiles where id = '11000000-0000-0000-0000-000000000005'),
-  'New Person',
-  'approved profile stores the display name'
+  (select approval_status::text from public.profiles where id = '11000000-0000-0000-0000-000000000005'),
+  'approved',
+  'approval sets the approved state'
 );
 select is(
   (select role::text from public.user_roles where profile_id = '11000000-0000-0000-0000-000000000005'),
   'employee',
-  'approved profile receives the selected role'
+  'approval assigns the selected role atomically'
+);
+select is(
+  (select department from public.profiles where id = '11000000-0000-0000-0000-000000000005'),
+  '产品部',
+  'approval persists optional department'
 );
 select throws_ok(
-  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000005', 'Dup', '', '', '', 'employee')$$,
-  '23505', 'Profile already exists for this user', 'approving an already-profiled user is rejected as a duplicate'
-);
-select throws_ok(
-  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000009', '   ', '', '', '', 'employee')$$,
-  '22023', 'Display name is required', 'blank display name is rejected'
-);
-select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000002', true);
-select throws_ok(
-  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000009', 'Mgr Person', '', '', '', 'employee')$$,
-  '42501', 'Only administrators can approve users', 'management cannot approve users'
-);
-select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000003', true);
-select throws_ok(
-  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000009', 'Emp Person', '', '', '', 'employee')$$,
-  '42501', 'Only administrators can approve users', 'employee cannot approve users'
-);
-
--- ---------------------------------------------------------------------------
--- update_user_profile edits display fields and role without moving organizations.
--- ---------------------------------------------------------------------------
-select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
-select lives_ok(
-  $$select public.update_user_profile('11000000-0000-0000-0000-000000000003', 'Employee', 'emp@admin.test', '产品部', '高级工程师', 'management')$$,
-  'administrator updates a member profile and role'
+  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000003', 'employee', '', '')$$,
+  '22023', 'User is not pending approval', 'approving an already-approved member is rejected'
 );
 select is(
   (select role::text from public.user_roles where profile_id = '11000000-0000-0000-0000-000000000003'),
-  'management',
-  'role write updates user_roles'
+  'employee',
+  'a rejected approval leaves the target role unchanged'
 );
-select is(
-  (select department from public.profiles where id = '11000000-0000-0000-0000-000000000003'),
-  '产品部',
-  'display fields persist on the profile'
+select throws_ok(
+  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000009', null, '', '')$$,
+  '22023', 'Role is required', 'approval without a role is rejected'
 );
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000002', true);
 select throws_ok(
-  $$select public.update_user_profile('11000000-0000-0000-0000-000000000003', 'X', '', '', '', 'employee')$$,
-  '42501', 'Only administrators can update users', 'management cannot update users'
-);
-select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
-select throws_ok(
-  $$select public.update_user_profile('11000000-0000-0000-0000-000000000001', 'Admin', '', '', '', 'management')$$,
-  '22023', 'Administrator cannot remove their own administrator role', 'administrator cannot demote their own account'
+  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000009', 'employee', '', '')$$,
+  '42501', 'Only administrators can approve users', 'management cannot approve users'
 );
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000007', true);
 select throws_ok(
-  $$select public.update_user_profile('11000000-0000-0000-0000-000000000003', 'X', '', '', '', 'employee')$$,
-  '42501', 'Profile not found in organization', 'cross-organization update is rejected'
+  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000009', 'employee', '', '')$$,
+  '42501', 'Profile not found in organization', 'cross-organization approval is rejected'
+);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000005', true);
+select throws_ok(
+  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000005', 'employee', '', '')$$,
+  '42501', 'Only administrators can approve users', 'a pending user cannot self-approve'
+);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000011', true);
+select throws_ok(
+  $$select public.approve_pending_user('11000000-0000-0000-0000-000000000009', 'employee', '', '')$$,
+  '42501', 'Only administrators can approve users', 'metadata role grants no approval authority'
 );
 
 -- ---------------------------------------------------------------------------
--- set_user_active deactivates without deleting, and is administrator-only.
+-- reject_pending_user: administrator-only, pending-only, soft (no hard delete).
 -- ---------------------------------------------------------------------------
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
 select lives_ok(
-  $$select public.set_user_active('11000000-0000-0000-0000-000000000003', false)$$,
-  'administrator deactivates a member'
+  $$select public.reject_pending_user('11000000-0000-0000-0000-000000000009')$$,
+  'administrator rejects a pending user'
 );
 select is(
-  (select is_active from public.profiles where id = '11000000-0000-0000-0000-000000000003'),
+  (select approval_status::text from public.profiles where id = '11000000-0000-0000-0000-000000000009'),
+  'rejected',
+  'rejection marks the profile rejected'
+);
+select is(
+  (select is_active from public.profiles where id = '11000000-0000-0000-0000-000000000009'),
   false,
-  'deactivation flips the profile flag'
-);
-select is(
-  (select is_active from public.user_roles where profile_id = '11000000-0000-0000-0000-000000000003'),
-  false,
-  'deactivation flips the role flag'
-);
-select lives_ok(
-  $$select public.set_user_active('11000000-0000-0000-0000-000000000003', true)$$,
-  'administrator reactivates a member'
-);
-select is(
-  (select is_active from public.profiles where id = '11000000-0000-0000-0000-000000000003'),
-  true,
-  'reactivation restores the profile flag'
+  'rejection deactivates the profile without deleting it'
 );
 select throws_ok(
-  $$select public.set_user_active('11000000-0000-0000-0000-000000000001', false)$$,
-  '22023', 'Administrator cannot deactivate their own account', 'administrator cannot deactivate their own account'
+  $$select public.reject_pending_user('11000000-0000-0000-0000-000000000003')$$,
+  '22023', 'User is not pending approval', 'rejecting an approved member is rejected'
+);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000002', true);
+select throws_ok(
+  $$select public.reject_pending_user('11000000-0000-0000-0000-000000000009')$$,
+  '42501', 'Only administrators can reject users', 'non-administrator cannot reject'
+);
+
+-- ---------------------------------------------------------------------------
+-- create_pending_profile: creates a pending profile in the default org, and is
+-- idempotent (never overwrites an existing, possibly approved profile).
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000010', true);
+select lives_ok(
+  $$select public.create_pending_profile('Self Registered')$$,
+  'a self-registered user creates their pending profile'
+);
+-- Read the resulting profile as the administrator: RLS lets an administrator
+-- read any member of their organization, while a pending user cannot read
+-- profiles at all (their organization identity resolves to null).
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
+select is(
+  (select approval_status::text from public.profiles where id = '11000000-0000-0000-0000-000000000010'),
+  'pending',
+  'self-registration lands in the pending state'
+);
+select is(
+  (select organization_id from public.profiles where id = '11000000-0000-0000-0000-000000000010'),
+  '20000000-0000-0000-0000-000000000011'::uuid,
+  'self-registration associates the default organization'
+);
+select is(
+  (select display_name from public.profiles where id = '11000000-0000-0000-0000-000000000010'),
+  'Self Registered',
+  'self-registration stores the submitted display name'
+);
+select is(
+  (select count(*) from public.user_roles where profile_id = '11000000-0000-0000-0000-000000000010'),
+  0::bigint,
+  'self-registration assigns no role'
+);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000010', true);
+select lives_ok(
+  $$select public.create_pending_profile('Self Registered')$$,
+  'calling create_pending_profile again is idempotent'
+);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
+select is(
+  (select count(*) from public.profiles where id = '11000000-0000-0000-0000-000000000010'),
+  1::bigint,
+  'idempotency does not duplicate the profile'
 );
 select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000003', true);
-select throws_ok(
-  $$select public.set_user_active('11000000-0000-0000-0000-000000000001', false)$$,
-  '42501', 'Only administrators can change user status', 'non-administrator cannot change user status'
+select lives_ok(
+  $$select public.create_pending_profile('Hijack')$$,
+  'an approved user can call create_pending_profile without effect'
 );
-select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000007', true);
-select throws_ok(
-  $$select public.set_user_active('11000000-0000-0000-0000-000000000003', false)$$,
-  '42501', 'Profile not found in organization', 'cross-organization status change is rejected'
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
+select is(
+  (select approval_status::text from public.profiles where id = '11000000-0000-0000-0000-000000000003'),
+  'approved',
+  'create_pending_profile never demotes an approved profile'
 );
 
 -- ---------------------------------------------------------------------------
--- RLS keeps a deactivated user from reading their own profile (which would
--- otherwise surface an 'unassigned' identity in the auth flow).
+-- Partial-signup recovery: an authenticated user whose profile was never
+-- created (a transient signup failure) can idempotently recover their own
+-- pending profile. Display name is derived from signup metadata; no role, no
+-- approved state, and no other user's profile are ever created.
 -- ---------------------------------------------------------------------------
-select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000004', true);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000012', true);
+select lives_ok(
+  $$select public.create_pending_profile('')$$,
+  'recovery creates the caller''s own pending profile'
+);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
 select is(
-  (select count(*) from public.profiles where id = '11000000-0000-0000-0000-000000000004'),
+  (select display_name from public.profiles where id = '11000000-0000-0000-0000-000000000012'),
+  'Recovered Name',
+  'recovery derives the display name from signup metadata'
+);
+select is(
+  (select approval_status::text from public.profiles where id = '11000000-0000-0000-0000-000000000012'),
+  'pending',
+  'recovery never creates an approved state'
+);
+select is(
+  (select count(*) from public.user_roles where profile_id = '11000000-0000-0000-0000-000000000012'),
   0::bigint,
-  'a deactivated user cannot read their own profile through RLS'
+  'recovery never creates a role'
+);
+select is(
+  (select count(*) from public.profiles where id = '11000000-0000-0000-0000-000000000012'),
+  1::bigint,
+  'recovery creates exactly one profile'
+);
+select is(
+  (select count(*) from public.profiles where id = '11000000-0000-0000-0000-000000000013'),
+  0::bigint,
+  'recovery cannot create another user''s profile'
+);
+
+-- ---------------------------------------------------------------------------
+-- RLS gating: a pending user resolves no organization and reads no business
+-- rows, so operational access is denied at the database layer.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000010', true);
+select is(
+  (select private.current_organization_id()),
+  null,
+  'a pending user resolves no organization identity'
+);
+select is(
+  (select count(*) from public.profiles),
+  0::bigint,
+  'a pending user cannot read the member directory'
+);
+select is(
+  (select count(*) from public.projects),
+  0::bigint,
+  'a pending user cannot read projects'
+);
+select is(
+  (select count(*) from public.resources),
+  0::bigint,
+  'a pending user cannot read resources'
+);
+select set_config('request.jwt.claim.sub', '11000000-0000-0000-0000-000000000001', true);
+select is(
+  (select count(*) from public.projects where id = '30000000-0000-0000-0000-000000000011'),
+  1::bigint,
+  'the approved administrator can read the fixture project'
 );
 
 select * from finish();

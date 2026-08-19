@@ -13,14 +13,20 @@ const selectableUserIds = new Set([
 
 export const selectableUsers = users.filter((user) => selectableUserIds.has(user.id));
 
+export interface SignUpResult {
+  error: { message: string } | null;
+}
+
 export interface AuthContextValue {
-  status: 'loading' | 'signed_out' | 'unassigned' | 'inactive' | 'invite_pending' | 'invite_failed' | 'ready';
+  status: 'loading' | 'signed_out' | 'pending_approval' | 'inactive' | 'account_error' | 'ready';
   mode: AppMode;
   currentUser: User | undefined;
   email?: string;
   selectableUsers: readonly User[];
   selectUser: (userId: string) => void;
   signOut: () => Promise<void>;
+  signUp?: (displayName: string, email: string, password: string) => Promise<SignUpResult>;
+  refreshProfile?: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -35,12 +41,14 @@ export function AuthProvider({ children, initialUserId = 'user-employee' }: Auth
   const value = useMemo<AuthContextValue>(
     () => ({
       currentUser,
-      status: currentUser ? 'ready' : 'unassigned',
+      status: currentUser ? 'ready' : 'account_error',
       mode: 'demo',
       email: undefined,
       selectableUsers,
       selectUser: setCurrentUserId,
       signOut: async () => undefined,
+      signUp: async () => ({ error: null }),
+      refreshProfile: async () => undefined,
     }),
     [currentUser],
   );
