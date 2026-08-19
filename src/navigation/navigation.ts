@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  ClipboardList,
   FileText,
   FolderKanban,
   LayoutDashboard,
@@ -41,8 +40,7 @@ export const navigationItems: readonly NavigationItem[] = [
   { path: '/okrs', labelKey: 'navigation.okrs', icon: Target, action: 'dashboard.view', resource: dashboardScope },
   { path: '/projects', labelKey: 'navigation.projects', icon: FolderKanban, action: 'dashboard.view', resource: dashboardScope },
   { path: '/resources', labelKey: 'navigation.resources', icon: Package, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/daily-reports', labelKey: 'navigation.dailyReports', icon: ClipboardList, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/weekly-reports', labelKey: 'navigation.weeklyReports', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/reports', labelKey: 'navigation.reports', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
   { path: '/team', labelKey: 'navigation.team', icon: Users, action: 'dashboard.view', resource: dashboardScope },
   { path: '/users', labelKey: 'navigation.users', icon: UserCog, action: 'user.manage', resource: usersScope },
   { path: '/analytics', labelKey: 'navigation.analytics', icon: BarChart3, action: 'dashboard.view', resource: dashboardScope },

@@ -6,6 +6,17 @@ export type ReportStatus = 'draft' | 'submitted' | 'returned' | 'confirmed';
 export type ProgressStatus = 'on_track' | 'at_risk' | 'off_track' | 'complete';
 export type ProjectStatus = 'planned' | 'active' | 'on_hold' | 'completed' | 'archived';
 
+/**
+ * Lifecycle/planning status for an Objective or Key Result, kept deliberately
+ * small and manually controllable (with a deterministic default). Distinct from
+ * `ProgressStatus`, which is the risk/execution-health derivation used by the
+ * risk matrix and dashboard.
+ */
+export type OkrStatus = 'not_started' | 'on_track' | 'at_risk' | 'delayed' | 'completed';
+export type OkrPriority = 'low' | 'medium' | 'high';
+export type KrMetricType = 'numeric' | 'percentage' | 'milestone';
+export type KrAssignmentRole = 'owner' | 'collaborator';
+
 export type ResourceCategory = 'optics' | 'chemicals' | 'vacuum' | 'tools' | 'electronics' | 'mechanical' | 'consumables' | 'safety' | 'other';
 export type ResourceKind = 'durable' | 'consumable';
 export type ResourceStatus = 'available' | 'in_use' | 'maintenance' | 'damaged' | 'missing' | 'out_of_stock' | 'archived';
@@ -90,6 +101,13 @@ export interface Objective {
   startDate: string;
   dueDate: string;
   classification: Classification;
+  /** Stable project/objective number, e.g. `O-2026-Q3-001`. */
+  number?: string;
+  /** OKR cycle/quarter, e.g. `2026-Q3`. */
+  quarter?: string;
+  priority?: OkrPriority;
+  okrStatus?: OkrStatus;
+  archivedAt?: string | null;
 }
 
 export interface KeyResult {
@@ -102,6 +120,35 @@ export interface KeyResult {
   startDate: string;
   dueDate: string;
   classification: Classification;
+  metricType?: KrMetricType;
+  currentValue?: number;
+  targetValue?: number;
+  unit?: string;
+  notes?: string;
+  confidenceIndex?: number;
+  priority?: OkrPriority;
+  okrStatus?: OkrStatus;
+}
+
+export interface KrAssignment {
+  id: string;
+  krId: string;
+  userId: string;
+  assignmentRole: KrAssignmentRole;
+}
+
+export interface KrProgressUpdate {
+  id: string;
+  krId: string;
+  authorId: string;
+  previousProgress: number;
+  newProgress: number;
+  summary: string;
+  blocker?: string;
+  reason?: string;
+  nextAction?: string;
+  evidence?: string;
+  createdAt: string;
 }
 
 export interface DailyReport {

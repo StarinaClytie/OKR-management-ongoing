@@ -1,6 +1,6 @@
 import type { DashboardData } from '../mocks/repository';
 import type { DailyReport, ProjectStatus, Role, User } from '../domain/types';
-import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KrProgressInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
@@ -162,16 +162,18 @@ export class SupabaseOkrRepository implements OkrRepository {
     const results = await Promise.all([
       this.selectRows('profiles', 'id,display_name,department,job_title,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)'),
       this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,status,project_members!project_members_project_id_fkey(profile_id)'),
-      this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date'),
-      this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date'),
+      this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date,number,quarter,priority,okr_status,archived_at'),
+      this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date,metric_type,current_value,target_value,unit,notes,confidence_index,priority,okr_status'),
       this.selectRows('progress_baselines', 'id,key_result_id,planned_for,planned_value'),
       this.selectRows('milestones', 'id,project_id,key_result_id,title,planned_date,is_complete'),
       this.selectRows('risks', 'id,project_id,key_result_id,objective_id,owner_id,title,reason,mitigation,probability,impact,classification,last_reviewed_at,resolved_at'),
       this.selectRows('progress_snapshots', 'id,key_result_id,progress,effective_date'),
+      this.selectRows('kr_assignments', 'id,kr_id,profile_id,assignment_role'),
+      this.selectRows('kr_progress_updates', 'id,kr_id,author_id,previous_progress,new_progress,summary,blocker,reason,next_action,evidence,created_at'),
     ]);
     const failed = results.find((result) => !result.ok);
     if (failed && !failed.ok) return failed;
-    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
+    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
 
     const users = profileResult.data.map(mapProfile).filter((user): user is User => user !== null);
     const currentUser = users.find((user) => user.id === session.data.session!.user.id);
@@ -181,11 +183,30 @@ export class SupabaseOkrRepository implements OkrRepository {
       .filter((row) => typeof row.project_id === 'string')
       .map((row) => {
         const progress = numberValue(row.progress);
-        return { id: String(row.id), projectId: String(row.project_id), title: String(row.title), description: String(row.description ?? ''), ownerId: String(row.owner_id), progress, status: statusForProgress(progress), startDate: dateValue(row.start_date), dueDate: dateValue(row.due_date), classification: row.classification as import('../domain/types').Classification };
+        return {
+          id: String(row.id), projectId: String(row.project_id), title: String(row.title), description: String(row.description ?? ''), ownerId: String(row.owner_id), progress, status: statusForProgress(progress), startDate: dateValue(row.start_date), dueDate: dateValue(row.due_date),
+          classification: row.classification as import('../domain/types').Classification,
+          number: typeof row.number === 'string' ? row.number : undefined,
+          quarter: typeof row.quarter === 'string' ? row.quarter : undefined,
+          priority: row.priority as import('../domain/types').OkrPriority,
+          okrStatus: row.okr_status as import('../domain/types').OkrStatus,
+          archivedAt: typeof row.archived_at === 'string' ? row.archived_at : null,
+        };
       });
     const keyResults = keyResultResult.data.map((row) => {
       const progress = numberValue(row.progress);
-      return { id: String(row.id), objectiveId: String(row.objective_id), title: String(row.title), ownerId: String(row.owner_id), progress, status: statusForProgress(progress), startDate: dateValue(row.start_date), dueDate: dateValue(row.due_date), classification: row.classification as import('../domain/types').Classification };
+      return {
+        id: String(row.id), objectiveId: String(row.objective_id), title: String(row.title), ownerId: String(row.owner_id), progress, status: statusForProgress(progress), startDate: dateValue(row.start_date), dueDate: dateValue(row.due_date),
+        classification: row.classification as import('../domain/types').Classification,
+        metricType: row.metric_type as import('../domain/types').KrMetricType,
+        currentValue: row.current_value === null || row.current_value === undefined ? undefined : numberValue(row.current_value),
+        targetValue: row.target_value === null || row.target_value === undefined ? undefined : numberValue(row.target_value),
+        unit: typeof row.unit === 'string' ? row.unit : undefined,
+        notes: typeof row.notes === 'string' ? row.notes : undefined,
+        confidenceIndex: row.confidence_index === null || row.confidence_index === undefined ? undefined : numberValue(row.confidence_index),
+        priority: row.priority as import('../domain/types').OkrPriority,
+        okrStatus: row.okr_status as import('../domain/types').OkrStatus,
+      };
     });
     const keyResultsById = new Map(keyResults.map((keyResult) => [keyResult.id, keyResult]));
     const projectIdByObjectiveId = new Map(objectives.map((objective) => [objective.id, objective.projectId]));
@@ -232,7 +253,27 @@ export class SupabaseOkrRepository implements OkrRepository {
       .filter((row) => row.project_id === null)
       .map((row) => { const progress = numberValue(row.progress); return { id: String(row.id), level: 'company' as const, title: String(row.title), progress, status: statusForProgress(progress), classification: row.classification as import('../domain/types').Classification }; });
 
-    return { ok: true, data: { currentUser, users, dailyReports: [], projects, objectives, keyResults, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] } };
+    const krAssignments = krAssignmentResult.data.map((row) => ({
+      id: String(row.id),
+      krId: String(row.kr_id),
+      userId: String(row.profile_id),
+      assignmentRole: row.assignment_role as import('../domain/types').KrAssignmentRole,
+    }));
+    const krProgressUpdates = krProgressUpdateResult.data.map((row) => ({
+      id: String(row.id),
+      krId: String(row.kr_id),
+      authorId: String(row.author_id),
+      previousProgress: numberValue(row.previous_progress),
+      newProgress: numberValue(row.new_progress),
+      summary: String(row.summary ?? ''),
+      blocker: typeof row.blocker === 'string' ? row.blocker : undefined,
+      reason: typeof row.reason === 'string' ? row.reason : undefined,
+      nextAction: typeof row.next_action === 'string' ? row.next_action : undefined,
+      evidence: typeof row.evidence === 'string' ? row.evidence : undefined,
+      createdAt: typeof row.created_at === 'string' ? row.created_at : '',
+    }));
+
+    return { ok: true, data: { currentUser, users, dailyReports: [], projects, objectives, keyResults, krAssignments, krProgressUpdates, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] } };
   }
   async listDailyReports(): Promise<RepositoryResult<DailyReport[]>> { return failure(null); }
 
@@ -330,6 +371,92 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_risk_id: input.id ?? null, p_project_id: input.projectId, p_key_result_id: input.keyResultId ?? null, p_objective_id: input.objectiveId ?? null,
       p_title: input.title, p_probability: input.probability, p_impact: input.impact, p_reason: input.reason, p_mitigation: input.mitigation,
       p_last_reviewed_at: input.lastReviewedAt, p_classification: input.classification, p_resolved: input.resolved,
+    });
+    return result.ok ? { ok: true, data: { id: result.data } } : result;
+  }
+  async createObjective(input: ObjectiveCreateInput): Promise<RepositoryResult<{ id: string }>> {
+    const result = await this.callRpc<string>('create_objective', {
+      p_name: input.name,
+      p_number: input.number ?? null,
+      p_leader_id: input.leaderId,
+      p_quarter: input.quarter,
+      p_start_date: input.startDate,
+      p_due_date: input.dueDate,
+      p_priority: input.priority,
+      p_description: input.description,
+      p_classification: input.classification,
+    });
+    return result.ok ? { ok: true, data: { id: result.data } } : result;
+  }
+  async updateObjective(input: ObjectiveUpdateInput): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('update_objective', {
+      p_objective_id: input.objectiveId,
+      p_name: input.name,
+      p_number: input.number ?? null,
+      p_leader_id: input.leaderId,
+      p_quarter: input.quarter,
+      p_start_date: input.startDate,
+      p_due_date: input.dueDate,
+      p_priority: input.priority,
+      p_description: input.description,
+      p_classification: input.classification,
+    });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async archiveObjective(objectiveId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('archive_objective', { p_objective_id: objectiveId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async restoreObjective(objectiveId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('restore_objective', { p_objective_id: objectiveId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async createKeyResult(input: KeyResultCreateInput): Promise<RepositoryResult<{ id: string }>> {
+    const result = await this.callRpc<string>('create_key_result', {
+      p_objective_id: input.objectiveId,
+      p_title: input.title,
+      p_owner_id: input.ownerId,
+      p_due_date: input.dueDate,
+      p_metric_type: input.metricType,
+      p_current_value: input.currentValue ?? null,
+      p_target_value: input.targetValue ?? null,
+      p_unit: input.unit ?? null,
+      p_notes: input.notes ?? null,
+      p_confidence_index: input.confidenceIndex ?? null,
+      p_priority: input.priority ?? null,
+      p_classification: input.classification,
+      p_collaborator_ids: input.collaboratorIds,
+    });
+    return result.ok ? { ok: true, data: { id: result.data } } : result;
+  }
+  async updateKeyResult(input: KeyResultUpdateInput): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('update_key_result', {
+      p_key_result_id: input.keyResultId,
+      p_title: input.title,
+      p_owner_id: input.ownerId,
+      p_due_date: input.dueDate,
+      p_metric_type: input.metricType,
+      p_current_value: input.currentValue ?? null,
+      p_target_value: input.targetValue ?? null,
+      p_unit: input.unit ?? null,
+      p_notes: input.notes ?? null,
+      p_confidence_index: input.confidenceIndex ?? null,
+      p_priority: input.priority ?? null,
+      p_classification: input.classification,
+      p_collaborator_ids: input.collaboratorIds,
+    });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async saveKrProgressUpdate(input: KrProgressUpdateInput): Promise<RepositoryResult<{ id: string }>> {
+    const result = await this.callRpc<string>('save_kr_progress_update', {
+      p_key_result_id: input.keyResultId,
+      p_previous_progress: input.previousProgress,
+      p_new_progress: input.newProgress,
+      p_summary: input.summary,
+      p_blocker: input.blocker ?? null,
+      p_reason: input.reason ?? null,
+      p_next_action: input.nextAction ?? null,
+      p_evidence: input.evidence ?? null,
     });
     return result.ok ? { ok: true, data: { id: result.data } } : result;
   }

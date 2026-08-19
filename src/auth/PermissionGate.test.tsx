@@ -9,7 +9,7 @@ import { ProtectedRoute } from './ProtectedRoute';
 const confidentialDocument = documents.find((document) => document.id === 'document-nova-metric-contract')!;
 
 describe('permission components', () => {
-  it('exposes five selectable mock roles and updates the current user', async () => {
+  it('exposes nine selectable mock roles and updates the current user', async () => {
     const user = userEvent.setup();
 
     function AuthProbe() {
@@ -29,7 +29,7 @@ describe('permission components', () => {
       </AuthProvider>,
     );
 
-    expect(screen.getByText('可选角色 5')).toBeInTheDocument();
+    expect(screen.getByText('可选角色 9')).toBeInTheDocument();
     expect(screen.getByText('陈安')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '切换 HR' }));

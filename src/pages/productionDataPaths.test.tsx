@@ -66,6 +66,7 @@ const dashboardData: DashboardData = {
     periodStart: '2026-08-10', periodEnd: '2026-08-14', plannedHours: 8, loggedHours: 9, capacityHours: 10, hrVisibility: 'hours_only',
   }],
   milestones: [], risks: [], progressSnapshots: [], attachments: [], companyObjectives: [], projectTasks: [],
+  krAssignments: [], krProgressUpdates: [],
 };
 
 const authValue: AuthContextValue = {
@@ -93,8 +94,8 @@ describe('Supabase production page data paths', () => {
   it.each([
     ['/dashboard', 'RLS 经营目标'],
     ['/projects', 'RLS 项目'],
-    ['/daily-reports', 'RLS 日报正文'],
-    ['/weekly-reports', 'RLS 周报摘要'],
+    ['/reports', 'RLS 日报正文'],
+    ['/reports?tab=weekly', 'RLS 周报摘要'],
     ['/team', 'RLS 团队成员'],
     ['/analytics', '9 小时'],
   ])('renders %s from the RLS-backed repository for a real UUID profile', async (path, expectedText) => {

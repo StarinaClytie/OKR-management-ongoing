@@ -5,25 +5,24 @@ import { AppShell } from '../layout/AppShell';
 import { navigationItems, type NavigationItem } from '../navigation/navigation';
 import { AccessDeniedPage } from '../pages/AccessDeniedPage';
 import { AnalyticsPage } from '../pages/AnalyticsPage';
-import { DailyReportsPage } from '../pages/DailyReportsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { ObjectiveDetailPage } from '../pages/ObjectiveDetailPage';
 import { OkrManagementPage } from '../pages/OkrManagementPage';
 import { ProfilePage } from '../pages/ProfilePage';
 import { ProjectDetailPage } from '../pages/ProjectDetailPage';
 import { ProjectsPage } from '../pages/ProjectsPage';
+import { ReportsPage } from '../pages/ReportsPage';
 import { ResourceDetailPage } from '../pages/ResourceDetailPage';
 import { ResourcesPage } from '../pages/ResourcesPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { TeamPage } from '../pages/TeamPage';
 import { UsersPage } from '../pages/UsersPage';
-import { WeeklyReportsPage } from '../pages/WeeklyReportsPage';
 
 const pageByPath = {
   '/okrs': OkrManagementPage,
   '/projects': ProjectsPage,
   '/resources': ResourcesPage,
-  '/daily-reports': DailyReportsPage,
-  '/weekly-reports': WeeklyReportsPage,
+  '/reports': ReportsPage,
   '/team': TeamPage,
   '/users': UsersPage,
   '/analytics': AnalyticsPage,
@@ -48,9 +47,12 @@ export function AppRoutes() {
         {navigationItems.map((item) => (
           <Route key={item.path} path={item.path} element={<ProtectedNavigationRoute item={item} />} />
         ))}
+        <Route path="/daily-reports" element={<Navigate to="/reports" replace />} />
+        <Route path="/weekly-reports" element={<Navigate to="/reports" replace />} />
         <Route path="/access-denied" element={<AccessDeniedPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+        <Route path="/okrs/:objectiveId" element={<ObjectiveDetailPage />} />
         <Route path="/resources/:resourceId" element={<ResourceDetailPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

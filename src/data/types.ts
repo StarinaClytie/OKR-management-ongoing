@@ -1,5 +1,5 @@
 import type { DashboardData } from '../mocks/repository';
-import type { Classification, DailyReport, ProjectStatus, ReportStatus, ResourceCategory, ResourceKind, ResourceNotificationStatus, ResourceProblemStatus, ResourceProblemType, ResourceStatus, Role, User } from '../domain/types';
+import type { Classification, DailyReport, KrMetricType, OkrPriority, ProjectStatus, ReportStatus, ResourceCategory, ResourceKind, ResourceNotificationStatus, ResourceProblemStatus, ResourceProblemType, ResourceStatus, Role, User } from '../domain/types';
 
 export type AppMode = 'demo' | 'supabase';
 export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'network' | 'unknown';
@@ -289,6 +289,53 @@ export interface UpdateUserInput {
   role: Role;
 }
 
+export interface ObjectiveCreateInput {
+  name: string;
+  number?: string;
+  leaderId: string;
+  quarter: string;
+  startDate: string;
+  dueDate: string;
+  priority: OkrPriority;
+  description: string;
+  classification: Classification;
+}
+
+export interface ObjectiveUpdateInput extends ObjectiveCreateInput {
+  objectiveId: string;
+}
+
+export interface KeyResultCreateInput {
+  objectiveId: string;
+  title: string;
+  ownerId: string;
+  dueDate: string;
+  metricType: KrMetricType;
+  currentValue?: number;
+  targetValue?: number;
+  unit?: string;
+  notes?: string;
+  confidenceIndex?: number;
+  priority?: OkrPriority;
+  classification: Classification;
+  collaboratorIds: string[];
+}
+
+export interface KeyResultUpdateInput extends KeyResultCreateInput {
+  keyResultId: string;
+}
+
+export interface KrProgressUpdateInput {
+  keyResultId: string;
+  previousProgress: number;
+  newProgress: number;
+  summary: string;
+  blocker?: string;
+  reason?: string;
+  nextAction?: string;
+  evidence?: string;
+}
+
 export interface OkrRepository {
   readonly mode: AppMode;
   getCachedDashboardData?(userId: string): DashboardData | undefined;
@@ -332,6 +379,13 @@ export interface OkrRepository {
   saveRisk(input: { projectId: string; title: string; probability: 1 | 2 | 3; impact: 1 | 2 | 3; reason: string; mitigation: string; lastReviewedAt: string; classification: Classification }): Promise<RepositoryResult<{ id: string }>>;
   saveKrProgress(input: KrProgressInput): Promise<RepositoryResult<{ snapshotId: string }>>;
   saveOwnedRisk(input: OwnedRiskInput): Promise<RepositoryResult<{ id: string }>>;
+  createObjective(input: ObjectiveCreateInput): Promise<RepositoryResult<{ id: string }>>;
+  updateObjective(input: ObjectiveUpdateInput): Promise<RepositoryResult<void>>;
+  archiveObjective(objectiveId: string): Promise<RepositoryResult<void>>;
+  restoreObjective(objectiveId: string): Promise<RepositoryResult<void>>;
+  createKeyResult(input: KeyResultCreateInput): Promise<RepositoryResult<{ id: string }>>;
+  updateKeyResult(input: KeyResultUpdateInput): Promise<RepositoryResult<void>>;
+  saveKrProgressUpdate(input: KrProgressUpdateInput): Promise<RepositoryResult<{ id: string }>>;
   setMyLocale(locale: 'zh-CN' | 'en'): Promise<RepositoryResult<void>>;
   beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>>;
   finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>>;

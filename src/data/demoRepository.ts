@@ -92,6 +92,13 @@ export class DemoOkrRepository implements OkrRepository {
   async saveRisk(_input: { projectId: string; title: string; probability: 1 | 2 | 3; impact: 1 | 2 | 3; reason: string; mitigation: string; lastReviewedAt: string; classification: import('../domain/types').Classification }) { return unsupported<{ id: string }>(); }
   async saveKrProgress(_input: KrProgressInput) { return unsupported<{ snapshotId: string }>(); }
   async saveOwnedRisk(_input: OwnedRiskInput) { return unsupported<{ id: string }>(); }
+  async createObjective(_input: import('./types').ObjectiveCreateInput) { return unsupported<{ id: string }>(); }
+  async updateObjective(_input: import('./types').ObjectiveUpdateInput) { return unsupported<void>(); }
+  async archiveObjective(_objectiveId: string) { return unsupported<void>(); }
+  async restoreObjective(_objectiveId: string) { return unsupported<void>(); }
+  async createKeyResult(_input: import('./types').KeyResultCreateInput) { return unsupported<{ id: string }>(); }
+  async updateKeyResult(_input: import('./types').KeyResultUpdateInput) { return unsupported<void>(); }
+  async saveKrProgressUpdate(_input: import('./types').KrProgressUpdateInput) { return unsupported<{ id: string }>(); }
   async setMyLocale(_locale: 'zh-CN' | 'en') { return unsupported<void>(); }
   async beginAttachmentUpload(_input: Record<string, unknown>) { return unsupported<import('./types').AttachmentUploadTarget>(); }
   async finalizeAttachmentUpload(_id: string, _checksum?: string) { return unsupported<unknown>(); }

@@ -49,6 +49,38 @@ export const users: User[] = [
     department: '人力资源部',
     projectIds: ['project-nova'],
   },
+  {
+    id: 'user-zhang-san',
+    name: '张三',
+    role: 'project_leader',
+    title: '研发项目负责人',
+    department: '研发部',
+    projectIds: ['project-spectrometer', 'project-automation'],
+  },
+  {
+    id: 'user-li-ming',
+    name: '李明',
+    role: 'employee',
+    title: '光学工程师',
+    department: '研发部',
+    projectIds: ['project-spectrometer'],
+  },
+  {
+    id: 'user-wang-fang',
+    name: '王芳',
+    role: 'employee',
+    title: '算法工程师',
+    department: '研发部',
+    projectIds: ['project-spectrometer', 'project-ai-inspection'],
+  },
+  {
+    id: 'user-chen-hao',
+    name: '陈浩',
+    role: 'employee',
+    title: '软件工程师',
+    department: '研发部',
+    projectIds: ['project-spectrometer', 'project-ai-inspection', 'project-automation'],
+  },
 ];
 
 export const organizationRelations: OrganizationRelation[] = [
@@ -57,6 +89,13 @@ export const organizationRelations: OrganizationRelation[] = [
   { managerId: 'user-management', subordinateId: 'user-employee', depth: 2 },
   { managerId: 'user-management', subordinateId: 'user-project-peer', depth: 1 },
   { managerId: 'user-management', subordinateId: 'user-hr', depth: 1 },
+  { managerId: 'user-management', subordinateId: 'user-zhang-san', depth: 1 },
+  { managerId: 'user-zhang-san', subordinateId: 'user-li-ming', depth: 1 },
+  { managerId: 'user-zhang-san', subordinateId: 'user-wang-fang', depth: 1 },
+  { managerId: 'user-zhang-san', subordinateId: 'user-chen-hao', depth: 1 },
+  { managerId: 'user-management', subordinateId: 'user-li-ming', depth: 2 },
+  { managerId: 'user-management', subordinateId: 'user-wang-fang', depth: 2 },
+  { managerId: 'user-management', subordinateId: 'user-chen-hao', depth: 2 },
 ];
 
 export const projectMemberships: ProjectMembership[] = [
@@ -66,4 +105,13 @@ export const projectMemberships: ProjectMembership[] = [
   { id: 'membership-nova-management', projectId: 'project-nova', userId: 'user-management', membershipRole: 'leader' },
   { id: 'membership-nova-peer', projectId: 'project-nova', userId: 'user-project-peer', membershipRole: 'member' },
   { id: 'membership-nova-hr', projectId: 'project-nova', userId: 'user-hr', membershipRole: 'member' },
+  { id: 'membership-spectrometer-leader', projectId: 'project-spectrometer', userId: 'user-zhang-san', membershipRole: 'leader' },
+  { id: 'membership-spectrometer-li', projectId: 'project-spectrometer', userId: 'user-li-ming', membershipRole: 'member' },
+  { id: 'membership-spectrometer-wang', projectId: 'project-spectrometer', userId: 'user-wang-fang', membershipRole: 'member' },
+  { id: 'membership-spectrometer-chen', projectId: 'project-spectrometer', userId: 'user-chen-hao', membershipRole: 'member' },
+  { id: 'membership-ai-leader', projectId: 'project-ai-inspection', userId: 'user-project-leader', membershipRole: 'leader' },
+  { id: 'membership-ai-wang', projectId: 'project-ai-inspection', userId: 'user-wang-fang', membershipRole: 'member' },
+  { id: 'membership-ai-chen', projectId: 'project-ai-inspection', userId: 'user-chen-hao', membershipRole: 'member' },
+  { id: 'membership-auto-leader', projectId: 'project-automation', userId: 'user-zhang-san', membershipRole: 'leader' },
+  { id: 'membership-auto-chen', projectId: 'project-automation', userId: 'user-chen-hao', membershipRole: 'member' },
 ];

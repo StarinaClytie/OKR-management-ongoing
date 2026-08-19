@@ -1950,3 +1950,215 @@ select {
 .member-picker__option--disabled {
   color: #94a3b8;
 }
+
+/* --- OKR portfolio & reports (Phase: OKR management / Reports) --- */
+
+.reports-tabs {
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.reports-tab {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reports-tab--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.reports-coming-soon {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.okr-card-grid {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.okr-card {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.okr-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.okr-card__number {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.okr-card__head h2 {
+  font-size: 16px;
+  margin: var(--space-1) 0;
+}
+
+.okr-card__meta {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.okr-card__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.okr-card__footer {
+  display: flex;
+  gap: var(--space-4);
+  color: #64748b;
+  font-size: 12px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: var(--space-3);
+}
+
+.okr-kr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.okr-kr-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 44px 72px;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 13px;
+}
+
+.okr-kr-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #334155;
+}
+
+.okr-kr-row__value {
+  text-align: right;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.okr-kr-row__owner {
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.okr-progress-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.okr-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+}
+
+.okr-status-badge {
+  white-space: nowrap;
+}
+
+.okr-status-badge--not_started {
+  color: #475569;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+}
+
+.okr-status-badge--on_track {
+  color: #047857;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+}
+
+.okr-status-badge--at_risk {
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+.okr-status-badge--delayed {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.okr-status-badge--completed {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.kr-metric-line {
+  font-size: 13px;
+  color: #475569;
+  margin: var(--space-2) 0;
+}
+
+.kr-history {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.kr-history li {
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-primary);
+  background: #f8fafc;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: #475569;
+}
+
+.kr-history li span {
+  font-weight: 700;
+  color: #1f2937;
+  margin-right: var(--space-2);
+}
+
+.kr-history li p {
+  margin: var(--space-1) 0 0;
+}
+
+.okr-my-kr h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 15px;
+}
+
+@media (min-width: 720px) {
+  .okr-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  }
+}

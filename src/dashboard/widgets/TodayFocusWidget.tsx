@@ -24,7 +24,7 @@ export function TodayFocusWidget({ data }: TodayFocusWidgetProps) {
           <p className="dashboard-widget__eyebrow">{t('focus.today')}</p>
           <h2 id="today-focus-title">{t('focus.title')}</h2>
         </div>
-        <button className="button button--primary" type="button" onClick={() => navigate('/daily-reports')}>
+        <button className="button button--primary" type="button" onClick={() => navigate('/reports?tab=daily')}>
           {t('focus.report')}
         </button>
       </div>
