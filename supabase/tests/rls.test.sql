@@ -86,11 +86,23 @@ insert into public.key_results (id, organization_id, objective_id, project_id, o
 insert into public.key_results (id, organization_id, objective_id, project_id, owner_id, title, measurement_type, target_value, classification, start_date, due_date) values
   ('41000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'Restricted KR', 'percentage', 100, 'restricted', current_date - 1, current_date + 30);
 
+-- A project-leader-led objective and an employee-owned KR under it, so the
+-- project leader can read a report through its Daily OKR block (project-scoped).
+insert into public.objectives (id, organization_id, project_id, owner_id, title, classification, start_date, due_date) values
+  ('40000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000003', 'Leader Objective', 'confidential', current_date - 1, current_date + 30);
+insert into public.key_results (id, organization_id, objective_id, project_id, owner_id, title, measurement_type, target_value, classification, start_date, due_date) values
+  ('41000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'Leader-linked KR', 'percentage', 100, 'confidential', current_date - 1, current_date + 30);
+insert into public.kr_assignments (organization_id, kr_id, profile_id, assignment_role) values
+  ('20000000-0000-0000-0000-000000000001', '41000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', 'owner'),
+  ('20000000-0000-0000-0000-000000000001', '41000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000004', 'owner');
+
 insert into public.daily_reports (id, organization_id, author_id, project_id, objective_id, report_date, status, classification, total_hours) values
   ('50000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', current_date, 'submitted', 'confidential', 7.5);
 
 insert into public.daily_report_revisions (id, organization_id, report_id, revision_number, editor_id, daily_objective, objective_progress, classification) values
   ('60000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 1, '10000000-0000-0000-0000-000000000004', 'Confidential report body', 25, 'confidential');
+insert into public.daily_okr_blocks (organization_id, report_id, revision_id, position, daily_objective, linked_key_result_id, hours, result, key_results) values
+  ('20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 1, 'Confidential report body', '41000000-0000-0000-0000-000000000003', 7.5, '', '[]'::jsonb);
 update public.daily_reports set current_revision = 1 where id = '50000000-0000-0000-0000-000000000001';
 
 set local role authenticated;
@@ -120,10 +132,10 @@ select throws_ok(
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000005', true);
-select is((select count(*) from public.daily_report_revisions), 1::bigint, 'project peer reads project-related detail');
+select is((select count(*) from public.daily_report_revisions), 0::bigint, 'project peer cannot read project-related detail without a scoped block');
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000008', true);
-select is((select count(*) from public.daily_report_revisions), 1::bigint, 'active collaborator reads granted project detail');
+select is((select count(*) from public.daily_report_revisions), 0::bigint, 'active collaborator cannot read report detail without a scoped block');
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000006', true);
 select is((select count(*) from public.objectives), 1::bigint, 'subordinate reads upstream objective summary');
@@ -145,12 +157,9 @@ select is((select count(*) from public.daily_report_revisions), 0::bigint, 'unre
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
 select lives_ok(
   $$select public.create_daily_report(
-    '30000000-0000-0000-0000-000000000001',
-    '40000000-0000-0000-0000-000000000001',
     current_date + 1,
-    'draft', 'confidential', 2,
-    'Created through RPC', 0,
-    '[{"title":"KR zero","measurementType":"percentage","progress":0,"hours":2,"workNote":"Started","measurementData":{}}]'::jsonb,
+    'draft', 'confidential',
+    '[{"dailyObjective":"Created through RPC","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":2,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
     '[]'::jsonb
   )$$,
   'author creates report and initial immutable revision atomically'
@@ -159,9 +168,8 @@ select is((select current_revision from public.daily_reports where report_date =
 select is(
   public.update_daily_report(
     (select id from public.daily_reports where report_date = current_date + 1),
-    1, 'submitted', 'confidential', 3,
-    'Updated through RPC', 10,
-    '[{"title":"KR zero","measurementType":"percentage","progress":10,"hours":3,"workNote":"Continued","measurementData":{}}]'::jsonb,
+    1, 'submitted', 'confidential',
+    '[{"dailyObjective":"Updated through RPC","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":3,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
     '[]'::jsonb
   ),
   2,
@@ -170,8 +178,9 @@ select is(
 select throws_ok(
   $$select public.update_daily_report(
     (select id from public.daily_reports where report_date = current_date + 1),
-    1, 'submitted', 'confidential', 3,
-    'Stale update', 20, '[]'::jsonb, '[]'::jsonb
+    1, 'submitted', 'confidential',
+    '[{"dailyObjective":"Stale update","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":3,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
+    '[]'::jsonb
   )$$,
   '40001', 'Daily report revision conflict', 'stale expected revision is rejected'
 );
@@ -181,8 +190,9 @@ select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003
 select throws_ok(
   $$select public.update_daily_report(
     (select id from public.daily_reports where report_date = current_date + 1),
-    2, 'submitted', 'confidential', 3,
-    'Leader update', 20, '[]'::jsonb, '[]'::jsonb
+    2, 'submitted', 'confidential',
+    '[{"dailyObjective":"Leader update","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":3,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
+    '[]'::jsonb
   )$$,
   '42501', 'Daily report is not editable by the current user', 'project leader cannot use RPC to edit member report'
 );

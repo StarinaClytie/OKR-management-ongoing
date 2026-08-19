@@ -170,10 +170,12 @@ export class SupabaseOkrRepository implements OkrRepository {
       this.selectRows('progress_snapshots', 'id,key_result_id,progress,effective_date'),
       this.selectRows('kr_assignments', 'id,kr_id,profile_id,assignment_role'),
       this.selectRows('kr_progress_updates', 'id,kr_id,author_id,previous_progress,new_progress,summary,blocker,reason,next_action,evidence,created_at'),
+      this.selectRows('daily_reports', 'id,author_id,project_id,objective_id,report_date,status,classification,total_hours,current_revision,updated_at'),
+      this.selectRows('daily_okr_blocks', 'id,report_id,revision_id,position,daily_objective,linked_key_result_id,hours,result,key_results'),
     ]);
     const failed = results.find((result) => !result.ok);
     if (failed && !failed.ok) return failed;
-    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
+    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyBlockResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
 
     const users = profileResult.data.map(mapProfile).filter((user): user is User => user !== null);
     const currentUser = users.find((user) => user.id === session.data.session!.user.id);
@@ -280,7 +282,49 @@ export class SupabaseOkrRepository implements OkrRepository {
       createdAt: typeof row.created_at === 'string' ? row.created_at : '',
     }));
 
-    return { ok: true, data: { currentUser, users, dailyReports: [], projects, objectives, keyResults, krAssignments, krProgressUpdates, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] } };
+    const blocksByReportId = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of dailyBlockResult.data) {
+      const reportId = String(row.report_id);
+      const list = blocksByReportId.get(reportId) ?? [];
+      list.push(row);
+      blocksByReportId.set(reportId, list);
+    }
+    const dailyReports: DailyReport[] = dailyReportResult.data.map((row) => {
+      const blocks = (blocksByReportId.get(String(row.id)) ?? [])
+        .sort((left, right) => numberValue(left.position) - numberValue(right.position))
+        .map((block) => ({
+          id: String(block.id),
+          dailyObjective: String(block.daily_objective ?? ''),
+          keyResultId: typeof block.linked_key_result_id === 'string' ? block.linked_key_result_id : '',
+          hours: numberValue(block.hours),
+          result: String(block.result ?? ''),
+          keyResults: (Array.isArray(block.key_results) ? block.key_results : []).map((item: unknown, index: number) => ({
+            id: `daily-kr-${index + 1}`,
+            title: String((item as Record<string, unknown>).title ?? ''),
+          })),
+        }));
+      return {
+        id: String(row.id),
+        authorId: String(row.author_id),
+        projectId: typeof row.project_id === 'string' ? row.project_id : '',
+        objectiveId: typeof row.objective_id === 'string' ? row.objective_id : '',
+        keyResultIds: blocks.map((block) => block.keyResultId),
+        date: dateValue(row.report_date),
+        content: blocks[0]?.dailyObjective ?? '',
+        dailyObjective: blocks[0]?.dailyObjective ?? '',
+        blocks,
+        classification: row.classification as import('../domain/types').Classification,
+        hours: numberValue(row.total_hours),
+        evidence: [],
+        evidenceClassification: 'public' as import('../domain/types').Classification,
+        attachmentIds: [],
+        status: row.status as import('../domain/types').ReportStatus,
+        currentRevision: numberValue(row.current_revision),
+        updatedAt: typeof row.updated_at === 'string' ? row.updated_at : undefined,
+      };
+    });
+
+    return { ok: true, data: { currentUser, users, dailyReports, projects, objectives, keyResults, krAssignments, krProgressUpdates, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] } };
   }
   async listDailyReports(): Promise<RepositoryResult<DailyReport[]>> { return failure(null); }
 
@@ -292,15 +336,10 @@ export class SupabaseOkrRepository implements OkrRepository {
 
   async createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>> {
     const result = await this.callRpc<string>('create_daily_report', {
-      p_project_id: input.projectId,
-      p_objective_id: input.objectiveId,
       p_report_date: input.reportDate,
       p_status: input.status,
       p_classification: input.classification,
-      p_total_hours: input.totalHours,
-      p_daily_objective: input.dailyObjective,
-      p_objective_progress: input.objectiveProgress,
-      p_krs: input.keyResults,
+      p_blocks: input.blocks,
       p_evidence_links: input.evidenceLinks,
     });
     return result.ok ? { ok: true, data: { id: result.data, revision: 1 } } : result;
@@ -312,10 +351,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_expected_revision: expectedRevision,
       p_status: input.status,
       p_classification: input.classification,
-      p_total_hours: input.totalHours,
-      p_daily_objective: input.dailyObjective,
-      p_objective_progress: input.objectiveProgress,
-      p_krs: input.keyResults,
+      p_blocks: input.blocks,
       p_evidence_links: input.evidenceLinks,
     });
     return result.ok ? { ok: true, data: { revision: result.data } } : result;
@@ -336,7 +372,7 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
 
   async createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>> {
-    const shell = await this.callRpc<string>('begin_daily_report_with_attachments', { p_project_id: input.projectId, p_objective_id: input.objectiveId, p_report_date: input.reportDate, p_status: input.status, p_classification: input.classification, p_total_hours: input.totalHours });
+    const shell = await this.callRpc<string>('begin_daily_report_with_attachments', { p_report_date: input.reportDate, p_status: input.status, p_classification: input.classification });
     if (!shell.ok) return shell;
     const uploaded = await this.uploadAll(shell.data, attachments);
     if (!uploaded.ok) return uploaded;
@@ -422,7 +458,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     const result = await this.callRpc<string>('create_key_result', {
       p_objective_id: input.objectiveId,
       p_title: input.title,
-      p_owner_id: input.ownerId,
+      p_owner_ids: input.ownerIds,
       p_due_date: input.dueDate,
       p_metric_type: input.metricType,
       p_current_value: input.currentValue ?? null,
@@ -432,7 +468,6 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_confidence_index: input.confidenceIndex ?? null,
       p_priority: input.priority ?? null,
       p_classification: input.classification,
-      p_collaborator_ids: input.collaboratorIds,
     });
     return result.ok ? { ok: true, data: { id: result.data } } : result;
   }
@@ -440,7 +475,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     const result = await this.callRpc<null>('update_key_result', {
       p_key_result_id: input.keyResultId,
       p_title: input.title,
-      p_owner_id: input.ownerId,
+      p_owner_ids: input.ownerIds,
       p_due_date: input.dueDate,
       p_metric_type: input.metricType,
       p_current_value: input.currentValue ?? null,
@@ -450,7 +485,6 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_confidence_index: input.confidenceIndex ?? null,
       p_priority: input.priority ?? null,
       p_classification: input.classification,
-      p_collaborator_ids: input.collaboratorIds,
     });
     return result.ok ? { ok: true, data: undefined } : result;
   }

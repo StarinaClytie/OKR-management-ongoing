@@ -71,11 +71,15 @@ select is(
   1::bigint,
   'offboarding preserves the employee objective attribution'
 );
+-- Data-preservation checks bypass RLS: offboarding must not delete the report,
+-- regardless of which application role can still read it under the block model.
+reset role;
 select is(
   (select count(*) from public.daily_reports where author_id = '12000000-0000-0000-0000-000000000002'),
   1::bigint,
   'offboarding preserves the employee daily report attribution'
 );
+set local role authenticated;
 select is(
   (select count(*) from public.profiles where id = '12000000-0000-0000-0000-000000000002'),
   1::bigint,

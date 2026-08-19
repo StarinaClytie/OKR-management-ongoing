@@ -183,9 +183,6 @@ describe('application locale', () => {
 
     await user.click(screen.getByRole('link', { name: 'OKR Management' }));
     expect(screen.getByRole('heading', { name: 'OKR Management' })).toBeVisible();
-
-    await user.click(screen.getByRole('link', { name: 'View Full Risk Matrix' }));
-    expect(screen.getByRole('region', { name: 'Full Risk Matrix' })).toBeVisible();
-    expect(await screen.findByLabelText('High probability, High impact, risk score 9')).toBeInTheDocument();
+    expect(screen.getAllByText(/Project Lead/).length).toBeGreaterThan(0);
   });
 });

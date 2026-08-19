@@ -8,7 +8,6 @@ import type {
   ProgressStatus,
 } from '../../domain/types';
 import type { DashboardData } from '../../data/types';
-import { scoreRisk } from '../../domain/riskScore';
 import { deriveExecutionStatuses } from '../../domain/progressStatus';
 
 export interface PreparedKeyResult {
@@ -51,44 +50,14 @@ export interface PreparedMilestone {
   dependencyLabels: string[];
 }
 
-export interface PreparedRisk {
-  id: string;
-  title: string;
-  probability: 1 | 2 | 3;
-  impact: 1 | 2 | 3;
-  probabilityLabel: string;
-  impactLabel: string;
-  status: ProgressStatus;
-  mitigation: string;
-  reason: string;
-  ownerName: string;
-  lastReviewedAt: string;
-  score: 1 | 2 | 3 | 4 | 6 | 9;
-  level: 'low' | 'medium' | 'high' | 'critical';
-}
-
-export interface PreparedWorkload {
-  id: string;
-  memberName: string;
-  plannedHours: number;
-  loggedHours: number;
-  capacityHours: number;
-  overloaded: boolean;
-}
-
 export interface PreparedVisualizationData {
   companyObjectives: Array<{ id: string; title: string }>;
   alignmentProjects: PreparedAlignmentProject[];
   keyResults: PreparedKeyResult[];
   milestones: PreparedMilestone[];
   trendPoints: ProgressSnapshot[];
-  risks: PreparedRisk[];
-  workloads: PreparedWorkload[];
   tasks: PreparedTask[];
 }
-
-const probabilityLabels = { 1: '低概率', 2: '中概率', 3: '高概率' } as const;
-const impactLabels = { 1: '低影响', 2: '中影响', 3: '高影响' } as const;
 
 function isExplicitlyRestricted(classification: Classification): boolean {
   return classification === 'restricted';
@@ -152,11 +121,10 @@ export function prepareVisualizationData(data: DashboardData, fallbacks: Visuali
     (keyResult) => visibleObjectiveIds.has(keyResult.objectiveId) && canReadKeyResult(data, keyResult),
   );
   const visibleKeyResultIds = new Set(visibleKeyResults.map((keyResult) => keyResult.id));
-  const readableRisks = data.risks.filter((risk) => can(data.currentUser, 'risk.read', risk).allowed);
   const readableMilestones = data.milestones.filter((milestone) => canReadMilestone(data, milestone));
   const executionStatuses = deriveExecutionStatuses({
     ...data,
-    risks: readableRisks,
+    risks: [],
     milestones: readableMilestones,
   });
 
@@ -231,41 +199,12 @@ export function prepareVisualizationData(data: DashboardData, fallbacks: Visuali
         .sort((left, right) => left.weekOf.localeCompare(right.weekOf))
     : [];
 
-  const risks = readableRisks
-    .map((risk): PreparedRisk => ({
-      id: risk.id,
-      title: risk.title,
-      probability: risk.probability,
-      impact: risk.impact,
-      probabilityLabel: probabilityLabels[risk.probability],
-      impactLabel: impactLabels[risk.impact],
-      status: risk.status,
-      mitigation: risk.mitigation,
-      reason: risk.reason ?? risk.description,
-      ownerName: resolveUserName(data, risk.ownerId, unknownMember),
-      lastReviewedAt: risk.lastReviewedAt ?? risk.identifiedAt,
-      ...scoreRisk(risk.probability, risk.impact),
-    }));
-
-  const workloads = data.workloads
-    .filter((workload) => can(data.currentUser, 'worklog.read_hours', workload).allowed)
-    .map((workload): PreparedWorkload => ({
-      id: workload.id,
-      memberName: resolveUserName(data, workload.userId, unknownMember),
-      plannedHours: workload.plannedHours,
-      loggedHours: workload.loggedHours,
-      capacityHours: workload.capacityHours,
-      overloaded: workload.loggedHours > workload.capacityHours,
-    }));
-
   return {
     companyObjectives,
     alignmentProjects,
     keyResults: preparedKeyResults,
     milestones,
     trendPoints,
-    risks,
-    workloads,
     tasks,
   };
 }

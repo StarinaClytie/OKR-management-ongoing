@@ -6,7 +6,7 @@ import { OkrStatusBadge } from '../components/OkrStatusBadge';
 import { PageHeader } from '../components/PageHeader';
 import { ProgressRing } from '../components/ProgressRing';
 import type { OkrRepository, OrganizationUser } from '../data/types';
-import { collaboratorsOfKr, ownersOfKr } from '../domain/krAssignments';
+import { ownersOfKr } from '../domain/krAssignments';
 import { deriveObjectiveProgress, describeKeyResultMetric } from '../domain/okrMetrics';
 import { canArchiveObjective, canEditObjective, canManageKeyResults, canUpdateKeyResultProgress } from '../domain/okrPermissions';
 import { resolveOkrStatus } from '../domain/okrStatus';
@@ -27,7 +27,7 @@ const priorityKeys: Record<string, MessageKey> = { high: 'priority.high', medium
 
 const emptyKrForm: KeyResultFormValues = {
   title: '',
-  ownerId: '',
+  ownerIds: [],
   deadline: '',
   metricType: 'numeric',
   currentValue: undefined,
@@ -36,7 +36,6 @@ const emptyKrForm: KeyResultFormValues = {
   percentageCurrent: undefined,
   percentageTarget: undefined,
   milestoneDefinition: '',
-  collaboratorIds: [],
   priority: 'medium',
   confidenceIndex: undefined,
   notes: '',
@@ -79,8 +78,6 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const objective = data?.objectives.find((candidate) => candidate.id === objectiveId);
   const readable = !objective || mode === 'supabase' || can(currentUser, 'okr.read_detail', objective).allowed;
   const objectiveKrs = useMemo(() => data?.keyResults.filter((keyResult) => keyResult.objectiveId === objectiveId) ?? [], [data, objectiveId]);
-  const project = data?.projects.find((candidate) => candidate.id === objective?.projectId);
-  const members = useMemo(() => data?.users.filter((user) => project?.memberIds.includes(user.id)) ?? [], [data, project]);
 
   if (!currentUser) return null;
   if (loading && !data) return <section className="business-page"><p role="status">{t('common.loading')}</p></section>;
@@ -118,7 +115,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
     const result = await dataRepository.createKeyResult({
       objectiveId: objectiveData.id,
       title: values.title,
-      ownerId: values.ownerId,
+      ownerIds: values.ownerIds,
       dueDate: values.deadline,
       metricType: values.metricType,
       currentValue,
@@ -128,7 +125,6 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
       confidenceIndex: values.confidenceIndex,
       priority: values.priority,
       classification: objectiveData.classification,
-      collaboratorIds: values.collaboratorIds,
     });
     setSubmitting(false);
     if (result.ok) {
@@ -256,11 +252,10 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
       {activeTab === 'keyResults' ? (
         <section className="page-section" role="tabpanel" aria-label={t('objective.keyResults')}>
           {objectiveKrs.length === 0 ? <p className="data-table__empty">{t('objective.noKeyResults')}</p> : objectiveKrs.map((keyResult) => {
-            const collaboratorIds = collaboratorsOfKr(keyResult.id, dashboardData.krAssignments);
             const ownerIds = ownersOfKr(keyResult.id, dashboardData.krAssignments);
             const ownerId = keyResult.ownerId || ownerIds[0];
             const history = dashboardData.krProgressUpdates.filter((update) => update.krId === keyResult.id).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-            const canUpdate = canUpdateKeyResultProgress(signedInUser, objectiveData, keyResult);
+            const canUpdate = canUpdateKeyResultProgress(signedInUser, objectiveData, keyResult, dashboardData.krAssignments);
             return (
               <article className="form-card" key={keyResult.id}>
                 <div className="filter-row">
@@ -268,8 +263,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
                   <OkrStatusBadge status={resolveOkrStatus(keyResult.okrStatus, keyResult.progress, keyResult.startDate, keyResult.dueDate, evaluationDate)} />
                 </div>
                 <p className="kr-metric-line">
-                  <strong>{t('kr.owner')}：</strong>{dashboardData.users.find((user) => user.id === ownerId)?.name ?? '—'}
-                  {collaboratorIds.length > 0 ? <><span> · </span><strong>{t('kr.collaborators')}：</strong>{collaboratorIds.map((id) => dashboardData.users.find((user) => user.id === id)?.name ?? '—').join('、')}</> : null}
+                  <strong>{t('kr.owner')}：</strong>{ownerIds.length > 0 ? ownerIds.map((id) => dashboardData.users.find((user) => user.id === id)?.name ?? '—').join('、') : dashboardData.users.find((user) => user.id === ownerId)?.name ?? '—'}
                 </p>
                 <p className="kr-metric-line">{describeKeyResultMetric(keyResult)} · {t('kr.field.deadline')}：{keyResult.dueDate}</p>
                 <div className="filter-row">
@@ -332,7 +326,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
         <KeyResultFormModal
           title={t('kr.createTitle')}
           initial={{ ...emptyKrForm, deadline: objectiveData.dueDate }}
-          members={members}
+          members={dashboardData.users}
           submitting={submitting}
           error={formError}
           onSubmit={(values) => void handleSaveKeyResult(values)}

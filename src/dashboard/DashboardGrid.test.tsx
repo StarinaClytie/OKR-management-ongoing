@@ -68,7 +68,6 @@ describe('DashboardGrid confidentiality boundaries', () => {
 
     expect(screen.getByLabelText('目标平均进度')).toHaveTextContent('0%');
     expect(screen.getByLabelText('目标平均进度')).toHaveTextContent('0 个目标');
-    expect(screen.getByLabelText('需关注风险')).toHaveTextContent('0');
     expect(screen.getByLabelText('正常推进项目')).toHaveTextContent('共 0 个项目');
   });
 
@@ -171,7 +170,6 @@ describe('DashboardGrid confidentiality boundaries', () => {
       </AuthProvider>,
     );
 
-    expect(within(screen.getByLabelText('超负载人员')).getByText('0')).toBeVisible();
     expect(within(screen.getByLabelText('授权工时记录')).getByText('0')).toBeVisible();
     expect(screen.queryByText('44 小时')).not.toBeInTheDocument();
   });

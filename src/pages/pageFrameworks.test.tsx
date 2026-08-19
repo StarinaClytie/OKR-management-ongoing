@@ -1,11 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { AuthContext, AuthProvider, type AuthContextValue } from '../auth/AuthContext';
+import { AuthProvider } from '../auth/AuthContext';
 import { AppRoutes } from '../app/routes';
-import type { OkrRepository } from '../data/types';
-import { mockData, mockRepository } from '../mocks/repository';
-import { OkrManagementPage } from './OkrManagementPage';
+import { mockData } from '../mocks/repository';
 
 function renderRoute(userId: string, path: string) {
   return render(
@@ -68,71 +65,6 @@ describe('business route frameworks', () => {
     expect(screen.getByText('AI智能检测平台')).toBeVisible();
     expect(screen.queryByText('下一代光谱仪研发')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '新建 Objective' })).not.toBeInTheDocument();
-  });
-
-  it('reuses the explained risk matrix and limits it to the selected project', async () => {
-    const user = userEvent.setup();
-    const manager = mockData.users.find((candidate) => candidate.id === 'user-management')!;
-    const data = mockRepository.getDashboardData(manager.id);
-    const dataRepository = { mode: 'supabase', getDashboardData: vi.fn().mockResolvedValue({ ok: true, data }) } as unknown as OkrRepository;
-    const authValue: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: manager, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
-    render(<AuthContext.Provider value={authValue}><MemoryRouter><OkrManagementPage dataRepository={dataRepository} /></MemoryRouter></AuthContext.Provider>);
-
-    await user.click(await screen.findByRole('link', { name: '查看完整风险矩阵' }));
-    const matrix = screen.getByRole('region', { name: '完整风险矩阵' });
-    expect(await within(matrix).findByText('风险事件 ≠ 执行状态')).toBeVisible();
-    expect(within(matrix).getByText('实验样本量不足')).toBeVisible();
-    expect(within(matrix).queryByText('源系统字段缺失')).not.toBeInTheDocument();
-
-    await user.selectOptions(within(matrix).getByLabelText('矩阵项目'), 'project-nova');
-    expect(within(matrix).getByText('源系统字段缺失')).toBeVisible();
-    expect(within(matrix).queryByText('实验样本量不足')).not.toBeInTheDocument();
-  });
-
-  it('creates, edits, and resolves attached employee risks through repository-backed actions', async () => {
-    const user = userEvent.setup();
-    const employee = mockData.users.find((candidate) => candidate.id === 'user-employee')!;
-    const attachedRisk = {
-      ...mockData.risks.find((risk) => risk.ownerId === employee.id)!,
-      id: 'risk-owned', keyResultId: 'kr-orion-onboarding', reason: '原始依据', lastReviewedAt: '2026-08-13', resolved: false,
-    };
-    const data = { ...mockRepository.getDashboardData(employee.id), risks: [attachedRisk] };
-    const dataRepository = {
-      mode: 'supabase',
-      getDashboardData: vi.fn().mockResolvedValue({ ok: true, data }),
-      saveOwnedRisk: vi.fn().mockResolvedValue({ ok: true, data: { id: 'risk-owned' } }),
-    } as unknown as OkrRepository;
-    const authValue: AuthContextValue = {
-      status: 'ready', mode: 'supabase', currentUser: employee, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn(),
-    };
-    render(
-      <AuthContext.Provider value={authValue}>
-        <MemoryRouter><OkrManagementPage dataRepository={dataRepository} /></MemoryRouter>
-      </AuthContext.Provider>,
-    );
-
-    await user.click(await screen.findByRole('button', { name: '新增风险' }));
-    expect(screen.getByRole('option', { name: 'KR · 完成三项新手引导实验' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'KR · 将七日激活率提升至 62%' })).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText('风险标题'), '新增事件');
-    await user.type(screen.getByLabelText('判断依据'), '新增依据');
-    await user.type(screen.getByLabelText('缓解措施'), '新增措施');
-    await user.type(screen.getByLabelText('复核日期'), '2026-08-14');
-    await user.click(screen.getByRole('button', { name: '保存风险' }));
-    expect(dataRepository.saveOwnedRisk).toHaveBeenCalledWith(expect.objectContaining({ title: '新增事件', keyResultId: 'kr-orion-onboarding', resolved: false }));
-
-    await user.click(screen.getByRole('button', { name: `编辑 ${attachedRisk.title}` }));
-    expect(screen.getByLabelText('风险标题')).toHaveValue(attachedRisk.title);
-    await user.clear(screen.getByLabelText('风险标题'));
-    await user.type(screen.getByLabelText('风险标题'), '已编辑事件');
-    await user.click(screen.getByRole('button', { name: '保存风险' }));
-    expect(dataRepository.saveOwnedRisk).toHaveBeenCalledWith(expect.objectContaining({ id: 'risk-owned', title: '已编辑事件' }));
-    await user.click(screen.getByRole('button', { name: `解决 ${attachedRisk.title}` }));
-
-    await waitFor(() => expect(dataRepository.saveOwnedRisk).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'risk-owned', keyResultId: 'kr-orion-onboarding', resolved: true,
-    })));
-    expect(dataRepository.getDashboardData).toHaveBeenCalledTimes(4);
   });
 
   it('does not leak a same-project restricted weekly report through its summary or plan', () => {

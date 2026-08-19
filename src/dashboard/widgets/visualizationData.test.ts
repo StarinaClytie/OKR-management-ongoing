@@ -12,18 +12,12 @@ describe('prepareVisualizationData', () => {
           ? { ...objective, title: secret, description: secret, classification: 'restricted' as const }
           : objective,
       ),
-      risks: source.risks.map((risk) =>
-        risk.projectId === 'project-orion'
-          ? { ...risk, title: secret, description: secret, mitigation: secret, classification: 'restricted' as const }
-          : risk,
-      ),
     };
 
     const prepared = prepareVisualizationData(data);
     const serialized = JSON.stringify(prepared);
 
     expect(serialized).not.toContain(secret);
-    expect(prepared.risks).toEqual([]);
     expect(prepared.alignmentProjects[0]?.hasRestrictedObjectives).toBe(true);
   });
 
@@ -41,68 +35,17 @@ describe('prepareVisualizationData', () => {
     expect(prepareVisualizationData(data).trendPoints).toEqual([]);
   });
 
-  it('does not leak a restricted risk even when its project is readable', () => {
+  it('does not leak a restricted objective even when its project is readable', () => {
     const source = mockRepository.getDashboardData('user-project-leader');
-    const secret = '项目可读但风险标题严格机密';
-    const restrictedRisk = {
-      ...source.risks.find((risk) => risk.projectId === 'project-orion')!,
+    const secret = '项目可读但目标标题严格机密';
+    const restrictedObjective = {
+      ...source.objectives.find((objective) => objective.projectId === 'project-orion')!,
       title: secret,
       classification: 'restricted' as const,
     };
 
-    const prepared = prepareVisualizationData({ ...source, risks: [restrictedRisk] });
+    const prepared = prepareVisualizationData({ ...source, objectives: [restrictedObjective] });
 
-    expect(prepared.alignmentProjects.some((project) => project.id === 'project-orion')).toBe(true);
-    expect(prepared.risks).toEqual([]);
     expect(JSON.stringify(prepared)).not.toContain(secret);
-  });
-
-  it('filters workloads with worklog permission before resolving member labels', () => {
-    const source = mockRepository.getDashboardData('user-hr');
-    const unauthorized = {
-      ...source.workloads[0],
-      id: 'unauthorized-workload',
-      sourceReportId: 'missing-source-report',
-      userId: 'user-project-leader',
-      loggedHours: 999,
-    };
-    const prepared = prepareVisualizationData({ ...source, workloads: [unauthorized] });
-
-    expect(prepared.workloads).toEqual([]);
-    expect(JSON.stringify(prepared)).not.toContain('999');
-    expect(JSON.stringify(prepared)).not.toContain('李然');
-  });
-
-  it('keeps risk meaning available without relying on color', () => {
-    const prepared = prepareVisualizationData(mockRepository.getDashboardData('user-project-leader'));
-
-    expect(prepared.risks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ title: '实验样本量不足', probabilityLabel: '中概率', impactLabel: '中影响' }),
-      ]),
-    );
-  });
-
-  it('derives an Objective status from its directly linked unresolved critical risk', () => {
-    const source = mockRepository.getDashboardData('user-project-leader');
-    const objective = source.objectives.find((candidate) => candidate.id === 'objective-orion-activation')!;
-    const criticalRisk = {
-      ...source.risks[0]!,
-      id: 'objective-critical-risk',
-      objectiveId: objective.id,
-      keyResultId: undefined,
-      probability: 3 as const,
-      impact: 3 as const,
-      resolved: false,
-    };
-    const prepared = prepareVisualizationData({
-      ...source,
-      objectives: source.objectives.map((candidate) => candidate.id === objective.id
-        ? { ...candidate, progress: 100, status: 'complete' as const }
-        : candidate),
-      risks: [criticalRisk],
-    });
-
-    expect(prepared.alignmentProjects[0]?.objectives[0]?.status).toBe('off_track');
   });
 });

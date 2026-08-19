@@ -38,7 +38,7 @@ const usersScope: SystemPermissionScope = {
   systemAction: 'user.manage',
 };
 
-const okrRoles: readonly Role[] = ['management', 'project_leader', 'employee', 'administrator'];
+const okrRoles: readonly Role[] = ['management', 'project_leader', 'employee'];
 export const resourceRoles: readonly Role[] = ['management', 'project_leader', 'administrator'];
 const analyticsRoles: readonly Role[] = ['management', 'project_leader', 'employee', 'hr', 'administrator'];
 const adminRoles: readonly Role[] = ['administrator'];

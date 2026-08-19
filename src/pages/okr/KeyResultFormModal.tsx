@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { KrMetricType, OkrPriority, User } from '../../domain/types';
+import type { KrMetricType, OkrPriority, Role, User } from '../../domain/types';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { MessageKey } from '../../i18n/messages';
 
@@ -12,9 +12,12 @@ const metricTypeKeys: Record<KrMetricType, MessageKey> = {
 const priorities: readonly OkrPriority[] = ['high', 'medium', 'low'];
 const priorityKeys: Record<OkrPriority, MessageKey> = { high: 'priority.high', medium: 'priority.medium', low: 'priority.low' };
 
+/** KR owners may only be project leaders or employees. */
+const ownerRoles: readonly Role[] = ['project_leader', 'employee'];
+
 export interface KeyResultFormValues {
   title: string;
-  ownerId: string;
+  ownerIds: string[];
   deadline: string;
   metricType: KrMetricType;
   currentValue?: number;
@@ -23,7 +26,6 @@ export interface KeyResultFormValues {
   percentageCurrent?: number;
   percentageTarget?: number;
   milestoneDefinition: string;
-  collaboratorIds: string[];
   priority: OkrPriority;
   confidenceIndex?: number;
   notes: string;
@@ -65,18 +67,20 @@ export function KeyResultFormModal({ title, initial, members, submitting = false
     setFieldError(undefined);
   }
 
-  function toggleCollaborator(userId: string) {
+  const ownerCandidates = members.filter((member) => ownerRoles.includes(member.role));
+
+  function toggleOwner(userId: string) {
     setValues((current) => ({
       ...current,
-      collaboratorIds: current.collaboratorIds.includes(userId)
-        ? current.collaboratorIds.filter((id) => id !== userId)
-        : [...current.collaboratorIds, userId],
+      ownerIds: current.ownerIds.includes(userId)
+        ? current.ownerIds.filter((id) => id !== userId)
+        : [...current.ownerIds, userId],
     }));
     setFieldError(undefined);
   }
 
   const titleValid = values.title.trim() !== '';
-  const ownerValid = values.ownerId !== '';
+  const ownerValid = values.ownerIds.length > 0;
   const deadlineValid = values.deadline !== '';
   const metricValid = values.metricType === 'milestone'
     ? values.milestoneDefinition.trim() !== ''
@@ -105,13 +109,17 @@ export function KeyResultFormModal({ title, initial, members, submitting = false
           <input ref={firstFieldRef} value={values.title} onChange={(event) => set('title', event.target.value)} required />
         </label>
 
-        <label className="modal-field">
-          <span>{t('kr.field.owner')} *</span>
-          <select value={values.ownerId} onChange={(event) => set('ownerId', event.target.value)} required>
-            <option value="">{t('daily.select')}</option>
-            {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-          </select>
-        </label>
+        <div className="modal-field">
+          <span>{t('kr.field.owners')} *</span>
+          <div className="member-picker">
+            {ownerCandidates.map((member) => (
+              <label key={member.id} className="member-picker__option">
+                <input type="checkbox" checked={values.ownerIds.includes(member.id)} onChange={() => toggleOwner(member.id)} />
+                <span>{member.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
 
         <label className="modal-field">
           <span>{t('kr.field.deadline')} *</span>
@@ -168,17 +176,6 @@ export function KeyResultFormModal({ title, initial, members, submitting = false
 
         {showAdvanced ? (
           <>
-            <div className="modal-field">
-              <span>{t('kr.field.collaborators')}</span>
-              <div className="member-picker">
-                {members.filter((member) => member.id !== values.ownerId).map((member) => (
-                  <label key={member.id} className="member-picker__option">
-                    <input type="checkbox" checked={values.collaboratorIds.includes(member.id)} onChange={() => toggleCollaborator(member.id)} />
-                    <span>{member.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
             <label className="modal-field">
               <span>{t('kr.field.priority')}</span>
               <select value={values.priority} onChange={(event) => set('priority', event.target.value as OkrPriority)}>

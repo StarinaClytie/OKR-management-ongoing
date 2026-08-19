@@ -222,27 +222,26 @@ export class DemoOkrRepository implements OkrRepository {
   async createKeyResult(input: KeyResultCreateInput): Promise<RepositoryResult<{ id: string }>> {
     const objective = this.objectives.find((candidate) => candidate.id === input.objectiveId);
     const id = nextId('kr');
+    const ownerId = input.ownerIds[0] ?? '';
     this.keyResults = [...this.keyResults, {
-      id, objectiveId: input.objectiveId, title: input.title, ownerId: input.ownerId, progress: 0,
+      id, objectiveId: input.objectiveId, title: input.title, ownerId, progress: 0,
       status: 'on_track', startDate: objective?.startDate ?? '', dueDate: input.dueDate,
       classification: input.classification, metricType: input.metricType, currentValue: input.currentValue,
       targetValue: input.targetValue, unit: input.unit, notes: input.notes, confidenceIndex: input.confidenceIndex,
       priority: input.priority, okrStatus: 'not_started',
     }];
     this.krAssignments = [...this.krAssignments,
-      { id: `${id}-owner`, krId: id, userId: input.ownerId, assignmentRole: 'owner' as const },
-      ...input.collaboratorIds.map((userId, index) => ({ id: `${id}-collab-${index}`, krId: id, userId, assignmentRole: 'collaborator' as const })),
+      ...input.ownerIds.map((userId, index) => ({ id: `${id}-owner-${index}`, krId: id, userId, assignmentRole: 'owner' as const })),
     ];
     return { ok: true, data: { id } };
   }
 
   async updateKeyResult(input: KeyResultUpdateInput): Promise<RepositoryResult<void>> {
     this.keyResults = this.keyResults.map((keyResult) => keyResult.id === input.keyResultId
-      ? { ...keyResult, title: input.title, ownerId: input.ownerId, dueDate: input.dueDate, metricType: input.metricType, currentValue: input.currentValue, targetValue: input.targetValue, unit: input.unit, notes: input.notes, confidenceIndex: input.confidenceIndex, priority: input.priority, classification: input.classification }
+      ? { ...keyResult, title: input.title, ownerId: input.ownerIds[0] ?? '', dueDate: input.dueDate, metricType: input.metricType, currentValue: input.currentValue, targetValue: input.targetValue, unit: input.unit, notes: input.notes, confidenceIndex: input.confidenceIndex, priority: input.priority, classification: input.classification }
       : keyResult);
     this.krAssignments = [...this.krAssignments.filter((assignment) => assignment.krId !== input.keyResultId),
-      { id: `${input.keyResultId}-owner`, krId: input.keyResultId, userId: input.ownerId, assignmentRole: 'owner' as const },
-      ...input.collaboratorIds.map((userId, index) => ({ id: `${input.keyResultId}-collab-${index}`, krId: input.keyResultId, userId, assignmentRole: 'collaborator' as const })),
+      ...input.ownerIds.map((userId, index) => ({ id: `${input.keyResultId}-owner-${index}`, krId: input.keyResultId, userId, assignmentRole: 'owner' as const })),
     ];
     return { ok: true, data: undefined };
   }

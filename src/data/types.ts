@@ -114,16 +114,19 @@ export interface SupabaseClientLike {
 export interface AttachmentUploadTarget { id: string; path: string; bucket: 'report-attachments' }
 export interface ResourceUploadTarget { id: string; path: string; bucket: 'resource-documents' }
 
+export interface DailyOkrBlockInput {
+  dailyObjective: string;
+  linkedKeyResultId: string;
+  hours: number;
+  result: string;
+  keyResults: Array<{ title: string }>;
+}
+
 export interface DailyReportInput {
-  projectId: string;
-  objectiveId: string;
   reportDate: string;
   status: ReportStatus;
   classification: Classification;
-  totalHours: number;
-  dailyObjective: string;
-  objectiveProgress: number;
-  keyResults: unknown[];
+  blocks: DailyOkrBlockInput[];
   evidenceLinks: unknown[];
 }
 
@@ -359,7 +362,7 @@ export interface ObjectiveUpdateInput extends ObjectiveCreateInput {
 export interface KeyResultCreateInput {
   objectiveId: string;
   title: string;
-  ownerId: string;
+  ownerIds: string[];
   dueDate: string;
   metricType: KrMetricType;
   currentValue?: number;
@@ -369,7 +372,6 @@ export interface KeyResultCreateInput {
   confidenceIndex?: number;
   priority?: OkrPriority;
   classification: Classification;
-  collaboratorIds: string[];
 }
 
 export interface KeyResultUpdateInput extends KeyResultCreateInput {

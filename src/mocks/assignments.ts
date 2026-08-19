@@ -1,6 +1,9 @@
 import type { KrAssignment, KrProgressUpdate } from '../domain/types';
 
 export const krAssignments: KrAssignment[] = [
+  { id: 'assignment-orion-activation-owner', krId: 'kr-orion-activation', userId: 'user-project-leader', assignmentRole: 'owner' },
+  { id: 'assignment-orion-onboarding-owner', krId: 'kr-orion-onboarding', userId: 'user-employee', assignmentRole: 'owner' },
+  { id: 'assignment-nova-quality-owner', krId: 'kr-nova-quality', userId: 'user-project-peer', assignmentRole: 'owner' },
   { id: 'assignment-spec-optics-owner', krId: 'kr-spec-optics', userId: 'user-li-ming', assignmentRole: 'owner' },
   { id: 'assignment-spec-optics-collab', krId: 'kr-spec-optics', userId: 'user-wang-fang', assignmentRole: 'collaborator' },
   { id: 'assignment-spec-snr-owner', krId: 'kr-spec-snr', userId: 'user-wang-fang', assignmentRole: 'owner' },
