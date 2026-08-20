@@ -7,7 +7,8 @@ export type WidgetId =
   | 'company-health'
   | 'report-review'
   | 'hr-summary'
-  | 'admin-system';
+  | 'admin-system'
+  | 'project-visualizations';
 
 export interface DashboardConfig {
   role: Role;

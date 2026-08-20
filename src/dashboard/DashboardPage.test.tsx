@@ -39,7 +39,7 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('heading', { name: '组织经营概览' })).toBeVisible();
     expect(screen.getByText('公司 OKR 健康度')).toBeVisible();
-    expect(screen.queryByText('项目专业视图')).not.toBeInTheDocument();
+    expect(screen.getByText('项目专业视图')).toBeVisible();
     expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
   });
 

@@ -19,6 +19,7 @@ import type {
   OwnedRiskInput,
   ProjectCreateInput,
   ProjectDetail,
+  ProjectSummary,
   ProjectUpdateInput,
   ReportResourceProblemInput,
   ReportResourceProblemResult,
@@ -170,6 +171,18 @@ export class DemoOkrRepository implements OkrRepository {
 
   async setProjectLeader(_projectId: string, _leaderId: string): Promise<RepositoryResult<void>> { return unsupported<void>(); }
   async setProjectMembers(_projectId: string, _memberIds: string[]): Promise<RepositoryResult<void>> { return unsupported<void>(); }
+  async listProjects(): Promise<RepositoryResult<ProjectSummary[]>> {
+    return {
+      ok: true,
+      data: this.projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        leaderId: project.leaderId,
+        leaderName: mockData.users.find((user) => user.id === project.leaderId)?.name ?? '',
+      })),
+    };
+  }
+  async setUserProjectMemberships(_userId: string, _projectIds: string[]): Promise<RepositoryResult<void>> { return unsupported<void>(); }
   async setProjectStatus(_projectId: string, _status: ProjectStatus): Promise<RepositoryResult<void>> { return unsupported<void>(); }
   async getProjectDetail(_projectId: string): Promise<RepositoryResult<ProjectDetail>> { return unsupported<ProjectDetail>(); }
 

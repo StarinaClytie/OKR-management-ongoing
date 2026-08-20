@@ -8,5 +8,6 @@ graphify-out/
 *.log
 .env.local
 .env.*.local
+.env.production
 supabase/.temp/
 supabase/.branches/

@@ -112,8 +112,8 @@ select is(
 );
 select is(
   (select count(*) from public.project_members pm join public.projects p on p.id = pm.project_id where p.name = 'Alpha'),
-  1::bigint,
-  'created project stores the initial member atomically'
+  2::bigint,
+  'created project stores the initial member and the leader atomically'
 );
 
 select set_config('request.jwt.claim.sub', '14000000-0000-0000-0000-000000000002', true);
@@ -179,8 +179,8 @@ select lives_ok(
 );
 select is(
   (select count(*) from public.project_members pm join public.projects p on p.id = pm.project_id where p.name = 'Gamma'),
-  2::bigint,
-  'duplicate member ids do not create duplicate rows'
+  3::bigint,
+  'duplicate member ids do not create duplicate rows and the leader is included'
 );
 
 -- ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ select lives_ok(
   'management reassigns the project leader'
 );
 select set_config('request.jwt.claim.sub', '14000000-0000-0000-0000-000000000003', true);
-select is((select count(*) from public.projects where name = 'Alpha Renamed'), 0::bigint, 'old leader loses leader-only access after reassignment');
+select is((select count(*) from public.projects where name = 'Alpha Renamed'), 1::bigint, 'former leader retains member access after reassignment');
 select set_config('request.jwt.claim.sub', '14000000-0000-0000-0000-000000000004', true);
 select is((select count(*) from public.projects where name = 'Alpha Renamed'), 1::bigint, 'new leader gains access after reassignment');
 

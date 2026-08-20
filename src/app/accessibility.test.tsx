@@ -18,7 +18,7 @@ describe('application accessibility contracts', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('gives every visualization tab an accessible selected state', () => {
-    renderAppAt('user-project-leader', '/analytics');
+    renderAppAt('user-project-leader', '/dashboard');
 
     expect(screen.getByRole('tab', { name: '对齐树' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -36,7 +36,7 @@ describe('application accessibility contracts', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }));
-    renderAppAt('user-project-leader', '/analytics');
+    renderAppAt('user-project-leader', '/dashboard');
 
     expect(await screen.findByText('OKR 对齐摘要')).toBeVisible();
     expect(screen.getByText('查看详情')).toBeVisible();

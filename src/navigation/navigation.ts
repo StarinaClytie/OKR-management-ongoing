@@ -1,5 +1,4 @@
 import {
-  BarChart3,
   FileText,
   FolderKanban,
   LayoutDashboard,
@@ -40,7 +39,6 @@ const usersScope: SystemPermissionScope = {
 
 const okrRoles: readonly Role[] = ['management', 'project_leader', 'employee'];
 export const resourceRoles: readonly Role[] = ['management', 'project_leader', 'administrator'];
-const analyticsRoles: readonly Role[] = ['management', 'project_leader', 'employee', 'hr', 'administrator'];
 const adminRoles: readonly Role[] = ['administrator'];
 
 export const navigationItems: readonly NavigationItem[] = [
@@ -51,6 +49,5 @@ export const navigationItems: readonly NavigationItem[] = [
   { path: '/reports', labelKey: 'navigation.reports', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
   { path: '/team', labelKey: 'navigation.team', icon: Users, action: 'dashboard.view', resource: dashboardScope },
   { path: '/users', labelKey: 'navigation.users', icon: UserCog, action: 'user.manage', resource: usersScope, roles: adminRoles },
-  { path: '/analytics', labelKey: 'navigation.analytics', icon: BarChart3, action: 'dashboard.view', resource: dashboardScope, roles: analyticsRoles },
   { path: '/settings', labelKey: 'navigation.settings', icon: Settings, action: 'dashboard.view', resource: dashboardScope },
 ];

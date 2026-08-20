@@ -94,12 +94,16 @@ export function ObjectiveFormModal({
 
         <label className="modal-field">
           <span>{t('objective.field.leader')} *</span>
-          <select value={values.leaderId} onChange={(event) => set('leaderId', event.target.value)} required>
-            <option value="">{t('daily.select')}</option>
-            {leaderCandidates.map((user) => (
-              <option key={user.id} value={user.id}>{user.displayName} · {user.role ? t(roleLabels[user.role]) : '—'}</option>
-            ))}
-          </select>
+          {leaderCandidates.length === 0 ? (
+            <p role="status">{t('objective.noEligibleLeaders')}</p>
+          ) : (
+            <select value={values.leaderId} onChange={(event) => set('leaderId', event.target.value)} required>
+              <option value="">{t('daily.select')}</option>
+              {leaderCandidates.map((user) => (
+                <option key={user.id} value={user.id}>{user.displayName} · {user.role ? t(roleLabels[user.role]) : '—'}</option>
+              ))}
+            </select>
+          )}
         </label>
 
         <label className="modal-field">

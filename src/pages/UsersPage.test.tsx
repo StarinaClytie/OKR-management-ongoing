@@ -24,10 +24,12 @@ function makeRepository(overrides: Partial<OkrRepository> = {}): OkrRepository {
   return {
     mode: 'supabase',
     listOrganizationUsers: vi.fn(async (): Promise<RepositoryResult<OrganizationUser[]>> => ({ ok: true, data: [...activeUsers, pendingUser] })),
+    listProjects: vi.fn(async () => ({ ok: true, data: [] })),
     approvePendingUser: vi.fn(async () => ({ ok: true, data: undefined })),
     rejectPendingUser: vi.fn(async () => ({ ok: true, data: undefined })),
     updateUserProfile: vi.fn(async () => ({ ok: true, data: undefined })),
     setUserActive: vi.fn(async () => ({ ok: true, data: undefined })),
+    setUserProjectMemberships: vi.fn(async () => ({ ok: true, data: undefined })),
     ...overrides,
   } as unknown as OkrRepository;
 }

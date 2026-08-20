@@ -34,6 +34,12 @@ describe('role-filtered OKR selectors', () => {
     expect(screen.queryByRole('option', { name: /人事戊/ })).not.toBeInTheDocument();
   });
 
+  it('shows a hint instead of an empty selector when no project leader is eligible', () => {
+    render(<ObjectiveFormModal title="新建 Objective" mode="create" initial={objectiveInitial} eligibleUsers={[]} onSubmit={() => undefined} onClose={() => undefined} />);
+
+    expect(screen.getByText('当前没有可分配的项目负责人，请先由管理员创建并启用 Project Leader 账号。')).toBeVisible();
+  });
+
   it('shows only project leaders and employees in the KR owner selector', () => {
     render(<KeyResultFormModal title="添加 Key Result" initial={keyResultInitial} members={members} onSubmit={() => undefined} onClose={() => undefined} />);
 

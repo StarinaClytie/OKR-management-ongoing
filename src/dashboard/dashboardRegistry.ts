@@ -12,25 +12,25 @@ const dashboardRegistry: Record<Role, DashboardConfig> = {
     role: 'management',
     titleKey: 'dashboard.managementTitle',
     descriptionKey: 'dashboard.managementDescription',
-    widgetIds: ['company-health'],
+    widgetIds: ['company-health', 'project-visualizations'],
   },
   project_leader: {
     role: 'project_leader',
     titleKey: 'dashboard.leaderTitle',
     descriptionKey: 'dashboard.leaderDescription',
-    widgetIds: ['today-focus', 'my-key-results', 'report-review'],
+    widgetIds: ['today-focus', 'my-key-results', 'project-visualizations', 'report-review'],
   },
   employee: {
     role: 'employee',
     titleKey: 'dashboard.employeeTitle',
     descriptionKey: 'dashboard.employeeDescription',
-    widgetIds: ['today-focus', 'my-key-results'],
+    widgetIds: ['today-focus', 'my-key-results', 'project-visualizations'],
   },
   hr: {
     role: 'hr',
     titleKey: 'dashboard.hrTitle',
     descriptionKey: 'dashboard.hrDescription',
-    widgetIds: ['hr-summary'],
+    widgetIds: ['hr-summary', 'project-visualizations'],
   },
 };
 
