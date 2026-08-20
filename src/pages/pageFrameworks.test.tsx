@@ -20,7 +20,6 @@ describe('business route frameworks', () => {
     ['user-employee', '/projects', '项目'],
     ['user-employee', '/reports', '日报'],
     ['user-employee', '/team', '团队'],
-    ['user-employee', '/analytics', '分析'],
     ['user-administrator', '/settings', '设置'],
   ])('renders %s at %s as a usable %s page instead of a route placeholder', (userId, path, title) => {
     renderRoute(userId, path);

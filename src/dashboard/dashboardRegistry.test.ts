@@ -3,17 +3,19 @@ import { getDashboardConfig } from './dashboardRegistry';
 
 describe('role dashboard registry', () => {
   it('gives every business role its primary work widget', () => {
-    expect(getDashboardConfig('management').widgetIds).toEqual(['company-health']);
+    expect(getDashboardConfig('management').widgetIds).toEqual(['company-health', 'project-visualizations']);
     expect(getDashboardConfig('project_leader').widgetIds).toEqual([
       'today-focus',
       'my-key-results',
+      'project-visualizations',
       'report-review',
     ]);
     expect(getDashboardConfig('employee').widgetIds).toEqual([
       'today-focus',
       'my-key-results',
+      'project-visualizations',
     ]);
-    expect(getDashboardConfig('hr').widgetIds).toEqual(['hr-summary']);
+    expect(getDashboardConfig('hr').widgetIds).toEqual(['hr-summary', 'project-visualizations']);
   });
 
   it('keeps administrators on a governance-only dashboard', () => {

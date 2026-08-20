@@ -4,7 +4,7 @@ import { roleLabels } from '../auth/roleLabels';
 import { DataTable } from '../components/DataTable';
 import { PageHeader } from '../components/PageHeader';
 import { UserFormModal, type UserFormValues } from '../components/UserFormModal';
-import type { OkrRepository, OrganizationUser, RepositoryErrorCode } from '../data/types';
+import type { OkrRepository, OrganizationUser, ProjectSummary, RepositoryErrorCode } from '../data/types';
 import type { Role } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
@@ -52,6 +52,7 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
   const { t } = useLocale();
   const { currentUser } = useAuth();
   const [usersState, setUsersState] = useState<Async<OrganizationUser[]>>({ status: 'loading' });
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [approveTarget, setApproveTarget] = useState<OrganizationUser | null>(null);
   const [editTarget, setEditTarget] = useState<OrganizationUser | null>(null);
@@ -61,8 +62,12 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
 
   const load = useCallback(async () => {
     setUsersState({ status: 'loading' });
-    const result = await dataRepository.listOrganizationUsers();
-    setUsersState(result.ok ? { status: 'ready', data: result.data } : { status: 'error', code: result.error.code });
+    const [usersResult, projectsResult] = await Promise.all([
+      dataRepository.listOrganizationUsers(),
+      dataRepository.listProjects(),
+    ]);
+    setUsersState(usersResult.ok ? { status: 'ready', data: usersResult.data } : { status: 'error', code: usersResult.error.code });
+    if (projectsResult.ok) setProjects(projectsResult.data);
   }, [dataRepository]);
 
   useEffect(() => { void load(); }, [load]);
@@ -144,14 +149,25 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
       jobTitle: values.jobTitle,
       role: values.role,
     });
-    setSubmitting(false);
-    if (result.ok) {
-      closeModal();
-      setFeedback({ kind: 'success', key: 'users.editSuccess' });
-      await load();
-    } else {
+    if (!result.ok) {
+      setSubmitting(false);
       setFormError(t(repositoryErrorKey(result.error.code)));
+      return;
     }
+    // Membership editing only applies to approved active users; leadership stays
+    // governed by the project's leader assignment (the RPC re-adds led projects).
+    if (editTarget.isActive) {
+      const membershipResult = await dataRepository.setUserProjectMemberships(editTarget.id, values.projectIds);
+      if (!membershipResult.ok) {
+        setSubmitting(false);
+        setFormError(t(repositoryErrorKey(membershipResult.error.code)));
+        return;
+      }
+    }
+    setSubmitting(false);
+    closeModal();
+    setFeedback({ kind: 'success', key: 'users.editSuccess' });
+    await load();
   }
 
   async function handleDeleteConfirm() {
@@ -268,7 +284,7 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
       {approveTarget ? (
         <UserFormModal
           title={t('users.modal.approveTitle')}
-          initial={{ displayName: approveTarget.displayName, email: approveTarget.email, department: '', jobTitle: '', role: 'employee' }}
+          initial={{ displayName: approveTarget.displayName, email: approveTarget.email, department: '', jobTitle: '', role: 'employee', projectIds: [] }}
           nameReadOnly
           emailReadOnly
           submitLabel={t('users.approve')}
@@ -282,7 +298,9 @@ export function UsersPage({ dataRepository = repository, adminUsers = adminUserS
       {editTarget ? (
         <UserFormModal
           title={t('users.modal.editTitle')}
-          initial={{ displayName: editTarget.displayName, email: editTarget.email, department: editTarget.department, jobTitle: editTarget.jobTitle, role: editTarget.role ?? 'employee' }}
+          initial={{ displayName: editTarget.displayName, email: editTarget.email, department: editTarget.department, jobTitle: editTarget.jobTitle, role: editTarget.role ?? 'employee', projectIds: editTarget.projectIds }}
+          projects={editTarget.isActive ? projects : undefined}
+          readOnlyProjectIds={editTarget.isActive ? projects.filter((project) => project.leaderId === editTarget.id).map((project) => project.id) : []}
           submitLabel={t('users.save')}
           submitting={submitting}
           error={formError}

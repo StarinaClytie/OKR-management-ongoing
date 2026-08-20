@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(13);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: management, a project leader, two employees, and an administrator
@@ -59,6 +59,15 @@ select throws_ok(
   '42501', 'Only management can create objectives', 'administrator cannot create a business Objective'
 );
 
+-- The Objective's project must contain its employees before they can own KRs.
+select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000001', true);
+select lives_ok(
+  $$select public.set_project_members(
+    (select project_id from public.objectives where quarter = '2026-Q3'),
+    array['81000000-0000-0000-0000-000000000002', '81000000-0000-0000-0000-000000000003']::uuid[])$$,
+  'management adds the employee to the objective project'
+);
+
 -- Project leader creates a multi-owner KR under their Objective.
 select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000002', true);
 select lives_ok(
@@ -99,7 +108,7 @@ select throws_ok(
     (select id from public.objectives where quarter = '2026-Q3'),
     'Management-owner KR', array['81000000-0000-0000-0000-000000000001']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
-  '22023', 'Key Result owners must be project leaders or employees', 'management cannot be a KR owner'
+  '22023', 'Key Result owners must be eligible members of the Objective''s project.', 'management cannot be a KR owner'
 );
 
 -- Objective-level edits remain management-only.

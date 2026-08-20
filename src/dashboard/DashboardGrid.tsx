@@ -5,6 +5,7 @@ import { AdminSystemWidget } from './widgets/AdminSystemWidget';
 import { CompanyHealthWidget } from './widgets/CompanyHealthWidget';
 import { HrSummaryWidget } from './widgets/HrSummaryWidget';
 import { MyKeyResultsWidget } from './widgets/MyKeyResultsWidget';
+import { ProjectVisualizationsWidget } from './widgets/ProjectVisualizationsWidget';
 import { ReportReviewWidget } from './widgets/ReportReviewWidget';
 import { TodayFocusWidget } from './widgets/TodayFocusWidget';
 
@@ -27,6 +28,8 @@ function renderWidget(widgetId: WidgetId, data: DashboardData) {
       return <HrSummaryWidget data={data} />;
     case 'admin-system':
       return <AdminSystemWidget data={data} />;
+    case 'project-visualizations':
+      return <ProjectVisualizationsWidget data={data} />;
   }
 }
 

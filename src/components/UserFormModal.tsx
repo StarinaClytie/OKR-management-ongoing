@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { roleLabels } from '../auth/roleLabels';
+import type { ProjectSummary } from '../data/types';
 import type { Role } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
 
@@ -9,6 +10,7 @@ export interface UserFormValues {
   department: string;
   jobTitle: string;
   role: Role;
+  projectIds: string[];
 }
 
 export interface UserFormModalProps {
@@ -20,6 +22,10 @@ export interface UserFormModalProps {
   submitLabel: string;
   submitting?: boolean;
   error?: string;
+  /** When present, renders the project-membership multi-select (edit mode). */
+  projects?: ProjectSummary[];
+  /** Projects the target leads; shown auto-checked and read-only. */
+  readOnlyProjectIds?: readonly string[];
   onSubmit: (values: UserFormValues) => void;
   onClose: () => void;
 }
@@ -39,6 +45,8 @@ export function UserFormModal({
   submitLabel,
   submitting = false,
   error,
+  projects,
+  readOnlyProjectIds = [],
   onSubmit,
   onClose,
 }: UserFormModalProps) {
@@ -61,6 +69,16 @@ export function UserFormModal({
 
   function set<K extends keyof UserFormValues>(key: K, value: UserFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
+    setFieldError(undefined);
+  }
+
+  function toggleProject(projectId: string) {
+    setValues((current) => ({
+      ...current,
+      projectIds: current.projectIds.includes(projectId)
+        ? current.projectIds.filter((id) => id !== projectId)
+        : [...current.projectIds, projectId],
+    }));
     setFieldError(undefined);
   }
 
@@ -106,6 +124,23 @@ export function UserFormModal({
             {roles.map((role) => <option key={role} value={role}>{t(roleLabels[role])}</option>)}
           </select>
         </label>
+        {projects ? (
+          <div className="modal-field">
+            <span>{t('users.field.projectMemberships')}</span>
+            <div className="member-picker">
+              {projects.map((project) => {
+                const readOnly = readOnlyProjectIds.includes(project.id);
+                const checked = readOnly || values.projectIds.includes(project.id);
+                return (
+                  <label key={project.id} className="member-picker__option">
+                    <input type="checkbox" checked={checked} disabled={readOnly} onChange={() => toggleProject(project.id)} />
+                    <span>{project.name} · {project.leaderName}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         {error || fieldError ? <p className="form-error" role="alert">{error ?? fieldError}</p> : null}
         <div className="modal-actions">
           <button type="button" className="button button--secondary" onClick={onClose}>{t('common.cancel')}</button>

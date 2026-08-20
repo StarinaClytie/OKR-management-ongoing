@@ -39,7 +39,7 @@ if (mode === 'supabase') {
   if (!url) failures.push('Supabase 模式缺少 VITE_SUPABASE_URL');
   else if (url !== url.trim()) failures.push('VITE_SUPABASE_URL 不得包含首尾空白字符');
   else if (placeholderPattern.test(url)) failures.push('VITE_SUPABASE_URL 不得使用示例或占位值');
-  else if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)) failures.push('VITE_SUPABASE_URL 必须是有效的 HTTPS Supabase 项目 URL');
+  else if (!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+(?::[0-9]{1,5})?\/?$/i.test(url)) failures.push('VITE_SUPABASE_URL 必须是有效的 HTTPS Supabase 项目 URL（域名或 IP，可含端口）');
 
   if (!key) failures.push('Supabase 模式缺少 VITE_SUPABASE_ANON_KEY');
   else if (key !== key.trim()) failures.push('VITE_SUPABASE_ANON_KEY 不得包含首尾空白字符');

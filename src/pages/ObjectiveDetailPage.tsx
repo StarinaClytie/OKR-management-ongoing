@@ -90,6 +90,10 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const okrStatus = resolveOkrStatus(objectiveData.okrStatus, overallProgress, objectiveData.startDate, objectiveData.dueDate, evaluationDate);
   const canManage = canManageKeyResults(signedInUser, objectiveData);
   const isArchived = objectiveData.archivedAt != null;
+  const objectiveProject = dashboardData.projects.find((project) => project.id === objectiveData.projectId);
+  const projectMembers = objectiveProject
+    ? dashboardData.users.filter((user) => objectiveProject.memberIds.includes(user.id))
+    : dashboardData.users;
   const objectiveUpdates = dashboardData.krProgressUpdates.filter((update) => objectiveKrs.some((keyResult) => keyResult.id === update.krId));
   const projectReports = dashboardData.dailyReports.filter((report) => report.objectiveId === objectiveData.id);
 
@@ -326,7 +330,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
         <KeyResultFormModal
           title={t('kr.createTitle')}
           initial={{ ...emptyKrForm, deadline: objectiveData.dueDate }}
-          members={dashboardData.users}
+          members={projectMembers}
           submitting={submitting}
           error={formError}
           onSubmit={(values) => void handleSaveKeyResult(values)}

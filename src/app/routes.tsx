@@ -5,7 +5,6 @@ import { DashboardPage } from '../dashboard/DashboardPage';
 import { AppShell } from '../layout/AppShell';
 import { navigationItems, type NavigationItem } from '../navigation/navigation';
 import { AccessDeniedPage } from '../pages/AccessDeniedPage';
-import { AnalyticsPage } from '../pages/AnalyticsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { ObjectiveDetailPage } from '../pages/ObjectiveDetailPage';
 import { OkrManagementPage } from '../pages/OkrManagementPage';
@@ -25,7 +24,6 @@ const pageByPath = {
   '/reports': ReportsPage,
   '/team': TeamPage,
   '/users': UsersPage,
-  '/analytics': AnalyticsPage,
   '/settings': SettingsPage,
 } as const;
 

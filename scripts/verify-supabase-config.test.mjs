@@ -45,6 +45,17 @@ describe('verify-supabase-config', () => {
     expect(`${result.stdout}${result.stderr}`).not.toContain(publicKey);
   });
 
+  test('accepts a self-hosted / custom-domain Supabase URL for production', () => {
+    const publicKey = 'sb_publishable_1234567890abcdefghij';
+    const result = verify({
+      VITE_APP_MODE: 'supabase',
+      VITE_SUPABASE_URL: 'https://supabase.groupmeeting.xyz',
+      VITE_SUPABASE_ANON_KEY: publicKey,
+    }, ['--production']);
+
+    expect(result.status).toBe(0);
+  });
+
   test.each([
     ['leading or trailing whitespace', { VITE_SUPABASE_ANON_KEY: ' sb_publishable_1234567890abcdefghij' }],
     ['placeholder key', { VITE_SUPABASE_ANON_KEY: 'replace-with-publishable-key' }],

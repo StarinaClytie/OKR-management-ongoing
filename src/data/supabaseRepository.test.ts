@@ -51,6 +51,10 @@ function createDashboardClient(rowsByTable: Record<string, Record<string, unknow
     return builder;
   });
   client.from = from;
+  rpc.mockImplementation(async (name?: string) => {
+    if (name === 'list_organization_users') return { data: rowsByTable.profiles ?? [], error: null };
+    return { data: null, error: null };
+  });
   return { client, from, rpc };
 }
 
@@ -245,6 +249,20 @@ describe('SupabaseOkrRepository', () => {
     expect(rpc).toHaveBeenCalledWith('set_user_active', { p_target_user_id: 'u1', p_is_active: false });
   });
 
+  it('lists project summaries with leader names through the restricted RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: [{ id: 'project-1', name: '项目一', leader_id: 'leader-1', leader_name: '项目负责人' }] });
+    const result = await new SupabaseOkrRepository(client).listProjects();
+    expect(result).toEqual({ ok: true, data: [{ id: 'project-1', name: '项目一', leaderId: 'leader-1', leaderName: '项目负责人' }] });
+    expect(rpc).toHaveBeenCalledWith('list_projects', {});
+  });
+
+  it('replaces a user project membership set through the restricted RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const result = await new SupabaseOkrRepository(client).setUserProjectMemberships('u1', ['project-1', 'project-2']);
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(rpc).toHaveBeenCalledWith('set_user_project_memberships', { p_target_user_id: 'u1', p_project_ids: ['project-1', 'project-2'] });
+  });
+
   it('maps duplicate-profile errors to a distinct code', async () => {
     const { client } = createClient({ rpcError: { code: '23505', message: 'Profile already exists for this user' } });
     const result = await new SupabaseOkrRepository(client).approvePendingUser({ userId: 'u1', role: 'employee', department: '', jobTitle: '' });
@@ -286,7 +304,7 @@ describe('SupabaseOkrRepository', () => {
       progressSnapshots: [expect.objectContaining({ id: 'snapshot-1', keyResultId: 'kr-1', actual: 0, planned: 25, weekOf: '2026-08-14' })],
     }) });
     expect(from.mock.calls.map(([table]) => table)).toEqual([
-      'profiles', 'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_okr_blocks',
+      'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_okr_blocks',
     ]);
     if (!result.ok) throw new Error('Expected dashboard data');
     expectTypeOf(result.data.risks[0]).toMatchTypeOf<{ keyResultId?: string; objectiveId?: string; resolved: boolean } | undefined>();

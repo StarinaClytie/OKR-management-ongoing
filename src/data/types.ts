@@ -221,6 +221,14 @@ export interface ProjectDetail {
   members: ProjectMemberInfo[];
 }
 
+/** Lightweight project summary for membership editing and project selectors. */
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  leaderId: string;
+  leaderName: string;
+}
+
 export interface ApprovePendingUserInput {
   userId: string;
   role: Role;
@@ -399,6 +407,8 @@ export interface OkrRepository {
   updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>>;
   setProjectLeader(projectId: string, leaderId: string): Promise<RepositoryResult<void>>;
   setProjectMembers(projectId: string, memberIds: string[]): Promise<RepositoryResult<void>>;
+  listProjects(): Promise<RepositoryResult<ProjectSummary[]>>;
+  setUserProjectMemberships(userId: string, projectIds: string[]): Promise<RepositoryResult<void>>;
   setProjectStatus(projectId: string, status: ProjectStatus): Promise<RepositoryResult<void>>;
   archiveProject(projectId: string): Promise<RepositoryResult<void>>;
   restoreProject(projectId: string): Promise<RepositoryResult<void>>;

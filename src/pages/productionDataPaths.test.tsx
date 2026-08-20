@@ -97,7 +97,6 @@ describe('Supabase production page data paths', () => {
     ['/reports', 'RLS 日报正文'],
     ['/reports?tab=weekly', 'RLS 周报摘要'],
     ['/team', 'RLS 团队成员'],
-    ['/analytics', 'RLS 真实 KR'],
   ])('renders %s from the RLS-backed repository for a real UUID profile', async (path, expectedText) => {
     renderRoute(path);
 

@@ -1,6 +1,6 @@
 import type { DashboardData } from '../data/types';
 import type { DailyReport, ProjectStatus, Role, User } from '../domain/types';
-import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
@@ -160,7 +160,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (!session.data.session) return failure({ code: '42501', message: 'No active session' });
 
     const results = await Promise.all([
-      this.selectRows('profiles', 'id,display_name,department,job_title,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)'),
+      this.callRpc<Record<string, unknown>[]>('list_organization_users', {}),
       this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,status,project_members!project_members_project_id_fkey(profile_id)'),
       this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date,number,quarter,priority,okr_status,archived_at'),
       this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date,metric_type,current_value,target_value,unit,notes,confidence_index,priority,okr_status'),
@@ -506,9 +506,9 @@ export class SupabaseOkrRepository implements OkrRepository {
     return result.ok ? { ok: true, data: undefined } : result;
   }
   async listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>> {
-    const result = await this.selectRows('profiles', 'id,display_name,email,department,job_title,is_active,approval_status,created_at,user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)');
+    const result = await this.callRpc<Record<string, unknown>[]>('list_organization_users', {});
     if (!result.ok) return result;
-    const users = result.data.map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
+    const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
     return { ok: true, data: users };
   }
   async approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>> {
@@ -574,6 +574,21 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
   async setProjectMembers(projectId: string, memberIds: string[]): Promise<RepositoryResult<void>> {
     const result = await this.callRpc<null>('set_project_members', { p_project_id: projectId, p_member_ids: memberIds });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+  async listProjects(): Promise<RepositoryResult<ProjectSummary[]>> {
+    const result = await this.callRpc<Record<string, unknown>[]>('list_projects', {});
+    if (!result.ok) return result;
+    const projects = (result.data ?? []).map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      leaderId: String(row.leader_id),
+      leaderName: typeof row.leader_name === 'string' ? row.leader_name : '',
+    }));
+    return { ok: true, data: projects };
+  }
+  async setUserProjectMemberships(userId: string, projectIds: string[]): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('set_user_project_memberships', { p_target_user_id: userId, p_project_ids: projectIds });
     return result.ok ? { ok: true, data: undefined } : result;
   }
   async setProjectStatus(projectId: string, status: ProjectStatus): Promise<RepositoryResult<void>> {
