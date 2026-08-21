@@ -11,9 +11,10 @@ export interface DailyOkrBlockDraft {
   id: string;
   dailyObjective: string;
   linkedKeyResultId: string;
+  workDescription: string;
   hours: number;
   result: string;
-  keyResults: DailyKrDraft[];
+  evidence: DailyEvidenceDraft[];
 }
 
 /**
@@ -52,7 +53,6 @@ export interface DailyEvidenceDraft {
 
 export interface DailyReportDraft {
   blocks: DailyOkrBlockDraft[];
-  evidence: DailyEvidenceDraft[];
   classification: Classification;
 }
 
@@ -103,17 +103,14 @@ export function validateDailyReportDraft(draft: DailyReportDraft): DailyReportVa
     if (!block.dailyObjective.trim()) issues.push({ field: `${field}.dailyObjective`, message: '请填写当日 O' });
     if (!block.linkedKeyResultId) issues.push({ field: `${field}.linkedKeyResultId`, message: '请选择关联的季度 KR' });
     if (!isFiniteNonNegative(block.hours)) issues.push({ field: `${field}.hours`, message: '工时需填写有限且不小于 0 的数值' });
-    if (block.keyResults.length === 0) issues.push({ field: `${field}.keyResults`, message: '请至少添加一个当日 KR' });
-    block.keyResults.forEach((keyResult, krIndex) => {
-      if (!keyResult.title.trim()) issues.push({ field: `${field}.keyResults.${krIndex}.title`, message: '请填写 KR 内容' });
+    if (!block.workDescription.trim()) issues.push({ field: `${field}.workDescription`, message: '请填写工作描述' });
+    if (!block.result.trim()) issues.push({ field: `${field}.result`, message: '请填写结果或数据' });
+    block.evidence.forEach((item, evidenceIndex) => {
+      const evidenceField = `${field}.evidence.${evidenceIndex}`;
+      if (!item.label.trim()) issues.push({ field: `${evidenceField}.label`, message: '请填写成果名称或链接说明' });
+      if (!isEvidenceKind(item.kind)) issues.push({ field: `${evidenceField}.kind`, message: '请选择成果类型' });
+      if (!isClassification(item.classification)) issues.push({ field: `${evidenceField}.classification`, message: '请选择有效的成果密级' });
     });
-  });
-
-  draft.evidence.forEach((item, index) => {
-    const field = `evidence.${index}`;
-    if (!item.label.trim()) issues.push({ field: `${field}.label`, message: '请填写成果名称或链接说明' });
-    if (!isEvidenceKind(item.kind)) issues.push({ field: `${field}.kind`, message: '请选择成果类型' });
-    if (!isClassification(item.classification)) issues.push({ field: `${field}.classification`, message: '请选择有效的成果密级' });
   });
 
   if (!isClassification(draft.classification)) issues.push({ field: 'classification', message: '请选择有效的日报密级' });
@@ -160,9 +157,11 @@ export function toLocalDailyReport(
       id: `block-${context.authorId}-${context.date}-${index + 1}`,
       dailyObjective: block.dailyObjective,
       keyResultId: block.linkedKeyResultId,
+      workDescription: block.workDescription,
       hours: block.hours,
       result: block.result,
-      keyResults: block.keyResults.map((keyResult) => ({ ...keyResult })),
+      keyResults: [{ id: `${block.id}-work`, title: block.workDescription }],
+      evidenceItems: block.evidence.map((item) => ({ ...item })),
     };
   });
 
@@ -180,9 +179,9 @@ export function toLocalDailyReport(
       blocks: reportBlocks,
       classification: draft.classification,
       hours: draft.blocks.reduce((sum, block) => sum + block.hours, 0),
-      evidence: draft.evidence.map((item) => item.label),
-      evidenceItems: draft.evidence.map((item) => ({ ...item })),
-      evidenceClassification: draft.evidence.reduce<Classification>(mostRestrictiveClassification, 'public'),
+      evidence: draft.blocks.flatMap((block) => block.evidence.map((item) => item.label)),
+      evidenceItems: draft.blocks.flatMap((block) => block.evidence.map((item) => ({ ...item }))),
+      evidenceClassification: draft.blocks.flatMap((block) => block.evidence).reduce<Classification>(mostRestrictiveClassification, 'public'),
       attachmentIds: [],
       status: 'submitted',
     },

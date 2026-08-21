@@ -64,7 +64,7 @@ export function RegisterForm({ onSubmit, onBack, locale = 'zh-CN' }: RegisterFor
 
   return (
     <main className="auth-login">
-      <div className="auth-login__brand">Northstar OKR</div>
+      <div className="auth-login__brand">瞬谱光电 · TIME-TECH SPECTRA</div>
       <h1 className="auth-login__title">{t('register.title')}</h1>
       <p className="auth-login__subtitle">{t('register.subtitle')}</p>
       <form className="auth-login__form" onSubmit={handleSubmit} noValidate>

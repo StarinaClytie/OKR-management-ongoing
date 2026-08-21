@@ -162,9 +162,11 @@ export interface DailyOkrBlock {
   dailyObjective: string;
   /** The linked quarterly Key Result (an assigned KR the author owns). */
   keyResultId: string;
+  workDescription?: string;
   hours: number;
   result: string;
   keyResults: Array<{ id: string; title: string }>;
+  evidenceItems?: DailyEvidenceDraft[];
 }
 
 export interface DailyReport {

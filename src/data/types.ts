@@ -117,9 +117,10 @@ export interface ResourceUploadTarget { id: string; path: string; bucket: 'resou
 export interface DailyOkrBlockInput {
   dailyObjective: string;
   linkedKeyResultId: string;
+  workDescription: string;
   hours: number;
   result: string;
-  keyResults: Array<{ title: string }>;
+  evidenceLinks: unknown[];
 }
 
 export interface DailyReportInput {
@@ -130,7 +131,7 @@ export interface DailyReportInput {
   evidenceLinks: unknown[];
 }
 
-export interface ClassifiedAttachmentInput { file: File; classification: Classification }
+export interface ClassifiedAttachmentInput { file: File; classification: Classification; entryPosition?: number }
 
 export interface KrProgressInput {
   keyResultId: string;
@@ -432,6 +433,7 @@ export interface OkrRepository {
   updateUserProfile(input: UpdateUserInput): Promise<RepositoryResult<void>>;
   setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>>;
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;
+  saveDailyReport(input: DailyReportInput, attachments?: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>>;

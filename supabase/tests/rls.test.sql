@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(54);
+select plan(58);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -183,6 +183,32 @@ select throws_ok(
     '[]'::jsonb
   )$$,
   '40001', 'Daily report revision conflict', 'stale expected revision is rejected'
+);
+select lives_ok(
+  $$select * from public.save_daily_report(
+    current_date + 2, 'submitted', 'confidential',
+    '[{"dailyObjective":"First save","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","workDescription":"Execute owned KR","hours":2,"result":"First result","evidenceLinks":[]}]'::jsonb,
+    '[]'::jsonb
+  )$$,
+  'first submission creates the daily report through the atomic save RPC'
+);
+select lives_ok(
+  $$select * from public.save_daily_report(
+    current_date + 2, 'submitted', 'confidential',
+    '[{"dailyObjective":"Second save","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","workDescription":"Continue owned KR","hours":5,"result":"Second result","evidenceLinks":[]}]'::jsonb,
+    '[]'::jsonb
+  )$$,
+  'second same-day submission updates instead of violating the unique key'
+);
+select is(
+  (select count(*) from public.daily_reports where author_id = '10000000-0000-0000-0000-000000000004' and report_date = current_date + 2),
+  1::bigint,
+  'same-day submissions keep exactly one report row'
+);
+select is(
+  (select current_revision from public.daily_reports where author_id = '10000000-0000-0000-0000-000000000004' and report_date = current_date + 2),
+  2,
+  'same-day submissions append immutable revisions'
 );
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
 select is((select count(*) from public.list_report_revisions('50000000-0000-0000-0000-000000000001')), 1::bigint, 'authorized author lists immutable revision history');

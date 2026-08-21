@@ -83,7 +83,7 @@ describe('SupabaseAuthProvider', () => {
   it('renders the email/password login form when signed out', async () => {
     const { client } = createClient(null);
     render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(active)}><StateProbe /></SupabaseAuthProvider>);
-    expect(await screen.findByRole('heading', { name: '登录 Northstar OKR' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '登录 TIME-TECH SPECTRA OKR' })).toBeVisible();
     expect(screen.getByLabelText('邮箱')).toBeVisible();
     expect(screen.getByLabelText('密码')).toBeVisible();
     expect(screen.getByRole('button', { name: '登录' })).toBeVisible();
@@ -178,7 +178,7 @@ describe('SupabaseAuthProvider', () => {
     render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(active)}><SignOutProbe /></SupabaseAuthProvider>);
     await screen.findByRole('button', { name: 'signout' });
     await user.click(screen.getByRole('button', { name: 'signout' }));
-    expect(await screen.findByRole('heading', { name: '登录 Northstar OKR' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '登录 TIME-TECH SPECTRA OKR' })).toBeVisible();
   });
 
   it('surfaces the session email for an active user', async () => {

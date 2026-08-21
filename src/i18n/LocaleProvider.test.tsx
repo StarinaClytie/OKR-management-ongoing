@@ -56,7 +56,7 @@ describe('application locale', () => {
   });
 
   it('restores a valid local preference before authentication', () => {
-    window.localStorage.setItem('northstar.locale', 'en');
+    window.localStorage.setItem('time-tech-spectra.locale', 'en');
 
     render(<App />);
 
@@ -67,14 +67,14 @@ describe('application locale', () => {
   it('lets an authenticated profile preference override the local preference and persists later changes', async () => {
     const user = userEvent.setup();
     const repository = { setMyLocale: vi.fn().mockResolvedValue({ ok: true, data: undefined }) } as unknown as OkrRepository;
-    window.localStorage.setItem('northstar.locale', 'en');
+    window.localStorage.setItem('time-tech-spectra.locale', 'en');
     const renderedLocales: string[] = [];
 
     renderAuthenticated(repository, profile, (locale) => renderedLocales.push(locale));
 
     expect(renderedLocales[0]).toBe('zh-CN');
     expect(screen.getByText('zh-CN')).toBeVisible();
-    expect(window.localStorage.getItem('northstar.locale')).toBe('zh-CN');
+    expect(window.localStorage.getItem('time-tech-spectra.locale')).toBe('zh-CN');
     await user.click(screen.getByRole('button', { name: '切换为英文' }));
     expect(screen.getByText('en')).toBeVisible();
     expect(repository.setMyLocale).toHaveBeenCalledWith('en');
@@ -88,7 +88,7 @@ describe('application locale', () => {
     await user.click(screen.getByRole('button', { name: '切换为英文' }));
 
     expect(screen.getByText('en')).toBeVisible();
-    expect(window.localStorage.getItem('northstar.locale')).toBe('en');
+    expect(window.localStorage.getItem('time-tech-spectra.locale')).toBe('en');
     expect(repository.setMyLocale).toHaveBeenCalledWith('en');
   });
 

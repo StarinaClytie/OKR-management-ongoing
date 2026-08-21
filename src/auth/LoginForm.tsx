@@ -46,7 +46,7 @@ export function LoginForm({ signIn, onRegister, locale = 'zh-CN' }: LoginFormPro
 
   return (
     <main className="auth-login">
-      <div className="auth-login__brand">Northstar OKR</div>
+      <div className="auth-login__brand">瞬谱光电 · TIME-TECH SPECTRA</div>
       <h1 className="auth-login__title">{t('auth.signIn')}</h1>
       <p className="auth-login__subtitle">{t('auth.signInDescription')}</p>
       <form className="auth-login__form" onSubmit={handleSubmit} noValidate>

@@ -24,7 +24,8 @@ describe('DailyReportsPage user changes', () => {
     await user.click(screen.getByRole('button', { name: '填写今日日报' }));
     await user.selectOptions(screen.getByLabelText(/关联季度 KR/), 'kr-orion-onboarding');
     await user.type(screen.getByLabelText(/当日 O/), '只属于原用户的本地日报');
-    await user.type(screen.getByLabelText('第 1 组 · 今日 KR 1'), '完成可验证的结果');
+    await user.type(screen.getByLabelText(/工作描述/), '完成可验证的结果');
+    await user.type(screen.getByLabelText(/结果/), '完成并记录数据');
     await user.type(screen.getByLabelText(/记录工时/), '2');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
     expect(screen.getByText(/只属于原用户的本地日报/)).toBeVisible();

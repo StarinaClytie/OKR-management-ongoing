@@ -12,6 +12,8 @@ interface DailyReportEvidenceProps {
   onLinkedObjectiveChange: (objectiveId: string | undefined) => void;
   onEvidenceChange: (items: DailyEvidenceDraft[]) => void;
   errors?: Record<string, string>;
+  idPrefix?: string;
+  errorPrefix?: string;
 }
 
 const classifications: Array<{ value: Classification; label: MessageKey }> = [
@@ -21,7 +23,7 @@ const classifications: Array<{ value: Classification; label: MessageKey }> = [
   { value: 'restricted', label: 'classification.restricted' },
 ];
 
-export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, onLinkedObjectiveChange, onEvidenceChange, errors = {} }: DailyReportEvidenceProps) {
+export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, onLinkedObjectiveChange, onEvidenceChange, errors = {}, idPrefix = 'daily', errorPrefix = '' }: DailyReportEvidenceProps) {
   const { t } = useLocale();
   const addEvidence = () => {
     const nextNumber = evidence.length + 1;
@@ -29,8 +31,8 @@ export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, o
   };
 
   return (
-    <section className="daily-evidence form-card form-section" aria-labelledby="daily-evidence-heading">
-      <h2 id="daily-evidence-heading">{t('daily.evidenceTitle')}</h2>
+    <section className="daily-evidence form-section" aria-labelledby={`${idPrefix}-evidence-heading`}>
+      <h3 id={`${idPrefix}-evidence-heading`}>{t('daily.evidenceTitle')}</h3>
       {objectives.length > 0 ? (
         <div className="daily-form-grid daily-form-grid--single">
           <label htmlFor="linked-objective">
@@ -58,8 +60,8 @@ export function DailyReportEvidence({ objectives, linkedObjectiveId, evidence, o
       <AttachmentList items={evidence.filter((item) => item.kind === 'file')} onRemove={(id) => onEvidenceChange(evidence.filter((item) => item.id !== id))} />
       {evidence.map((item, index) => {
         const number = index + 1;
-        const errorFor = (field: 'label' | 'kind' | 'classification') => errors[`evidence.${index}.${field}`];
-        const errorId = (field: 'label' | 'kind' | 'classification') => `evidence-${item.id}-${field}-error`;
+        const errorFor = (field: 'label' | 'kind' | 'classification') => errors[`${errorPrefix}evidence.${index}.${field}`];
+        const errorId = (field: 'label' | 'kind' | 'classification') => `${idPrefix}-evidence-${item.id}-${field}-error`;
         return (
           <div className="daily-evidence__row" key={item.id}>
             <label htmlFor={`evidence-${item.id}-label`}>

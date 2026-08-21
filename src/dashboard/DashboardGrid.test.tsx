@@ -66,9 +66,9 @@ describe('DashboardGrid confidentiality boundaries', () => {
       </AuthProvider>,
     );
 
-    expect(screen.getByLabelText('目标平均进度')).toHaveTextContent('0%');
-    expect(screen.getByLabelText('目标平均进度')).toHaveTextContent('0 个目标');
-    expect(screen.getByLabelText('正常推进项目')).toHaveTextContent('共 0 个项目');
+    expect(screen.getByLabelText('Objective 完成率')).toHaveTextContent('0%');
+    expect(screen.getByLabelText('Objective 完成率')).toHaveTextContent('0 个目标');
+    expect(screen.getByLabelText('项目进度')).toHaveTextContent('共 0 个项目');
   });
 
   it('uses only reports supplied by DashboardData', () => {

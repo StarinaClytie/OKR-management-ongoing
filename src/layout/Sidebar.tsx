@@ -43,8 +43,8 @@ export function Sidebar({ variant, mobileOpen = false, onNavigate, onClose, draw
         </button>
       ) : null}
       <NavLink className="app-brand" to={dashboardPath} onClick={onNavigate}>
-        <span className="app-brand__mark" aria-hidden="true">N</span>
-        <span>Northstar OKR</span>
+        <span className="app-brand__mark" aria-hidden="true">T</span>
+        <span>瞬谱光电 TIME-TECH SPECTRA</span>
       </NavLink>
 
       <nav className="app-sidebar__nav" aria-label={t('navigation.workspace')}>

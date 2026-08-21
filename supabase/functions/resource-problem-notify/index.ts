@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
 
   const appUrl = Deno.env.get('RESOURCE_APP_URL') ?? PRODUCTION_ORIGIN;
   const deepLink = `${appUrl}/resources/${problem.resource_id}`;
-  const subject = `[Northstar OKR] Resource problem reported: ${resource.name}`;
+  const subject = `[TIME-TECH SPECTRA OKR] Resource problem reported: ${resource.name}`;
   const text = [
     'A problem has been reported for a resource you are responsible for.',
     '',

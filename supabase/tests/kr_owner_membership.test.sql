@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(27);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: one organization with an administrator, management, two project
@@ -148,43 +148,52 @@ select lives_ok(
   'project member project leader can be a KR owner'
 );
 
--- 8. An employee of an unrelated project is rejected.
-select throws_ok(
+-- 8. Membership in another project does not restrict organization-wide assignment.
+select lives_ok(
   $$select public.create_key_result(
     (select id from public.objectives where title = 'Owner Objective'),
     'KR EmpB', array['b1000000-0000-0000-0000-000000000006']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
-  '22023', 'Key Result owners must be eligible members of the Objective''s project.', 'employee from an unrelated project is rejected'
+  'eligible employee from another project can own the KR'
+);
+select is(
+  (select count(*) from public.project_members pm join public.objectives o on o.project_id = pm.project_id where o.title = 'Owner Objective' and pm.profile_id = 'b1000000-0000-0000-0000-000000000006'),
+  1::bigint,
+  'cross-project employee is added to the Objective project'
 );
 
--- 9. An eligible role with no project membership is rejected.
-select throws_ok(
+-- 9. An eligible organization employee needs no pre-existing project membership.
+select lives_ok(
   $$select public.create_key_result(
     (select id from public.objectives where title = 'Owner Objective'),
     'KR NoMember', array['b1000000-0000-0000-0000-000000000007']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
-  '22023', 'Key Result owners must be eligible members of the Objective''s project.', 'eligible role without project membership is rejected'
+  'eligible organization employee can be assigned without project membership'
+);
+select is(
+  (select count(*) from public.project_members pm join public.objectives o on o.project_id = pm.project_id where o.title = 'Owner Objective' and pm.profile_id = 'b1000000-0000-0000-0000-000000000007'),
+  1::bigint,
+  'KR assignment automatically adds the employee to project_members'
 );
 
--- 10. A mixed owner array [valid member, unrelated employee] rejects atomically.
-select throws_ok(
+-- 10. A mixed owner array of eligible organization employees succeeds atomically.
+select lives_ok(
   $$select public.create_key_result(
     (select id from public.objectives where title = 'Owner Objective'),
     'Mixed KR', array['b1000000-0000-0000-0000-000000000005', 'b1000000-0000-0000-0000-000000000006']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
-  '22023', 'Key Result owners must be eligible members of the Objective''s project.', 'mixed owner array rejects atomically'
+  'mixed eligible owner array succeeds atomically'
 );
 
--- 11. No rows are written partially after the rejection.
 select is(
   (select count(*) from public.key_results where title = 'Mixed KR'),
-  0::bigint,
-  'rejected mixed owner array leaves no key_result row'
+  1::bigint,
+  'mixed owner array creates one key_result row'
 );
 select is(
   (select count(*) from public.kr_assignments ka join public.key_results kr on kr.id = ka.kr_id where kr.title = 'Mixed KR'),
-  0::bigint,
-  'rejected mixed owner array writes no kr_assignments rows'
+  2::bigint,
+  'mixed owner array writes both OWNER assignments'
 );
 
 -- 12. update_key_result enforces the same rule.
@@ -195,17 +204,38 @@ select lives_ok(
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
   'project leader creates a KR to update'
 );
-select throws_ok(
+select lives_ok(
   $$select public.update_key_result(
     (select id from public.key_results where title = 'KR Update'),
     'KR Update', array['b1000000-0000-0000-0000-000000000006']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
-  '22023', 'Key Result owners must be eligible members of the Objective''s project.', 'update_key_result rejects an unrelated employee'
+  'update_key_result accepts an eligible organization employee'
 );
 select is(
-  (select count(*) from public.kr_assignments ka join public.key_results kr on kr.id = ka.kr_id where kr.title = 'KR Update' and ka.profile_id = 'b1000000-0000-0000-0000-000000000005'),
+  (select count(*) from public.kr_assignments ka join public.key_results kr on kr.id = ka.kr_id where kr.title = 'KR Update' and ka.profile_id = 'b1000000-0000-0000-0000-000000000006'),
   1::bigint,
-  'rejected update leaves the original owner assignment intact'
+  'update replaces the OWNER assignment'
+);
+select is(
+  (select count(*) from public.project_members pm join public.objectives o on o.project_id = pm.project_id where o.title = 'Owner Objective' and pm.profile_id = 'b1000000-0000-0000-0000-000000000006'),
+  1::bigint,
+  'updated owner remains a project member'
+);
+
+-- Inactive and pending profiles remain ineligible even without a membership prerequisite.
+select throws_ok(
+  $$select public.create_key_result(
+    (select id from public.objectives where title = 'Owner Objective'),
+    'KR Inactive', array['b1000000-0000-0000-0000-000000000008']::uuid[],
+    current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
+  '22023', 'Key Result owners must be eligible members of the Objective''s project.', 'inactive employee is rejected'
+);
+select throws_ok(
+  $$select public.create_key_result(
+    (select id from public.objectives where title = 'Owner Objective'),
+    'KR Pending', array['b1000000-0000-0000-0000-000000000009']::uuid[],
+    current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
+  '22023', 'Key Result owners must be eligible members of the Objective''s project.', 'pending employee is rejected'
 );
 
 -- 13. Historical KR assignments are not deleted (the migration is additive and

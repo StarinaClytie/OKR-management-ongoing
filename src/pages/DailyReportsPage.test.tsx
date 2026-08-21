@@ -20,14 +20,15 @@ describe('DailyReportsPage', () => {
     expect(screen.getByRole('button', { name: '填写今日日报' })).toBeEnabled();
   });
 
-  it('lets an employee submit a Daily OKR block with 今日 O, 今日 KR, and hours', async () => {
+  it('lets an employee submit a Daily OKR entry with work, result, and hours', async () => {
     const user = userEvent.setup();
     renderPageAs('user-employee');
 
     await user.click(screen.getByRole('button', { name: '填写今日日报' }));
     await user.selectOptions(screen.getByLabelText(/关联季度 KR/), 'kr-orion-onboarding');
     await user.type(screen.getByLabelText(/当日 O/), '完成实验采集第一阶段');
-    await user.type(screen.getByLabelText('第 1 组 · 今日 KR 1'), '完成样本 A 测量');
+    await user.type(screen.getByLabelText(/工作描述/), '完成样本 A 测量');
+    await user.type(screen.getByLabelText(/结果/), '完成数据采集');
     await user.type(screen.getByLabelText(/记录工时/), '3.5');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
 

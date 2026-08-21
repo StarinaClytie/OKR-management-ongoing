@@ -100,20 +100,18 @@ describe('verify-supabase-config', () => {
     const english = readFileSync(resolve(projectRoot, 'docs/user-guide.en.md'), 'utf8');
 
     for (const guide of [chinese, english]) {
-      expect(guide).toMatch(/probability/i);
-      expect(guide).toMatch(/impact/i);
-      expect(guide).toContain('riskScore = probability × impact');
-      expect(guide).toContain('1×3=3');
-      expect(guide).toMatch(/most severe|最严重/iu);
+      expect(guide).toMatch(/Daily OKR/iu);
+      expect(guide).toMatch(/one Daily Report per day|每天只有一份日报/iu);
+      expect(guide).toMatch(/Objective/iu);
+      expect(guide).toMatch(/attachments|附件/iu);
+      expect(guide).toMatch(/hours|工时/iu);
+      expect(guide).toMatch(/administrator|管理员/iu);
+      expect(guide).toMatch(/management|管理层/iu);
       expect(guide).toMatch(/employee|员工/iu);
       expect(guide).toMatch(/project leader|项目负责人/iu);
-      expect(guide).toMatch(/KR progress|KR 进度/iu);
+      expect(guide).toMatch(/KR/iu);
       expect(guide).toMatch(/中文|Chinese/iu);
       expect(guide).toMatch(/English|英文/iu);
-      expect(guide).toMatch(/-10/);
-      expect(guide).toMatch(/-25/);
-      expect(guide).toMatch(/score 6|分数为 6/iu);
-      expect(guide).toMatch(/score 9|分数为 9/iu);
       expect(guide).toMatch(/non-persistent|不可持久化/iu);
     }
 

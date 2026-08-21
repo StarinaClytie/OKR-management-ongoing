@@ -33,9 +33,10 @@ function blankBlock(linkedKeyResultId = ''): DailyReportDraft['blocks'][number] 
     id: 'block-1',
     dailyObjective: '',
     linkedKeyResultId,
+    workDescription: '',
     hours: 0,
     result: '',
-    keyResults: [{ id: 'block-1-kr-1', title: '' }],
+    evidence: [],
   };
 }
 
@@ -108,7 +109,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const canAuthor = ownedKeyResults.length > 0;
 
   const prefillDraft: DailyReportDraft | undefined = requestedKr
-    ? { blocks: [blankBlock(requestedKr.id)], evidence: [], classification: 'internal' }
+    ? { blocks: [blankBlock(requestedKr.id)], classification: 'internal' }
     : undefined;
 
   async function handleSubmit(draft: DailyReportDraft) {
@@ -123,6 +124,10 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       return { ok: false as const, error: { key: conversion.error.code === 'KEY_RESULT_NOT_AVAILABLE' ? 'daily.krMismatch' : 'daily.fixRequired' } satisfies LocalizedMessage };
     }
 
+    const existingToday = editingReport ?? currentLocalReports.find((report) => report.date === conversion.report.date);
+    let savedId = existingToday?.id ?? conversion.report.id;
+    let savedRevision = (existingToday?.currentRevision ?? 0) + 1;
+
     if (dataRepository.mode === 'supabase') {
       const input: DailyReportInput = {
         reportDate: conversion.report.date,
@@ -131,22 +136,23 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
         blocks: draft.blocks.map((block) => ({
           dailyObjective: block.dailyObjective,
           linkedKeyResultId: block.linkedKeyResultId,
+          workDescription: block.workDescription,
           hours: block.hours,
           result: block.result,
-          keyResults: block.keyResults.map((keyResult) => ({ title: keyResult.title })),
+          evidenceLinks: block.evidence.filter((item) => item.kind === 'link'),
         })),
         evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
-      const files = draft.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []);
-      const persisted = editingReport
-        ? (files.length ? await dataRepository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await dataRepository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
-        : (files.length ? await dataRepository.createDailyReportWithAttachments(input, files) : await dataRepository.createDailyReport(input));
+      const files = draft.blocks.flatMap((block, index) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification, entryPosition: index + 1 }] : []));
+      const persisted = await dataRepository.saveDailyReport(input, files);
       if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
+      savedId = persisted.data.id;
+      savedRevision = persisted.data.revision;
     }
 
     nextLocalSubmissionNonce.current += 1;
-    const saved = { ...conversion.report, id: editingReport?.id ?? conversion.report.id, currentRevision: (editingReport?.currentRevision ?? 0) + 1, updatedAt: new Date().toISOString() };
-    setLocalReports((bucket) => ({ ownerId: currentUserId, reports: editingReport ? [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : []).filter((item) => item.id !== editingReport.id)] : [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : [])] }));
+    const saved = { ...conversion.report, id: savedId, currentRevision: savedRevision, updatedAt: new Date().toISOString() };
+    setLocalReports((bucket) => ({ ownerId: currentUserId, reports: [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : []).filter((item) => item.id !== savedId)] }));
     setNotice('daily.saved');
     setEditingReport(undefined);
     restoreAuthoringFocus.current = true;
@@ -163,8 +169,8 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
             <div key={block.id} className="daily-block">
               <p><strong>{t('daily.objective')}：</strong>{block.dailyObjective}</p>
               <p><strong>{t('daily.linkedQuarterlyKr')}：</strong>{keyResultTitle(block.keyResultId, data.keyResults, t('daily.unknownMember'))}</p>
-              {block.keyResults.map((keyResult) => (
-                <p key={keyResult.id}>{t('daily.krSummaryPrefix', { number: keyResult.id, title: keyResult.title })}{keyResult.title}{t('daily.krSummarySuffix')}</p>
+              {block.workDescription ? <p><strong>{t('daily.workDescription')}：</strong>{block.workDescription}</p> : block.keyResults.map((keyResult) => (
+                <p key={keyResult.id}>{keyResult.title}</p>
               ))}
               {block.result ? <p><strong>{t('daily.result')}：</strong>{block.result}</p> : null}
             </div>

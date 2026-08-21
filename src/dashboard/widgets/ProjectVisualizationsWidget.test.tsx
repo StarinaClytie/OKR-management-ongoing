@@ -29,7 +29,7 @@ describe('ProjectVisualizationsWidget', () => {
   it('renders mobile summaries only after matchMedia enters the narrow breakpoint', async () => {
     const setMobile = mockVisualizationViewport(false);
     render(<ProjectVisualizationsWidget data={leaderData} />);
-    await screen.findByText('从项目目标向下查看 Objective、KR 与负责人。');
+    await screen.findByText('查看 Objective、KR 与负责人之间的对齐关系。');
 
     expect(screen.queryByText('OKR 对齐摘要')).not.toBeInTheDocument();
 
@@ -57,6 +57,13 @@ describe('ProjectVisualizationsWidget', () => {
       expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     },
   );
+
+  it('does not expose removed risk, capacity, or utilization views', () => {
+    render(<ProjectVisualizationsWidget data={leaderData} />);
+    expect(screen.queryByRole('tab', { name: '风险矩阵' })).not.toBeInTheDocument();
+    expect(screen.queryByText('可用容量')).not.toBeInTheDocument();
+    expect(screen.queryByText('资源利用率')).not.toBeInTheDocument();
+  });
 
   it('uses role-appropriate defaults', () => {
     const { rerender } = render(
@@ -125,38 +132,13 @@ describe('ProjectVisualizationsWidget', () => {
     expect(screen.getByText('周明（我）')).toBeVisible();
   });
 
-  it('renders the company O to project O to KR hierarchy from one authorized model', () => {
+  it('renders only the Objective to KR hierarchy without a duplicate project objective layer', () => {
     render(<AlignmentTreeWidget data={leaderData} />);
 
-    expect(screen.getByText('公司 O')).toBeVisible();
-    expect(screen.getByText('提升客户价值与可持续增长')).toBeVisible();
     expect(screen.getByText('让新用户在首周感受到核心价值')).toBeVisible();
     expect(screen.getByText('将七日激活率提升至 62%')).toBeVisible();
-  });
-
-  it('groups each project beneath its linked authorized company objective', () => {
-    const second = { ...leaderData.companyObjectives[0]!, id: 'company-second', title: '第二个公司目标' };
-    const data = {
-      ...leaderData,
-      companyObjectives: [...leaderData.companyObjectives, second],
-      projects: leaderData.projects.map((project, index) => ({ ...project, companyObjectiveId: index === 0 ? leaderData.companyObjectives[0]!.id : second.id })),
-    };
-    render(<AlignmentTreeWidget data={data} />);
-
-    const firstGroup = screen.getByRole('region', { name: `公司目标：${leaderData.companyObjectives[0]!.title}` });
-    const secondGroup = screen.getByRole('region', { name: '公司目标：第二个公司目标' });
-    expect(firstGroup).toHaveTextContent(data.projects[0]!.name);
-    expect(firstGroup).not.toHaveTextContent(data.projects[1]!.name);
-    expect(secondGroup).toHaveTextContent(data.projects[1]!.name);
-    expect(secondGroup).not.toHaveTextContent(data.projects[0]!.name);
-  });
-
-  it('does not attach projects to an unauthorized company objective', () => {
-    const secret = { ...leaderData.companyObjectives[0]!, id: 'company-secret', title: '受限公司目标名称', classification: 'restricted' as const };
-    const data = { ...leaderData, companyObjectives: [...leaderData.companyObjectives, secret], projects: leaderData.projects.map((project, index) => index === 0 ? { ...project, companyObjectiveId: secret.id } : project) };
-    render(<AlignmentTreeWidget data={data} />);
-    expect(screen.queryByText(secret.title)).not.toBeInTheDocument();
-    expect(screen.getByText(data.projects[0]!.name)).toBeVisible();
+    expect(screen.queryByText('项目目标')).not.toBeInTheDocument();
+    expect(screen.queryByText(leaderData.projects[0]!.name)).not.toBeInTheDocument();
   });
 
   it('includes separately modeled tasks beneath their authorized KR in the Gantt chart', () => {

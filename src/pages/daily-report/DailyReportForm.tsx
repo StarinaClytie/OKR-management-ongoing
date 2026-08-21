@@ -25,6 +25,8 @@ const validationKeys: Record<string, MessageKey> = {
   '工时需填写有限且不小于 0 的数值': 'validation.hoursInvalid',
   '请至少添加一个当日 KR': 'validation.krRequired',
   '请填写 KR 内容': 'validation.krContentRequired',
+  '请填写工作描述': 'validation.krNoteRequired',
+  '请填写结果或数据': 'validation.resultRequired',
   '请填写成果名称或链接说明': 'validation.evidenceName',
   '请选择成果类型': 'validation.evidenceType',
   '请选择有效的成果密级': 'validation.evidenceClassification',
@@ -42,9 +44,10 @@ function newBlock(id: string, linkedKeyResultId = ''): DailyOkrBlockDraft {
     id,
     dailyObjective: '',
     linkedKeyResultId,
+    workDescription: '',
     hours: 0,
     result: '',
-    keyResults: [{ id: `${id}-kr-1`, title: '' }],
+    evidence: [],
   };
 }
 
@@ -52,11 +55,10 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const { t } = useLocale();
   const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft
     ? structuredClone(initialDraft)
-    : { blocks: [newBlock('block-1')], evidence: [], classification: 'internal' });
+    : { blocks: [newBlock('block-1')], classification: 'internal' });
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
   const [status, setStatus] = useState<LocalizedMessage | null>(null);
   const nextBlockId = useRef(initialDraft?.blocks.length ?? 1);
-  const nextKrId = useRef(100);
 
   const validationErrors = useMemo(() => showSubmitErrors
     ? Object.fromEntries(validateDailyReportDraft(draft).map((issue) => [issue.field, localizeValidation(issue.message, t)!])) as Record<string, string>
@@ -70,15 +72,6 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
     setDraft((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) }));
   };
 
-  const updateBlockKr = (blockId: string, krId: string, title: string) => {
-    setDraft((current) => ({
-      ...current,
-      blocks: current.blocks.map((block) => block.id === blockId
-        ? { ...block, keyResults: block.keyResults.map((keyResult) => keyResult.id === krId ? { ...keyResult, title } : keyResult) }
-        : block),
-    }));
-  };
-
   const addBlock = () => {
     nextBlockId.current += 1;
     const id = `block-${nextBlockId.current}`;
@@ -90,25 +83,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
     setDraft((current) => ({ ...current, blocks: current.blocks.filter((block) => block.id !== id) }));
   };
 
-  const addBlockKr = (blockId: string) => {
-    nextKrId.current += 1;
-    const krId = `daily-kr-${nextKrId.current}`;
-    setDraft((current) => ({
-      ...current,
-      blocks: current.blocks.map((block) => block.id === blockId
-        ? { ...block, keyResults: [...block.keyResults, { id: krId, title: '' }] }
-        : block),
-    }));
-  };
-
-  const removeBlockKr = (blockId: string, krId: string) => {
-    setDraft((current) => ({
-      ...current,
-      blocks: current.blocks.map((block) => block.id === blockId
-        ? (block.keyResults.length === 1 ? block : { ...block, keyResults: block.keyResults.filter((keyResult) => keyResult.id !== krId) })
-        : block),
-    }));
-  };
+  const lastBlockComplete = validateDailyReportDraft({ blocks: [draft.blocks[draft.blocks.length - 1]!], classification: draft.classification }).length === 0;
 
   const submit = async () => {
     setShowSubmitErrors(true);
@@ -164,26 +139,27 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                 />
               </label>
 
-              <div className="modal-field">
-                <span>{t('daily.todayKrs')}</span>
-                <div className="daily-kr-editor">
-                  {block.keyResults.map((keyResult, krIndex) => (
-                    <div key={keyResult.id} className="daily-kr-editor__row">
-                      <input
-                        aria-label={t('daily.blockKrLabel', { block: index + 1, number: krIndex + 1 })}
-                        value={keyResult.title}
-                        aria-invalid={Boolean(validationErrors[`${prefix}.keyResults.${krIndex}.title`])}
-                        onChange={(event) => updateBlockKr(block.id, keyResult.id, event.target.value)}
-                        placeholder={t('daily.krPlaceholder')}
-                      />
-                      {block.keyResults.length > 1 ? (
-                        <button type="button" className="button button--secondary" onClick={() => removeBlockKr(block.id, keyResult.id)} aria-label={t('daily.removeKr')}>{t('common.cancel')}</button>
-                      ) : null}
-                    </div>
-                  ))}
-                  <button type="button" className="button button--secondary" onClick={() => addBlockKr(block.id)}>{t('daily.addTodayKr')}</button>
-                </div>
-              </div>
+              {block.linkedKeyResultId ? <p className="modal-field"><span>{t('alignment.companyO')}</span><strong>{objectiveById.get(ownedKeyResults.find((keyResult) => keyResult.id === block.linkedKeyResultId)?.objectiveId ?? '')?.title ?? '—'}</strong></p> : null}
+
+              <label className="modal-field">
+                <span>{t('daily.workDescription')} *</span>
+                <textarea value={block.workDescription} aria-invalid={Boolean(validationErrors[`${prefix}.workDescription`])} onChange={(event) => updateBlock(block.id, { workDescription: event.target.value })} rows={3} />
+              </label>
+
+              <label className="modal-field">
+                <span>{t('daily.result')} *</span>
+                <textarea value={block.result} aria-invalid={Boolean(validationErrors[`${prefix}.result`])} onChange={(event) => updateBlock(block.id, { result: event.target.value })} rows={2} />
+              </label>
+
+              <DailyReportEvidence
+                objectives={[]}
+                evidence={block.evidence}
+                idPrefix={block.id}
+                errorPrefix={`${prefix}.`}
+                onLinkedObjectiveChange={() => undefined}
+                onEvidenceChange={(evidence) => updateBlock(block.id, { evidence })}
+                errors={validationErrors}
+              />
 
               <label className="modal-field">
                 <span>{t('daily.blockHours')} *</span>
@@ -198,24 +174,11 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                 />
               </label>
 
-              <label className="modal-field">
-                <span>{t('daily.result')}</span>
-                <textarea value={block.result} onChange={(event) => updateBlock(block.id, { result: event.target.value })} rows={2} />
-              </label>
             </section>
           );
         })}
 
-        <button type="button" className="button button--secondary" onClick={addBlock}>{t('daily.addBlock')}</button>
-
-        <DailyReportEvidence
-          objectives={[]}
-          linkedObjectiveId={undefined}
-          evidence={draft.evidence}
-          onLinkedObjectiveChange={() => undefined}
-          onEvidenceChange={(evidence) => setDraft((current) => ({ ...current, evidence }))}
-          errors={validationErrors}
-        />
+        {lastBlockComplete ? <button type="button" className="button button--secondary" onClick={addBlock}>{t('daily.addBlock')}</button> : null}
 
         <p className="daily-total-hours">{t('daily.totalHours', { count: totalHours })}</p>
 

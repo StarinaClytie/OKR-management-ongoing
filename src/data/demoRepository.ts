@@ -323,6 +323,7 @@ export class DemoOkrRepository implements OkrRepository {
   // ---- Daily reports (preview) ----
 
   async createDailyReport(_input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>> { return unsupported<{ id: string; revision: number }>(); }
+  async saveDailyReport(_input: DailyReportInput, _attachments: ClassifiedAttachmentInput[] = []): Promise<RepositoryResult<{ id: string; revision: number }>> { return unsupported<{ id: string; revision: number }>(); }
   async createDailyReportWithAttachments(_input: DailyReportInput, _attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>> { return unsupported<{ id: string; revision: number }>(); }
   async updateDailyReport(_reportId: string, _expectedRevision: number, _input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>> { return unsupported<{ revision: number }>(); }
   async updateDailyReportWithAttachments(_reportId: string, _expectedRevision: number, _input: DailyReportInput, _attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ revision: number }>> { return unsupported<{ revision: number }>(); }

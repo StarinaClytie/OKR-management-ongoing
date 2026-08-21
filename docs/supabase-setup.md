@@ -1,4 +1,4 @@
-# Northstar OKR：Supabase 与阿里云上线手册
+# 瞬谱光电 OKR：Supabase 与阿里云上线手册
 
 ## 1. 上线边界
 
