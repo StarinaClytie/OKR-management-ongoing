@@ -56,14 +56,16 @@ const trackedText = ['README.md', '.env.example'].map((file) => { try { return r
 if (/service_role\s*=|postgres(?:ql)?:\/\/[^\s]+:[^\s]+@/i.test(trackedText)) failures.push('文档或示例疑似包含高权限密钥/数据库连接串');
 
 const guideChecks = [
-  /probability/i,
-  /impact/i,
-  /riskScore = probability × impact/,
-  /1×3=3/,
-  /most severe|最严重/iu,
+  /Daily OKR/iu,
+  /one Daily Report per day|每天只有一份日报/iu,
+  /Objective/iu,
+  /attachments|附件/iu,
+  /hours|工时/iu,
+  /administrator|管理员/iu,
+  /management|管理层/iu,
   /employee|员工/iu,
   /project leader|项目负责人/iu,
-  /KR progress|KR 进度/iu,
+  /KR/iu,
   /中文|Chinese/iu,
   /English|英文/iu,
 ];
@@ -77,7 +79,7 @@ for (const guidePath of ['docs/user-guide.zh-CN.md', 'docs/user-guide.en.md']) {
     continue;
   }
   if (!guideChecks.every((pattern) => pattern.test(guide))) {
-    failures.push(`用户指南缺少必需的风险、权限或语言切换说明：${guidePath}`);
+    failures.push(`用户指南缺少必需的 OKR、日报、权限或语言切换说明：${guidePath}`);
   }
 }
 
