@@ -119,7 +119,7 @@ describe('SupabaseOkrRepository', () => {
     const { client, rpc } = createClient({ rpcData: 'report-1' });
     const result = await new SupabaseOkrRepository(client).createDailyReport({
       reportDate: '2026-08-13', status: 'submitted', classification: 'internal',
-      blocks: [{ dailyObjective: '完成目标', linkedKeyResultId: 'kr-1', hours: 2, result: '', keyResults: [{ title: 'KR' }] }],
+      blocks: [{ dailyObjective: '完成目标', linkedKeyResultId: 'kr-1', workDescription: '执行 KR', hours: 2, result: '完成', evidenceLinks: [] }],
       evidenceLinks: [],
     });
     expect(result).toEqual({ ok: true, data: { id: 'report-1', revision: 1 } });
@@ -132,7 +132,7 @@ describe('SupabaseOkrRepository', () => {
     const { client } = createClient({ rpcError: { code: '40001', message: 'Daily report revision conflict' } });
     const result = await new SupabaseOkrRepository(client).updateDailyReport('report-1', 3, {
       reportDate: '2026-08-13', status: 'submitted', classification: 'internal',
-      blocks: [{ dailyObjective: '更新', linkedKeyResultId: 'kr-1', hours: 2, result: '', keyResults: [{ title: 'KR' }] }],
+      blocks: [{ dailyObjective: '更新', linkedKeyResultId: 'kr-1', workDescription: '执行 KR', hours: 2, result: '完成', evidenceLinks: [] }],
       evidenceLinks: [],
     });
     expect(result).toEqual({ ok: false, error: { code: 'conflict', message: '请求未完成，请稍后重试' } });
@@ -348,7 +348,7 @@ describe('SupabaseOkrRepository', () => {
     const { client } = createClient();
     client.rpc = rpc;
     client.storage.from = vi.fn(() => ({ upload, createSignedUrl: vi.fn(), remove: vi.fn() }));
-    const input = { reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, blocks: [{ dailyObjective: '目标', linkedKeyResultId: 'kr-1', hours: 2, result: '', keyResults: [{ title: 'KR' }] }], evidenceLinks: [] };
+    const input = { reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, blocks: [{ dailyObjective: '目标', linkedKeyResultId: 'kr-1', workDescription: '执行 KR', hours: 2, result: '完成', evidenceLinks: [] }], evidenceLinks: [] };
     const result = await new SupabaseOkrRepository(client).createDailyReportWithAttachments(input, [{ file: new File(['x'], 'a.pdf', { type: 'application/pdf' }), classification: 'confidential' }]);
     expect(result).toEqual({ ok: true, data: { id: 'report-shell', revision: 1 } });
     expect(rpc.mock.calls.map((call) => call[0])).toEqual(['begin_daily_report_with_attachments', 'begin_attachment_upload', 'finalize_attachment_upload', 'update_daily_report_with_attachments']);

@@ -117,9 +117,10 @@ export interface ResourceUploadTarget { id: string; path: string; bucket: 'resou
 export interface DailyOkrBlockInput {
   dailyObjective: string;
   linkedKeyResultId: string;
+  workDescription: string;
   hours: number;
   result: string;
-  keyResults: Array<{ title: string }>;
+  evidenceLinks: unknown[];
 }
 
 export interface DailyReportInput {

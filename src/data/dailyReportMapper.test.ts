@@ -16,8 +16,8 @@ it('maps a persisted block report to an editable block draft', () => {
   expect(dailyReportToDraft(report)).toEqual(expect.objectContaining({
     blocks: [expect.objectContaining({
       dailyObjective: '完成实验采集第一阶段', linkedKeyResultId: 'kr-1', hours: 3.5, result: '样本已采集',
-      keyResults: [expect.objectContaining({ title: '完成样本 A 测量' })],
+      workDescription: '完成样本 A 测量',
+      evidence: [expect.objectContaining({ classification: 'confidential' })],
     })],
-    evidence: [expect.objectContaining({ classification: 'confidential' })],
   }));
 });

@@ -33,9 +33,10 @@ function blankBlock(linkedKeyResultId = ''): DailyReportDraft['blocks'][number] 
     id: 'block-1',
     dailyObjective: '',
     linkedKeyResultId,
+    workDescription: '',
     hours: 0,
     result: '',
-    keyResults: [{ id: 'block-1-kr-1', title: '' }],
+    evidence: [],
   };
 }
 
@@ -108,7 +109,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const canAuthor = ownedKeyResults.length > 0;
 
   const prefillDraft: DailyReportDraft | undefined = requestedKr
-    ? { blocks: [blankBlock(requestedKr.id)], evidence: [], classification: 'internal' }
+    ? { blocks: [blankBlock(requestedKr.id)], classification: 'internal' }
     : undefined;
 
   async function handleSubmit(draft: DailyReportDraft) {
@@ -131,13 +132,14 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
         blocks: draft.blocks.map((block) => ({
           dailyObjective: block.dailyObjective,
           linkedKeyResultId: block.linkedKeyResultId,
+          workDescription: block.workDescription,
           hours: block.hours,
           result: block.result,
-          keyResults: block.keyResults.map((keyResult) => ({ title: keyResult.title })),
+          evidenceLinks: block.evidence.filter((item) => item.kind === 'link'),
         })),
         evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
-      const files = draft.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []);
+      const files = draft.blocks.flatMap((block) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []));
       const persisted = editingReport
         ? (files.length ? await dataRepository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await dataRepository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
         : (files.length ? await dataRepository.createDailyReportWithAttachments(input, files) : await dataRepository.createDailyReport(input));
@@ -163,8 +165,8 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
             <div key={block.id} className="daily-block">
               <p><strong>{t('daily.objective')}：</strong>{block.dailyObjective}</p>
               <p><strong>{t('daily.linkedQuarterlyKr')}：</strong>{keyResultTitle(block.keyResultId, data.keyResults, t('daily.unknownMember'))}</p>
-              {block.keyResults.map((keyResult) => (
-                <p key={keyResult.id}>{t('daily.krSummaryPrefix', { number: keyResult.id, title: keyResult.title })}{keyResult.title}{t('daily.krSummarySuffix')}</p>
+              {block.workDescription ? <p><strong>{t('daily.workDescription')}：</strong>{block.workDescription}</p> : block.keyResults.map((keyResult) => (
+                <p key={keyResult.id}>{keyResult.title}</p>
               ))}
               {block.result ? <p><strong>{t('daily.result')}：</strong>{block.result}</p> : null}
             </div>

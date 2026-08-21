@@ -6,14 +6,18 @@ export function dailyReportToDraft(report: DailyReport): DailyReportDraft {
     id: block.id || `block-${index + 1}`,
     dailyObjective: block.dailyObjective,
     linkedKeyResultId: block.keyResultId,
+    workDescription: block.workDescription ?? block.keyResults[0]?.title ?? '',
     hours: block.hours,
     result: block.result,
-    keyResults: block.keyResults.map((keyResult, krIndex) => ({ ...keyResult, id: keyResult.id || `daily-kr-${krIndex + 1}` })),
+    evidence: (block.evidenceItems ?? []).map((item) => ({ ...item })),
   }));
+
+  if (blocks.length > 0 && blocks.every((block) => block.evidence.length === 0)) {
+    blocks[0]!.evidence = (report.evidenceItems ?? report.evidence.map((label, index) => ({ id: `evidence-${index + 1}`, label, kind: 'link' as const, classification: report.evidenceClassification }))).map((item) => ({ ...item }));
+  }
 
   return {
     blocks,
-    evidence: (report.evidenceItems ?? report.evidence.map((label, index) => ({ id: `evidence-${index + 1}`, label, kind: 'link' as const, classification: report.evidenceClassification }))).map((item) => ({ ...item })),
     classification: report.classification,
   };
 }

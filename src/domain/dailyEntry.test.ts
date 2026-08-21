@@ -12,9 +12,10 @@ function block(overrides: Partial<DailyOkrBlockDraft> = {}): DailyOkrBlockDraft 
     id: 'block-1',
     dailyObjective: '完成实验数据采集第一阶段',
     linkedKeyResultId: 'kr-linked',
+    workDescription: '执行实验与数据整理',
     hours: 3.5,
     result: '采集到样本数据',
-    keyResults: [{ id: 'kr-1', title: '完成样本 A 测量' }, { id: 'kr-2', title: '完成样本 B 测量' }],
+    evidence: [],
     ...overrides,
   };
 }
@@ -32,7 +33,6 @@ function conversionContext(overrides: Partial<DailyReportConversionContext> = {}
 function draft(overrides: Partial<DailyReportDraft> = {}): DailyReportDraft {
   return {
     blocks: [block()],
-    evidence: [],
     classification: 'internal',
     ...overrides,
   };
@@ -51,13 +51,14 @@ describe('daily OKR block validation', () => {
     ]));
   });
 
-  it('requires at least one Daily KR with content in every block', () => {
+  it('requires a work description and result in every entry', () => {
     const issues = validateDailyReportDraft(draft({
-      blocks: [block({ keyResults: [{ id: 'kr-1', title: ' ' }] })],
+      blocks: [block({ workDescription: ' ', result: ' ' })],
     }));
 
     expect(issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ field: 'blocks.0.keyResults.0.title', message: '请填写 KR 内容' }),
+      expect.objectContaining({ field: 'blocks.0.workDescription' }),
+      expect.objectContaining({ field: 'blocks.0.result' }),
     ]));
   });
 
@@ -73,7 +74,7 @@ describe('daily OKR block conversion', () => {
     const result = toLocalDailyReport(draft({
       blocks: [
         block({ hours: 3.5 }),
-        block({ id: 'block-2', hours: 2.5, dailyObjective: '完成数据整理', linkedKeyResultId: 'kr-linked', keyResults: [{ id: 'kr-3', title: '清洗异常值' }] }),
+        block({ id: 'block-2', hours: 2.5, dailyObjective: '完成数据整理', linkedKeyResultId: 'kr-linked' }),
       ],
     }), conversionContext());
 
