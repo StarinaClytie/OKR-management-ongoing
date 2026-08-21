@@ -39,6 +39,11 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('heading', { name: '组织经营概览' })).toBeVisible();
     expect(screen.getByText('公司 OKR 健康度')).toBeVisible();
+    expect(screen.getByLabelText('Objective 完成率')).toBeVisible();
+    expect(screen.getByLabelText('KR 完成率')).toBeVisible();
+    expect(screen.getByLabelText('员工已记录工时')).toBeVisible();
+    expect(screen.getByLabelText('项目进度')).toBeVisible();
+    expect(screen.getAllByText(/项目负责人：/).length).toBeGreaterThan(0);
     expect(screen.getByText('项目专业视图')).toBeVisible();
     expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
   });
