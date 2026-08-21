@@ -1,4 +1,4 @@
-# Northstar OKR
+# 瞬谱光电 · TIME-TECH SPECTRA OKR
 
 一个中文优先、可即时切换 English 的企业 OKR 应用，提供角色化仪表盘、真实 KR 进度历史、风险事件矩阵与执行状态解释、结构化日报、修订历史，以及由 Supabase RLS 和私有 Storage 保护的附件。
 

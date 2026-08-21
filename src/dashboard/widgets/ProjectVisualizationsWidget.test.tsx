@@ -58,6 +58,13 @@ describe('ProjectVisualizationsWidget', () => {
     },
   );
 
+  it('does not expose removed risk, capacity, or utilization views', () => {
+    render(<ProjectVisualizationsWidget data={leaderData} />);
+    expect(screen.queryByRole('tab', { name: '风险矩阵' })).not.toBeInTheDocument();
+    expect(screen.queryByText('可用容量')).not.toBeInTheDocument();
+    expect(screen.queryByText('资源利用率')).not.toBeInTheDocument();
+  });
+
   it('uses role-appropriate defaults', () => {
     const { rerender } = render(
       <ProjectVisualizationsWidget data={mockRepository.getDashboardData('user-employee')} />,

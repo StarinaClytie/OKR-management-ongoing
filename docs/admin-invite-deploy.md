@@ -93,7 +93,7 @@ Auth Admin API 与 Postgres 不是同一事务，因此做了补偿与幂等：
 3. 成功邀请显示「邀请已发送至 {email}」，新用户直接出现在「已启用用户」列表。
 4. 邀请已存在的 auth 用户（缺 profile）显示「账号已存在，组织权限已补全」。
 5. 邮箱已属于组织成员时显示「该邮箱已属于组织成员」。
-6. 员工点邀请邮件回到 `/auth/invite`，显示「欢迎加入 Northstar OKR」，设置密码后进入 dashboard。
+6. 员工点邀请邮件回到 `/auth/invite`，显示「欢迎加入瞬谱光电 OKR」，设置密码后进入 dashboard。
 7. 密码不一致 / 过短有明确提示；设置成功后不再要求管理员临时密码。
 8. 停用管理员调用 `admin-invite-user` 被拒绝；非管理员被拒绝。
 9. demo 模式行为不变（无邀请按钮，因为 `adminUserService` 为 undefined）。

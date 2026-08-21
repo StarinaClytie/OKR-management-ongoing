@@ -1,4 +1,4 @@
-# Northstar OKR — 全新阿里云 RDS Supabase 初始化方案
+# 瞬谱光电 OKR — 全新阿里云 RDS Supabase 初始化方案
 
 本文描述把 OKR 项目从旧 Supabase Cloud 切换到**全新的阿里云 RDS Supabase**（Supabase 自托管于阿里云 ECS、PostgreSQL 使用阿里云 RDS）时，如何**只部署结构（schema / RLS / function / trigger / storage）**，**不迁移任何旧业务数据**。
 

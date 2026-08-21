@@ -29,7 +29,7 @@ export type SendEmailResult =
   | { ok: false; code: SendEmailErrorCode };
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
-const DEFAULT_FROM = 'Northstar OKR <no-reply@okr.groupmeeting.xyz>';
+const DEFAULT_FROM = 'TIME-TECH SPECTRA OKR <no-reply@okr.groupmeeting.xyz>';
 
 export async function sendTransactionalEmail(email: TransactionalEmail): Promise<SendEmailResult> {
   const apiKey = Deno.env.get('RESEND_API_KEY');

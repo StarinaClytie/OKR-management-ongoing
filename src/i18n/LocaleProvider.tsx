@@ -3,7 +3,7 @@ import { useAuth } from '../auth/AuthContext';
 import type { OkrRepository } from '../data/types';
 import { translate, type Locale, type MessageKey } from './messages';
 
-const STORAGE_KEY = 'northstar.locale';
+const STORAGE_KEY = 'time-tech-spectra.locale';
 
 function isLocale(value: unknown): value is Locale {
   return value === 'zh-CN' || value === 'en';
