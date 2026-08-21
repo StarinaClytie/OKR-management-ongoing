@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { KrMetricType, OkrPriority, Role, User } from '../../domain/types';
+import type { OrganizationUser } from '../../data/types';
+import type { KrMetricType, OkrPriority, Role } from '../../domain/types';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { MessageKey } from '../../i18n/messages';
 
@@ -34,7 +35,7 @@ export interface KeyResultFormValues {
 export interface KeyResultFormModalProps {
   title: string;
   initial: KeyResultFormValues;
-  members: readonly User[];
+  ownerCandidates: readonly OrganizationUser[];
   submitting?: boolean;
   error?: string;
   onSubmit: (values: KeyResultFormValues) => void;
@@ -43,7 +44,7 @@ export interface KeyResultFormModalProps {
 
 const numberValue = (value: string): number | undefined => (value === '' ? undefined : Number(value));
 
-export function KeyResultFormModal({ title, initial, members, submitting = false, error, onSubmit, onClose }: KeyResultFormModalProps) {
+export function KeyResultFormModal({ title, initial, ownerCandidates, submitting = false, error, onSubmit, onClose }: KeyResultFormModalProps) {
   const { t } = useLocale();
   const [values, setValues] = useState<KeyResultFormValues>(initial);
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
@@ -67,7 +68,12 @@ export function KeyResultFormModal({ title, initial, members, submitting = false
     setFieldError(undefined);
   }
 
-  const ownerCandidates = members.filter((member) => ownerRoles.includes(member.role));
+  const eligibleOwnerCandidates = ownerCandidates.filter((candidate) => (
+    candidate.isActive
+    && candidate.approvalStatus === 'approved'
+    && candidate.role !== null
+    && ownerRoles.includes(candidate.role)
+  ));
 
   function toggleOwner(userId: string) {
     setValues((current) => ({
@@ -112,10 +118,10 @@ export function KeyResultFormModal({ title, initial, members, submitting = false
         <div className="modal-field">
           <span>{t('kr.field.owners')} *</span>
           <div className="member-picker">
-            {ownerCandidates.map((member) => (
-              <label key={member.id} className="member-picker__option">
-                <input type="checkbox" checked={values.ownerIds.includes(member.id)} onChange={() => toggleOwner(member.id)} />
-                <span>{member.name}</span>
+            {eligibleOwnerCandidates.map((candidate) => (
+              <label key={candidate.id} className="member-picker__option">
+                <input type="checkbox" checked={values.ownerIds.includes(candidate.id)} onChange={() => toggleOwner(candidate.id)} />
+                <span>{candidate.displayName}</span>
               </label>
             ))}
           </div>

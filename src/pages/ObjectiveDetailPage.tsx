@@ -90,10 +90,6 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const okrStatus = resolveOkrStatus(objectiveData.okrStatus, overallProgress, objectiveData.startDate, objectiveData.dueDate, evaluationDate);
   const canManage = canManageKeyResults(signedInUser, objectiveData);
   const isArchived = objectiveData.archivedAt != null;
-  const objectiveProject = dashboardData.projects.find((project) => project.id === objectiveData.projectId);
-  const projectMembers = objectiveProject
-    ? dashboardData.users.filter((user) => objectiveProject.memberIds.includes(user.id))
-    : dashboardData.users;
   const objectiveUpdates = dashboardData.krProgressUpdates.filter((update) => objectiveKrs.some((keyResult) => keyResult.id === update.krId));
   const projectReports = dashboardData.dailyReports.filter((report) => report.objectiveId === objectiveData.id);
 
@@ -204,13 +200,20 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
     setEditObjective(true);
   };
 
+  const openCreateKeyResult = async () => {
+    setFormError(undefined);
+    const candidates = await loadEligibleUsers();
+    setEligibleUsers(candidates);
+    setKrOpen(true);
+  };
+
   return (
     <section className="business-page" aria-labelledby="objective-detail-title">
       <Link className="text-link" to="/okrs">{t('objective.backToOkr')}</Link>
       <PageHeader
         title={objectiveData.title}
         description={objectiveData.description}
-        primaryAction={canManage ? { label: t('objective.addKeyResult'), onClick: () => { setFormError(undefined); setKrOpen(true); } } : undefined}
+        primaryAction={canManage ? { label: t('objective.addKeyResult'), onClick: () => void openCreateKeyResult() } : undefined}
       >
         {canEditObjective(signedInUser, objectiveData) ? <button className="button button--secondary" type="button" onClick={() => void openEditObjective()}>{t('okr.editObjective')}</button> : null}
         {canArchiveObjective(signedInUser) ? <button className="button button--secondary" type="button" onClick={() => setArchiveConfirm(true)}>{isArchived ? t('okr.restore') : t('okr.archive')}</button> : null}
@@ -330,7 +333,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
         <KeyResultFormModal
           title={t('kr.createTitle')}
           initial={{ ...emptyKrForm, deadline: objectiveData.dueDate }}
-          members={projectMembers}
+          ownerCandidates={eligibleUsers}
           submitting={submitting}
           error={formError}
           onSubmit={(values) => void handleSaveKeyResult(values)}
