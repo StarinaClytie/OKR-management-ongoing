@@ -124,6 +124,10 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       return { ok: false as const, error: { key: conversion.error.code === 'KEY_RESULT_NOT_AVAILABLE' ? 'daily.krMismatch' : 'daily.fixRequired' } satisfies LocalizedMessage };
     }
 
+    const existingToday = editingReport ?? currentLocalReports.find((report) => report.date === conversion.report.date);
+    let savedId = existingToday?.id ?? conversion.report.id;
+    let savedRevision = (existingToday?.currentRevision ?? 0) + 1;
+
     if (dataRepository.mode === 'supabase') {
       const input: DailyReportInput = {
         reportDate: conversion.report.date,
@@ -139,16 +143,16 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
         })),
         evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
-      const files = draft.blocks.flatMap((block) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification }] : []));
-      const persisted = editingReport
-        ? (files.length ? await dataRepository.updateDailyReportWithAttachments(editingReport.id, editingReport.currentRevision ?? 1, input, files) : await dataRepository.updateDailyReport(editingReport.id, editingReport.currentRevision ?? 1, input))
-        : (files.length ? await dataRepository.createDailyReportWithAttachments(input, files) : await dataRepository.createDailyReport(input));
+      const files = draft.blocks.flatMap((block, index) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification, entryPosition: index + 1 }] : []));
+      const persisted = await dataRepository.saveDailyReport(input, files);
       if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
+      savedId = persisted.data.id;
+      savedRevision = persisted.data.revision;
     }
 
     nextLocalSubmissionNonce.current += 1;
-    const saved = { ...conversion.report, id: editingReport?.id ?? conversion.report.id, currentRevision: (editingReport?.currentRevision ?? 0) + 1, updatedAt: new Date().toISOString() };
-    setLocalReports((bucket) => ({ ownerId: currentUserId, reports: editingReport ? [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : []).filter((item) => item.id !== editingReport.id)] : [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : [])] }));
+    const saved = { ...conversion.report, id: savedId, currentRevision: savedRevision, updatedAt: new Date().toISOString() };
+    setLocalReports((bucket) => ({ ownerId: currentUserId, reports: [saved, ...(bucket.ownerId === currentUserId ? bucket.reports : []).filter((item) => item.id !== savedId)] }));
     setNotice('daily.saved');
     setEditingReport(undefined);
     restoreAuthoringFocus.current = true;

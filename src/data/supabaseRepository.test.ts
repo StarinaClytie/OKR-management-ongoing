@@ -128,6 +128,20 @@ describe('SupabaseOkrRepository', () => {
     }));
   });
 
+  it('saves both first and repeated same-day submissions through one atomic RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: [{ report_id: 'report-1', revision: 2 }] });
+    const result = await new SupabaseOkrRepository(client).saveDailyReport({
+      reportDate: '2026-08-13', status: 'submitted', classification: 'internal',
+      blocks: [{ dailyObjective: '完成目标', linkedKeyResultId: 'kr-1', workDescription: '执行 KR', hours: 2, result: '完成', evidenceLinks: [] }],
+      evidenceLinks: [],
+    });
+
+    expect(result).toEqual({ ok: true, data: { id: 'report-1', revision: 2 } });
+    expect(rpc).toHaveBeenCalledWith('save_daily_report', expect.objectContaining({
+      p_report_date: '2026-08-13', p_blocks: expect.any(Array),
+    }));
+  });
+
   it('maps PostgreSQL serialization errors to revision conflicts', async () => {
     const { client } = createClient({ rpcError: { code: '40001', message: 'Daily report revision conflict' } });
     const result = await new SupabaseOkrRepository(client).updateDailyReport('report-1', 3, {
