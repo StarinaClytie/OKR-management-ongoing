@@ -2,14 +2,15 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(36);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: one organization with an administrator, management, two project
--- leaders, three employees, and inactive/pending accounts.
+-- leaders, four employees, HR, and inactive/pending accounts.
 --
 --   PL1 leads the Objective's project; EmpA and PL2 are added as members.
---   EmpB is a member of an unrelated project. EmpNoMember belongs to nothing.
+--   EmpB is a member of an unrelated project. EmpNoMember and EmpNoMemberTwo
+--   belong to nothing.
 -- ---------------------------------------------------------------------------
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select '00000000-0000-0000-0000-000000000001', id, 'authenticated', 'authenticated', email, 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()
@@ -22,7 +23,9 @@ from (values
   ('b1000000-0000-0000-0000-000000000006'::uuid, 'empb@kr-owner.test'),
   ('b1000000-0000-0000-0000-000000000007'::uuid, 'empnomember@kr-owner.test'),
   ('b1000000-0000-0000-0000-000000000008'::uuid, 'inactive@kr-owner.test'),
-  ('b1000000-0000-0000-0000-000000000009'::uuid, 'pending@kr-owner.test')
+  ('b1000000-0000-0000-0000-000000000009'::uuid, 'pending@kr-owner.test'),
+  ('b1000000-0000-0000-0000-000000000010'::uuid, 'empnomembertwo@kr-owner.test'),
+  ('b1000000-0000-0000-0000-000000000011'::uuid, 'hr@kr-owner.test')
 ) users(id, email);
 
 insert into public.organizations (id, name) values ('b2000000-0000-0000-0000-000000000001', 'KR Owner Organization');
@@ -36,7 +39,9 @@ insert into public.profiles (id, organization_id, display_name, clearance) value
   ('b1000000-0000-0000-0000-000000000006', 'b2000000-0000-0000-0000-000000000001', 'Employee B', 'confidential'),
   ('b1000000-0000-0000-0000-000000000007', 'b2000000-0000-0000-0000-000000000001', 'Employee No Member', 'confidential'),
   ('b1000000-0000-0000-0000-000000000008', 'b2000000-0000-0000-0000-000000000001', 'Inactive User', 'confidential'),
-  ('b1000000-0000-0000-0000-000000000009', 'b2000000-0000-0000-0000-000000000001', 'Pending User', 'confidential');
+  ('b1000000-0000-0000-0000-000000000009', 'b2000000-0000-0000-0000-000000000001', 'Pending User', 'confidential'),
+  ('b1000000-0000-0000-0000-000000000010', 'b2000000-0000-0000-0000-000000000001', 'Employee No Member Two', 'confidential'),
+  ('b1000000-0000-0000-0000-000000000011', 'b2000000-0000-0000-0000-000000000001', 'Human Resources', 'confidential');
 
 update public.profiles set approval_status = 'approved'
 where id in (
@@ -47,7 +52,9 @@ where id in (
   'b1000000-0000-0000-0000-000000000005',
   'b1000000-0000-0000-0000-000000000006',
   'b1000000-0000-0000-0000-000000000007',
-  'b1000000-0000-0000-0000-000000000008'
+  'b1000000-0000-0000-0000-000000000008',
+  'b1000000-0000-0000-0000-000000000010',
+  'b1000000-0000-0000-0000-000000000011'
 );
 update public.profiles set is_active = false where id = 'b1000000-0000-0000-0000-000000000008';
 
@@ -60,7 +67,9 @@ insert into public.user_roles (organization_id, profile_id, role) values
   ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000006', 'employee'),
   ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000007', 'employee'),
   ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000008', 'employee'),
-  ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000009', 'employee');
+  ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000009', 'employee'),
+  ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000010', 'employee'),
+  ('b2000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000011', 'hr');
 
 set local role authenticated;
 
@@ -129,6 +138,46 @@ select lives_ok(
 );
 
 select set_config('request.jwt.claim.sub', 'b1000000-0000-0000-0000-000000000003', true);
+
+-- The selector is intentionally organization-wide: an approved, active employee
+-- does not need pre-existing project membership before the KR owner trigger adds it.
+select is(
+  (select count(*) from public.project_members pm join public.objectives o on o.project_id = pm.project_id where o.title = 'Owner Objective' and pm.profile_id = 'b1000000-0000-0000-0000-000000000010'),
+  0::bigint,
+  'second eligible employee has no Objective-project membership before selection'
+);
+select ok(
+  (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000010'::uuid))),
+  'approved active employee without membership is listed as a KR owner candidate'
+);
+select ok(
+  (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000003'::uuid))),
+  'assigned project leader is listed as a KR owner candidate'
+);
+select ok(
+  (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000004'::uuid))),
+  'eligible project leader is listed as a KR owner candidate'
+);
+select ok(
+  not (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000001'::uuid))),
+  'administrator is absent from KR owner candidates'
+);
+select ok(
+  not (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000002'::uuid))),
+  'management is absent from KR owner candidates'
+);
+select ok(
+  not (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000011'::uuid))),
+  'HR is absent from KR owner candidates'
+);
+select ok(
+  not (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000009'::uuid))),
+  'pending profile is absent from KR owner candidates'
+);
+select ok(
+  not (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000008'::uuid))),
+  'inactive profile is absent from KR owner candidates'
+);
 
 -- 6. A project-member employee can own a KR.
 select lives_ok(
