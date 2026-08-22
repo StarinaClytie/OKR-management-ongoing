@@ -82,12 +82,18 @@ describe('application sidebar', () => {
     expect(onCollapsedChange).toHaveBeenCalledWith(false);
   });
 
-  it('keeps bottom utilities reachable by scrolling navigation within a short desktop sidebar', () => {
+  it('lets a short desktop sidebar grow with its navigation and bottom utilities', () => {
     renderDesktopSidebar(false);
 
     const sidebar = screen.getByRole('complementary', { name: '主导航' });
     const navigation = within(sidebar).getByRole('navigation', { name: '工作区' });
-    expect(window.getComputedStyle(navigation).overflowY).toBe('auto');
-    expect(window.getComputedStyle(navigation).minHeight).toBe('0px');
+    const sidebarStyle = window.getComputedStyle(sidebar);
+
+    expect(sidebarStyle.height).toBe('auto');
+    expect(sidebarStyle.minHeight).toBe('100vh');
+    expect(within(navigation).getByRole('link', { name: '仪表盘' })).toBeVisible();
+    expect(within(navigation).getByRole('link', { name: '设置' })).toBeVisible();
+    expect(within(sidebar).getByRole('button', { name: '切换为英文' })).toBeVisible();
+    expect(within(sidebar).getByRole('button', { name: '收起侧边栏' })).toBeVisible();
   });
 });

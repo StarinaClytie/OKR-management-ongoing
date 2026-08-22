@@ -71,6 +71,12 @@ a {
   display: none;
 }
 
+.app-sidebar--desktop {
+  height: auto;
+  min-height: 100vh;
+  align-self: flex-start;
+}
+
 .app-sidebar__close {
   display: none;
 }
