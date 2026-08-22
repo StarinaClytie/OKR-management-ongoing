@@ -114,6 +114,7 @@ describe('OKR permissions', () => {
     expect(canManageKeyResults(leader, objective({ ownerId: 'leader' }))).toBe(true);
     expect(canManageKeyResults(management, objective({ ownerId: 'leader' }))).toBe(false);
     expect(canManageKeyResults(employee, objective({ ownerId: 'leader' }))).toBe(false);
+    expect(canManageKeyResults({ ...leader, role: 'employee' }, objective({ ownerId: 'leader' }))).toBe(false);
   });
   it('lets a KR owner or leader update progress, but not an unrelated employee', () => {
     const assignments: KrAssignment[] = [{ id: 'a1', krId: 'kr1', userId: 'emp', assignmentRole: 'owner' }];

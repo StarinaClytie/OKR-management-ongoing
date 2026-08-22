@@ -75,6 +75,7 @@ export function Sidebar(props: SidebarProps) {
                 to={item.path}
                 onClick={props.onNavigate}
                 title={collapsed ? t(item.labelKey) : undefined}
+                data-tooltip={collapsed ? t(item.labelKey) : undefined}
               >
                 <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
                 <span className={collapsed ? 'sr-only' : undefined}>{t(item.labelKey)}</span>

@@ -1,4 +1,5 @@
 import type { Classification, DailyReport, KeyResult, Objective } from './types';
+import { validateAttachment } from '../services/attachmentService';
 
 /** A single 今日 KR inside a Daily OKR block. */
 export interface DailyKrDraft {
@@ -109,6 +110,12 @@ export function validateDailyReportDraft(draft: DailyReportDraft, options: Daily
       if (!item.label.trim()) issues.push({ field: `${evidenceField}.label`, message: '请填写成果名称或链接说明' });
       if (!options.allowLegacyLinkEvidence && item.kind !== 'file') issues.push({ field: `${evidenceField}.kind`, message: '仅支持上传文件作为成果附件' });
       if (!isClassification(item.classification)) issues.push({ field: `${evidenceField}.classification`, message: '请选择有效的成果密级' });
+      if (item.kind === 'file' && item.file) {
+        const fileIssue = validateAttachment(item.file);
+        if (fileIssue) issues.push({ field: `${evidenceField}.file`, message: fileIssue.message });
+      } else if (item.kind === 'file' && !item.attachmentId) {
+        issues.push({ field: `${evidenceField}.file`, message: '请选择有效的成果附件' });
+      }
     });
     if (!isFiniteNonNegative(block.hours)) issues.push({ field: `${field}.hours`, message: '工时需填写有限且不小于 0 的数值' });
   });

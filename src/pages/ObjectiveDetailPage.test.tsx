@@ -64,7 +64,19 @@ describe('ObjectiveDetailPage KR owner candidates', () => {
     await user.click(await screen.findByRole('button', { name: '添加 Key Result' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('无法加载可分配的 KR 负责人，请稍后重试。');
-    expect(screen.queryByText('当前没有可分配的项目负责人，请先由管理员创建并启用 Project Leader 账号。')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前没有符合条件的 KR 负责人。')).not.toBeInTheDocument();
     await waitFor(() => expect(listEligibleKrOwners).toHaveBeenCalledWith('objective-orion-activation'));
+  });
+
+  it('shows the KR-specific empty state after a successful empty candidate load', async () => {
+    const listEligibleKrOwners = vi.fn(async () => ({ ok: true as const, data: [] }));
+    const repository = makeRepository({ listEligibleKrOwners });
+    const user = userEvent.setup();
+
+    renderDetail(repository);
+    await user.click(await screen.findByRole('button', { name: '添加 Key Result' }));
+
+    expect(await screen.findByText('当前没有符合条件的 KR 负责人。')).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

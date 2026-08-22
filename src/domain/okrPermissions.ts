@@ -34,7 +34,7 @@ export function canArchiveObjective(user: User): boolean {
 
 /** Decompose/edit KRs inside an objective: only that objective's project leader. */
 export function canManageKeyResults(user: User, objective: Pick<Objective, 'ownerId'>): boolean {
-  return leadsObjective(user, objective);
+  return user.role === 'project_leader' && leadsObjective(user, objective);
 }
 
 /** Assign KR owners (a structural change, not an employee action). */

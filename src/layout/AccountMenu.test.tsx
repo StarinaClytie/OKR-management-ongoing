@@ -109,5 +109,7 @@ describe('AccountMenu', () => {
 
     await user.click(trigger);
     expect(screen.getByRole('menu', { name: '账户菜单' })).toBeVisible();
+    expect(screen.getByRole('menu', { name: '账户菜单' })).toHaveTextContent('陈安');
+    expect(screen.getByRole('menu', { name: '账户菜单' })).toHaveTextContent('管理员');
   });
 });

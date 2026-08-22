@@ -83,8 +83,14 @@ export function AccountMenu({ compact = false, onNavigate }: AccountMenuProps) {
 
       {open ? (
         <div className="account-menu__dropdown" role="menu" aria-label={t('account.menu')}>
-          {(email || organization) ? (
+          {(compact || email || organization) ? (
             <div className="account-menu__summary">
+              {compact ? (
+                <span className="account-menu__compact-identity">
+                  <strong>{currentUser.name}</strong>
+                  <span>{roleLabel}</span>
+                </span>
+              ) : null}
               {email ? <span className="account-menu__email">{email}</span> : null}
               {organization ? <span className="account-menu__organization">{organization}</span> : null}
             </div>

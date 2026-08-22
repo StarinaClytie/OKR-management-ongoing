@@ -36,16 +36,17 @@ export function DailyReportEvidence({ evidence, onEvidenceChange, errors = {}, i
       </label>
       {evidence.map((item, index) => {
         const number = index + 1;
-        const errorFor = (field: 'label' | 'kind' | 'classification') => errors[`${errorPrefix}evidence.${index}.${field}`];
-        const labelError = errorFor('label') ?? errorFor('kind');
-        const errorId = (field: 'label' | 'kind' | 'classification') => `${idPrefix}-evidence-${item.id}-${field}-error`;
+        const errorFor = (field: 'label' | 'kind' | 'classification' | 'file') => errors[`${errorPrefix}evidence.${index}.${field}`];
+        const labelError = errorFor('label') ?? errorFor('kind') ?? errorFor('file');
+        const errorId = (field: 'label' | 'kind' | 'classification' | 'file') => `${idPrefix}-evidence-${item.id}-${field}-error`;
         const labelField = `${errorPrefix}evidence.${index}.label`;
+        const labelErrorField = errorFor('label') ? 'label' : errorFor('kind') ? 'kind' : 'file';
         return (
           <div className="daily-evidence__row" key={item.id}>
             <label htmlFor={`evidence-${item.id}-label`}>
               {t('daily.evidenceNumber', { number })}
-              <input ref={(element) => { onFieldRef?.(labelField, element); onFieldRef?.(`${errorPrefix}evidence.${index}.kind`, element); }} id={`evidence-${item.id}-label`} value={item.label} aria-invalid={Boolean(labelError)} aria-describedby={labelError ? errorId(errorFor('label') ? 'label' : 'kind') : undefined} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, label: event.target.value } : candidate))} placeholder={t('daily.evidencePlaceholder')} />
-              {labelError && <span id={errorId(errorFor('label') ? 'label' : 'kind')} role="alert" className="field-error">{labelError}</span>}
+              <input ref={(element) => { onFieldRef?.(labelField, element); onFieldRef?.(`${errorPrefix}evidence.${index}.kind`, element); onFieldRef?.(`${errorPrefix}evidence.${index}.file`, element); }} id={`evidence-${item.id}-label`} value={item.label} aria-invalid={Boolean(labelError)} aria-describedby={labelError ? errorId(labelErrorField) : undefined} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, label: event.target.value } : candidate))} placeholder={t('daily.evidencePlaceholder')} />
+              {labelError && <span id={errorId(labelErrorField)} role="alert" className="field-error">{labelError}</span>}
             </label>
             <label htmlFor={`evidence-${item.id}-classification`}>
               {t('daily.evidenceLevel', { number })}

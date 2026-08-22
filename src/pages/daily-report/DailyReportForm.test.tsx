@@ -104,6 +104,25 @@ describe('DailyReportForm', () => {
     expect(submitted!.blocks[0]!.evidence).toEqual([expect.objectContaining({ file, kind: 'file' })]);
   });
 
+  it('blocks submit and add-another while showing and focusing a localized invalid-file error', async () => {
+    const user = userEvent.setup();
+    const { handleSubmit } = renderForm();
+
+    await user.selectOptions(screen.getByLabelText(/关联季度 KR/), 'kr-1');
+    await user.type(screen.getByLabelText(/当日 O/), '完成实验采集第一阶段');
+    await user.type(screen.getByLabelText(/工作描述/), '完成样本 A 测量与数据整理');
+    await user.type(screen.getByLabelText(/结果/), '完成 5000 组光谱数据训练');
+    await user.type(screen.getByLabelText(/记录工时/), '3.5');
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['bad'], 'proof.pdf', { type: 'text/plain' }));
+
+    expect(screen.queryByRole('button', { name: '添加另一组 Daily OKR' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    expect(screen.getByText('文件扩展名与内容类型不一致')).toBeVisible();
+    expect(screen.getByDisplayValue('proof.pdf')).toHaveFocus();
+    expect(handleSubmit).not.toHaveBeenCalled();
+  });
+
   it('renders exact field errors and focuses each next missing required control', async () => {
     const user = userEvent.setup();
     const { handleSubmit } = renderForm();

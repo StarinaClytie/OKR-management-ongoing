@@ -124,6 +124,7 @@ export function KeyResultFormModal({ title, initial, ownerCandidates, submitting
                 <span>{candidate.displayName}</span>
               </label>
             ))}
+            {eligibleOwnerCandidates.length === 0 && !error ? <p role="status">{t('kr.noEligibleOwners')}</p> : null}
           </div>
         </div>
 

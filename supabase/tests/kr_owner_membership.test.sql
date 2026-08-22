@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(38);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: one organization with an administrator, management, two project
@@ -142,9 +142,9 @@ select set_config('request.jwt.claim.sub', 'b1000000-0000-0000-0000-000000000003
 -- The selector is intentionally organization-wide: an approved, active employee
 -- does not need pre-existing project membership before the KR owner trigger adds it.
 select is(
-  (select count(*) from public.project_members pm join public.objectives o on o.project_id = pm.project_id where o.title = 'Owner Objective' and pm.profile_id = 'b1000000-0000-0000-0000-000000000010'),
+  (select count(*) from public.project_members pm where pm.profile_id = 'b1000000-0000-0000-0000-000000000010'),
   0::bigint,
-  'second eligible employee has no Objective-project membership before selection'
+  'second eligible employee has no project membership anywhere before selection'
 );
 select ok(
   (select public.list_eligible_kr_owners((select id from public.objectives where title = 'Owner Objective')) @> jsonb_build_array(jsonb_build_object('id', 'b1000000-0000-0000-0000-000000000010'::uuid))),
@@ -270,6 +270,38 @@ select is(
   1::bigint,
   'updated owner remains a project member'
 );
+
+-- Role ownership alone is insufficient: demoting the Objective owner revokes
+-- both KR write paths immediately, without mutating the Objective's history.
+select set_config('request.jwt.claim.sub', 'b1000000-0000-0000-0000-000000000001', true);
+select public.update_user_profile(
+  'b1000000-0000-0000-0000-000000000003',
+  'Project Leader One', 'pl1@kr-owner.test', '', '', 'employee'
+);
+select set_config('request.jwt.claim.sub', 'b1000000-0000-0000-0000-000000000003', true);
+select throws_ok(
+  $$select public.create_key_result(
+    (select id from public.objectives where title = 'Owner Objective'),
+    'KR After Demotion', array['b1000000-0000-0000-0000-000000000005']::uuid[],
+    current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
+  '42501', 'Only an active project leader can create key results', 'demoted Objective owner cannot create a KR'
+);
+select throws_ok(
+  $$select public.update_key_result(
+    (select id from public.key_results where title = 'KR Update'),
+    'KR Update After Demotion', array['b1000000-0000-0000-0000-000000000006']::uuid[],
+    current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
+  '42501', 'Only an active project leader can edit key results', 'demoted Objective owner cannot update a KR'
+);
+
+-- Restore the fixture role so the remaining owner-eligibility assertions keep
+-- exercising their intended validation branch.
+select set_config('request.jwt.claim.sub', 'b1000000-0000-0000-0000-000000000001', true);
+select public.update_user_profile(
+  'b1000000-0000-0000-0000-000000000003',
+  'Project Leader One', 'pl1@kr-owner.test', '', '', 'project_leader'
+);
+select set_config('request.jwt.claim.sub', 'b1000000-0000-0000-0000-000000000003', true);
 
 -- Inactive and pending profiles remain ineligible even without a membership prerequisite.
 select throws_ok(

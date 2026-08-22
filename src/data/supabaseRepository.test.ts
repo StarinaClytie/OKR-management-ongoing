@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { SupabaseOkrRepository } from './supabaseRepository';
+import { dailyReportToDraft } from './dailyReportMapper';
 import type { SupabaseClientLike } from './types';
 
 vi.mock('../mocks/repository', () => {
@@ -343,7 +344,7 @@ describe('SupabaseOkrRepository', () => {
       progressSnapshots: [expect.objectContaining({ id: 'snapshot-1', keyResultId: 'kr-1', actual: 0, planned: 25, weekOf: '2026-08-14' })],
     }) });
     expect(from.mock.calls.map(([table]) => table)).toEqual([
-      'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_okr_blocks',
+      'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_okr_blocks', 'report_attachments',
     ]);
     if (!result.ok) throw new Error('Expected dashboard data');
     expectTypeOf(result.data.risks[0]).toMatchTypeOf<{ keyResultId?: string; objectiveId?: string; resolved: boolean } | undefined>();
@@ -392,5 +393,88 @@ describe('SupabaseOkrRepository', () => {
     expect(result).toEqual({ ok: true, data: { id: 'report-shell', revision: 1 } });
     expect(rpc.mock.calls.map((call) => call[0])).toEqual(['begin_daily_report_with_attachments', 'begin_attachment_upload', 'finalize_attachment_upload', 'update_daily_report_with_attachments']);
     expect(upload.mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[3]!);
+  });
+
+  it('validates every attachment before creating a report shell or upload row', async () => {
+    const { client, rpc } = createClient();
+    const repository = new SupabaseOkrRepository(client);
+    const input = { reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, blocks: [{ dailyObjective: '目标', linkedKeyResultId: 'kr-1', workDescription: '执行 KR', hours: 2, result: '完成', evidenceLinks: [] }], evidenceLinks: [] };
+
+    const result = await repository.saveDailyReport(input, [
+      { file: new File(['ok'], 'first.pdf', { type: 'application/pdf' }), classification: 'internal', entryPosition: 1, label: '第一份成果' },
+      { file: new File(['bad'], 'second.pdf', { type: 'text/plain' }), classification: 'internal', entryPosition: 1, label: '第二份成果' },
+    ]);
+
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'validation' }) });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('cleans every attachment started by a partially failed upload attempt before retry', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: 'report-shell', error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-1', path: 'organization/o/reports/r/1/first.pdf', bucket: 'report-attachments' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-1' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-2', path: 'organization/o/reports/r/2/second.pdf', bucket: 'report-attachments' }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    const upload = vi.fn()
+      .mockResolvedValueOnce({ data: {}, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'transport failed' } });
+    const remove = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.storage.from = vi.fn(() => ({ upload, createSignedUrl: vi.fn(), remove }));
+    const input = { reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, blocks: [{ dailyObjective: '目标', linkedKeyResultId: 'kr-1', workDescription: '执行 KR', hours: 2, result: '完成', evidenceLinks: [] }], evidenceLinks: [] };
+
+    const result = await new SupabaseOkrRepository(client).saveDailyReport(input, [
+      { file: new File(['one'], 'first.pdf', { type: 'application/pdf' }), classification: 'internal', entryPosition: 1, label: '第一份成果' },
+      { file: new File(['two'], 'second.pdf', { type: 'application/pdf' }), classification: 'internal', entryPosition: 1, label: '第二份成果' },
+    ]);
+
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'network' }) });
+    expect(rpc.mock.calls.filter((call) => call[0] === 'soft_delete_attachment').map((call) => call[1])).toEqual([
+      { p_attachment_id: 'attachment-2' },
+      { p_attachment_id: 'attachment-1' },
+    ]);
+    expect(remove).toHaveBeenCalledWith([
+      'organization/o/reports/r/2/second.pdf',
+      'organization/o/reports/r/1/first.pdf',
+    ]);
+    expect(rpc.mock.calls.some((call) => call[0] === 'save_daily_report')).toBe(false);
+  });
+
+  it('persists an edited attachment display name and restores it into an edit draft after reload', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: 'report-shell', error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-1', path: 'organization/o/reports/r/1/proof.pdf', bucket: 'report-attachments' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-1' }, error: null })
+      .mockResolvedValueOnce({ data: [{ report_id: 'report-1', revision: 1 }], error: null });
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.storage.from = vi.fn(() => ({ upload: vi.fn().mockResolvedValue({ data: {}, error: null }), createSignedUrl: vi.fn(), remove: vi.fn() }));
+    const input = { reportDate: '2026-08-13', status: 'submitted' as const, classification: 'internal' as const, blocks: [{ dailyObjective: '目标', linkedKeyResultId: 'kr-1', workDescription: '执行 KR', hours: 2, result: '完成', evidenceLinks: [] }], evidenceLinks: [] };
+
+    await new SupabaseOkrRepository(client).saveDailyReport(input, [{
+      file: new File(['proof'], 'proof.pdf', { type: 'application/pdf' }), classification: 'confidential', entryPosition: 1, label: '验收结果图',
+    }]);
+
+    expect(rpc).toHaveBeenCalledWith('begin_entry_attachment_upload', expect.objectContaining({ p_display_name: '验收结果图' }));
+
+    const dashboardClient = createDashboardClient({
+      profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      projects: [{ id: 'project-1', name: '项目一', description: '', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
+      objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'leader-1', title: '目标', description: '', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      daily_reports: [{ id: 'report-1', author_id: 'profile-1', project_id: 'project-1', objective_id: 'objective-1', report_date: '2026-08-13', status: 'submitted', classification: 'internal', total_hours: 2, current_revision: 1 }],
+      daily_okr_blocks: [{ id: 'block-db-1', report_id: 'report-1', revision_id: 'revision-1', position: 1, daily_objective: '目标', linked_key_result_id: 'kr-1', work_description: '执行 KR', hours: 2, result: '完成', key_results: [], evidence_links: [] }],
+      report_attachments: [{ id: 'attachment-1', report_id: 'report-1', revision_id: 'revision-1', daily_okr_block_id: 'block-db-1', original_name: 'proof.pdf', display_name: '验收结果图', classification: 'confidential', state: 'uploaded' }],
+      progress_baselines: [], milestones: [], risks: [], progress_snapshots: [], kr_assignments: [], kr_progress_updates: [],
+    });
+    const reloaded = await new SupabaseOkrRepository(dashboardClient.client).getDashboardData();
+    if (!reloaded.ok) throw new Error(reloaded.error.message);
+
+    expect(dailyReportToDraft(reloaded.data.dailyReports[0]!)).toEqual(expect.objectContaining({
+      blocks: [expect.objectContaining({ evidence: [expect.objectContaining({ attachmentId: 'attachment-1', label: '验收结果图', classification: 'confidential', kind: 'file' })] })],
+    }));
   });
 });

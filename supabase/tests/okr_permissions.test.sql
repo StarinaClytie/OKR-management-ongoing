@@ -89,7 +89,7 @@ select throws_ok(
     (select id from public.objectives where quarter = '2026-Q3'),
     'Management KR', array['81000000-0000-0000-0000-000000000003']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
-  '42501', 'Only the project leader can create key results', 'management cannot create a KR'
+  '42501', 'Only an active project leader can create key results', 'management cannot create a KR'
 );
 
 select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000003', true);
@@ -98,7 +98,7 @@ select throws_ok(
     (select id from public.objectives where quarter = '2026-Q3'),
     'Employee KR', array['81000000-0000-0000-0000-000000000003']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
-  '42501', 'Only the project leader can create key results', 'employee cannot create a KR'
+  '42501', 'Only an active project leader can create key results', 'employee cannot create a KR'
 );
 
 -- KR owners must be project leaders or employees, not management.

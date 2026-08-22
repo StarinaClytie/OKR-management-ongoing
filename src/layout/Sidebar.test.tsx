@@ -73,6 +73,7 @@ describe('application sidebar', () => {
 
     expect(sidebar).toHaveClass('app-sidebar--collapsed');
     expect(within(dashboardLink).getByText('仪表盘')).toHaveClass('sr-only');
+    expect(dashboardLink).toHaveAttribute('data-tooltip', '仪表盘');
     expect(dashboardLink.querySelector('svg')).toBeInTheDocument();
     expect(accountButton.querySelector('.account-menu__avatar')).toBeInTheDocument();
     expect(languageButton.querySelector('svg')).toBeInTheDocument();

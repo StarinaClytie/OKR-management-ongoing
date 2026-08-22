@@ -131,7 +131,7 @@ export interface DailyReportInput {
   evidenceLinks: unknown[];
 }
 
-export interface ClassifiedAttachmentInput { file: File; classification: Classification; entryPosition?: number }
+export interface ClassifiedAttachmentInput { file: File; classification: Classification; entryPosition?: number; label?: string }
 
 export interface KrProgressInput {
   keyResultId: string;

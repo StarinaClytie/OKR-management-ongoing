@@ -10,7 +10,7 @@
 
 所有数据库对象都由 `supabase/migrations/` 里的 SQL 定义，部署迁移即可在新实例上完整重建，无需任何手工建表。结构清单：
 
-### 1.1 表（27 张，全部 `public`）
+### 1.1 表（全部位于 `public`）
 
 | 域 | 表 |
 |---|---|
@@ -28,18 +28,18 @@
 
 ### 1.3 数据库函数
 
-- **公开 RPC（59 个）**：所有写操作均为 `SECURITY DEFINER` RPC（如 `create_project`、`create_objective`、`create_key_result`、`update_key_result`、`save_kr_progress_update`、`approve_pending_user`、`set_user_active`、`begin_attachment_upload`、`create_attachment_download`、`list_organization_users`、`list_projects` 等）。
-- **私有辅助函数（25 个）**：`private.*`，包含权限判定（`has_role`、`is_project_leader`、`is_project_member`、`has_clearance`、`can_read_business_subject`、`can_read_report_detail`、`is_eligible_kr_owner`、`is_eligible_project_assignee` 等）。
+- **公开 RPC**：所有写操作均为 `SECURITY DEFINER` RPC（如 `create_project`、`create_objective`、`create_key_result`、`update_key_result`、`save_kr_progress_update`、`approve_pending_user`、`set_user_active`、`begin_attachment_upload`、`create_attachment_download`、`list_organization_users`、`list_projects` 等）。
+- **私有辅助函数**：`private.*`，包含权限判定（`has_role`、`is_project_leader`、`is_project_member`、`has_clearance`、`can_read_business_subject`、`can_read_report_detail`、`is_eligible_kr_owner`、`is_eligible_project_assignee` 等）。
 
-### 1.4 触发器（26 个）
+### 1.4 触发器
 
-- `set_*_updated_at`（约 22 个，维护 `updated_at`）。
+- `set_*_updated_at`（维护 `updated_at`）。
 - 不可变保护触发器：`reject_kr_progress_update_mutation`、`reject_progress_snapshot_mutation`、`prevent_daily_report_revision_mutation`、`prevent_daily_report_revision_kr_mutation`、`assert_risk_subject_project`、`assert_daily_report_revision_pointer`。
 
 ### 1.5 索引 / 外键
 
 - 主键、唯一约束与复合外键全部由迁移定义（含 `(organization_id, id)` 复合唯一键、跨表 `on delete restrict/cascade/set null` 语义，用于保留历史归因）。
-- 显式二级索引（11 个）：`projects_organization_status_idx`、`project_members_profile_id_idx`、`resources_*` 系列、`resource_problems_*`、`resource_problem_notifications_problem_idx`。
+- 显式二级索引包括 `projects_organization_status_idx`、`project_members_profile_id_idx`、`resources_*` 系列、`resource_problems_*`、`resource_problem_notifications_problem_idx`。
 
 ### 1.6 RLS 策略
 
@@ -56,64 +56,76 @@
 
 ---
 
-## 2. 迁移清单（必须按此顺序全部应用）
+## 2. 迁移清单与历史原则
 
-旧 `docs/supabase-setup.md` 只列了 5 个迁移，已过期。全新实例需按序应用以下 **19 个**迁移文件：
+`supabase/migrations/` 是唯一迁移清单。文件名前缀决定顺序；部署前用 `npx supabase migration list` 对比本地与远端历史，不在文档中维护容易过期的手工数量或文件副本。
 
-1. `202608130001_core_schema.sql` — 核心表、枚举、外键、`updated_at` 触发器
-2. `202608130002_security.sql` — RLS、权限辅助函数、日报 RPC、`hr_workload` 视图
-3. `202608130003_storage.sql` — `report-attachments` bucket、附件 RPC、Storage RLS
-4. `202608140001_real_kr_risk_i18n.sql` — 进度快照、风险 RPC、i18n
-5. `202608170001_admin_users.sql` — 管理员账号管理 RPC
-6. `202608180001_onboarding_state.sql` — `onboarding_completed` 列
-7. `202608180002_project_management.sql` — 项目 CRUD/生命周期 RPC
-8. `202608180003_resources.sql` — 资源模块、`resource-documents` bucket
-9. `202608180004_resource_notifications.sql` — 资源问题通知
-10. `202608190001_auth_approval_model.sql` — `approval_status`、自助注册→审批模型
-11. `202608190002_okr_phase2.sql` — `kr_assignments`、KR 进度更新、多负责人 KR
-12. `202608190003_okr_permissions.sql` — OKR 角色模型、Objective/KR 创建与编辑 RPC
-13. `202608190004_daily_okr_blocks.sql` — `daily_okr_blocks`
-14. `202608200001_org_membership.sql` — 组织成员目录、项目成员集成
-15. `202608200002_kr_owner_membership.sql` — 负责人项目成员约束
-16. `202608200003_objective_leader_membership.sql` — Objective 负责人项目成员约束
-17. `202608210001_okr_owner_auto_membership.sql` — KR 负责人自动加入项目成员
-18. `202608210002_daily_report_upsert_entries.sql` — 日报按日更新及条目写入
-19. `202608220001_eligible_kr_owners.sql` — 合格 KR 负责人候选人 RPC
-
-> 部署当前 `supabase/migrations/` 中的完整迁移序列（包括新增的迁移文件）；**不要**编辑或回退迁移历史，也不要手工删表。
+> 只追加新迁移；**不要**编辑、重命名、回退或重新执行远端已经记录的迁移，也不要手工删表。生产升级只允许本次发布审批过的迁移处于 pending 状态。
 
 ---
 
 ## 3. 部署结构到新 RDS Supabase
 
-### 3.1 通过 Supabase CLI（推荐）
+### 3.1 通过 Supabase CLI（唯一受支持的迁移方式）
 
 前提：新实例可用 `supabase link` 连接（自托管需在 `supabase/config.toml` 之外提供连接信息，或用 `--db-url`）。
 
-```bash
-# 1) 安装/登录（如使用 Supabase CLI 管理自托管）
-npx supabase login
+`DATABASE_URL` 形如 `postgresql://postgres:<密码>@<rds-host>:5432/postgres`，只能从服务端密码库注入当前 shell；不要写入命令历史、仓库、前端或日志。以下命令必须在待发布 commit 的仓库根目录执行。
 
-# 2) 关联到新的阿里云 RDS Supabase 实例（自托管用 --db-url 指向 RDS PostgreSQL）
+#### 步骤 A：迁移历史与只读预检
+
+```bash
+# 同时查看 Local / Remote；保存输出到受控的发布记录，禁止包含连接串。
+npx supabase migration list --db-url "$DATABASE_URL"
+
+# 只读确认目标库、关键表和现有 RPC；任何 unexpected null 都先停下排查。
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+select current_database(), current_user;
+select to_regclass('public.daily_reports') as daily_reports,
+       to_regclass('public.report_attachments') as report_attachments;
+select to_regprocedure('public.create_key_result(uuid,text,uuid[],date,public.kr_metric_type,numeric,numeric,text,text,numeric,public.okr_priority,public.classification)') as create_kr_rpc,
+       to_regprocedure('public.save_daily_report(date,public.report_status,public.classification,jsonb,jsonb)') as save_report_rpc;
+SQL
+```
+
+对 `migration list` 逐行核对：远端已记录的版本必须与仓库历史一致；只有发布单列出的新增 migration 可以显示为 pending。出现未知远端版本、已应用文件内容漂移或额外 pending 文件时，停止部署并先对账，不能用 `migration repair` 猜测修复。
+
+#### 步骤 B：dry-run 并核对待执行集合
+
+```bash
+npx supabase db push --dry-run --db-url "$DATABASE_URL"
+```
+
+dry-run 输出必须只包含发布单审批的 migration 文件。输出为空表示无需迁移；出现任何额外文件或 destructive SQL 时停止。不要继续使用 `psql -f` 或 shell 循环直接执行迁移：那会绕过 Supabase migration history，导致下次部署无法可靠判断已应用版本。
+
+#### 步骤 C：历史记录式执行
+
+```bash
 npx supabase db push --db-url "$DATABASE_URL"
-
-# 3) 校验
-npx supabase db lint --db-url "$DATABASE_URL"
 ```
 
-`DATABASE_URL` 形如 `postgresql://postgres:<密码>@<rds-host>:5432/postgres`，**只存在于服务端/密码库**，不写进前端。
+`db push` 成功后才算迁移已应用并记录到远端历史。不要用 `--include-all` 掩盖历史分叉。
 
-### 3.2 通过 psql（无 CLI 时）
-
-按上述顺序逐个执行（`db push` 已等价于按 migration 顺序 apply）：
+#### 步骤 D：迁移后验证与 PostgREST schema reload
 
 ```bash
-for f in supabase/migrations/*.sql; do
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" || break
-done
+npx supabase migration list --db-url "$DATABASE_URL"
+npx supabase db lint --db-url "$DATABASE_URL"
+
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+select column_name, is_nullable
+from information_schema.columns
+where table_schema = 'public'
+  and table_name = 'report_attachments'
+  and column_name = 'display_name';
+
+select to_regprocedure('public.begin_entry_attachment_upload(uuid,integer,text,text,integer,public.classification,text)') as named_entry_upload_rpc;
+
+select pg_notify('pgrst', 'reload schema');
+SQL
 ```
 
-> 结构部署完成后，用 `npx supabase test db`（本地）或对 RDS 跑 pgTAP 做回归；**不导入任何旧数据**。
+再次确认 `migration list` 的本地/远端版本完全对齐，并用受控真实账号验证 Administrator、Project Leader、Employee 的允许与拒绝路径。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 PostgREST 服务；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据**。
 
 ---
 

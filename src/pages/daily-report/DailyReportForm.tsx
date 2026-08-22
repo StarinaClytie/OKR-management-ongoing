@@ -30,6 +30,11 @@ const validationKeys: Record<string, MessageKey> = {
   '请填写成果名称或链接说明': 'validation.evidenceName',
   '仅支持上传文件作为成果附件': 'validation.evidenceFile',
   '请选择有效的成果密级': 'validation.evidenceClassification',
+  '请选择有效的成果附件': 'validation.attachmentRequired',
+  '文件不能为空': 'validation.attachmentEmpty',
+  '文件不能超过 10 MB': 'validation.attachmentTooLarge',
+  '不支持此文件类型': 'validation.attachmentUnsupported',
+  '文件扩展名与内容类型不一致': 'validation.attachmentTypeMismatch',
   '请选择有效的日报密级': 'validation.reportClassification',
 };
 
