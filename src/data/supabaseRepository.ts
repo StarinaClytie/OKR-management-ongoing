@@ -546,6 +546,12 @@ export class SupabaseOkrRepository implements OkrRepository {
     const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
     return { ok: true, data: users };
   }
+  async listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>> {
+    const result = await this.callRpc<Record<string, unknown>[]>('list_eligible_kr_owners', { p_objective_id: objectiveId });
+    if (!result.ok) return result;
+    const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
+    return { ok: true, data: users };
+  }
   async approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>> {
     const result = await this.callRpc<null>('approve_pending_user', {
       p_target_user_id: input.userId,

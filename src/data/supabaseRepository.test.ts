@@ -228,6 +228,31 @@ describe('SupabaseOkrRepository', () => {
     expect(result).toEqual({ ok: true, data: [expect.objectContaining({ id: 'profile-1', displayName: '员工一', email: 'one@example.com', department: '产品部', jobTitle: '工程师', role: 'employee', isActive: true, projectIds: ['project-1'] })] });
   });
 
+  it('lists eligible KR owners for the requested objective through the focused RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: [{
+      id: 'profile-1',
+      display_name: '未分配员工',
+      email: 'unassigned@example.com',
+      department: '产品部',
+      job_title: '工程师',
+      is_active: true,
+      approval_status: 'approved',
+      created_at: '2026-08-22T00:00:00Z',
+      user_roles: [{ role: 'employee' }],
+      project_members: [],
+    }] });
+    const repository = new SupabaseOkrRepository(client);
+
+    await expect(repository.listEligibleKrOwners('objective-1')).resolves.toEqual({
+      ok: true,
+      data: [expect.objectContaining({
+        id: 'profile-1', displayName: '未分配员工', email: 'unassigned@example.com', department: '产品部', jobTitle: '工程师',
+        role: 'employee', isActive: true, approvalStatus: 'approved', projectIds: [],
+      })],
+    });
+    expect(rpc).toHaveBeenCalledWith('list_eligible_kr_owners', { p_objective_id: 'objective-1' });
+  });
+
   it('approves a pending user through the restricted RPC', async () => {
     const { client, rpc } = createClient({ rpcData: null });
     const result = await new SupabaseOkrRepository(client).approvePendingUser({ userId: 'u1', role: 'employee', department: '产品', jobTitle: '工程师' });

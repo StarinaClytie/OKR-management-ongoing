@@ -404,6 +404,7 @@ export interface OkrRepository {
   getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>>;
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>>;
+  listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>>;
   createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>>;
   updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>>;
   setProjectLeader(projectId: string, leaderId: string): Promise<RepositoryResult<void>>;

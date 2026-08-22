@@ -140,6 +140,26 @@ export class DemoOkrRepository implements OkrRepository {
     };
   }
 
+  async listEligibleKrOwners(_objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>> {
+    return {
+      ok: true,
+      data: mockData.users
+        .filter((user) => user.role === 'project_leader' || user.role === 'employee')
+        .map((user) => ({
+          id: user.id,
+          displayName: user.name,
+          email: '',
+          department: user.department,
+          jobTitle: user.title,
+          role: user.role,
+          isActive: true,
+          approvalStatus: 'approved' as const,
+          createdAt: '',
+          projectIds: user.projectIds,
+        })),
+    };
+  }
+
   // ---- Projects (execution-view) CRUD ----
 
   async createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>> {

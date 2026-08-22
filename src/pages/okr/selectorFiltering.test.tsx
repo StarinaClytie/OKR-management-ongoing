@@ -38,7 +38,7 @@ describe('role-filtered OKR selectors', () => {
     expect(screen.getByText('当前没有可分配的项目负责人，请先由管理员创建并启用 Project Leader 账号。')).toBeVisible();
   });
 
-  it('shows all approved active organization leaders and employees even when they have no project membership', () => {
+  it('shows all approved active server-provided leaders and employees even when they have no project membership', () => {
     render(<KeyResultFormModal title="添加 Key Result" initial={keyResultInitial} ownerCandidates={eligibleUsers} onSubmit={() => undefined} onClose={() => undefined} />);
 
     expect(screen.getByLabelText('负责人丙')).toBeInTheDocument();
