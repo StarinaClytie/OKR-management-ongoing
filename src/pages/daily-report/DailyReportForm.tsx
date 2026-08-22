@@ -25,10 +25,10 @@ const validationKeys: Record<string, MessageKey> = {
   '工时需填写有限且不小于 0 的数值': 'validation.hoursInvalid',
   '请至少添加一个当日 KR': 'validation.krRequired',
   '请填写 KR 内容': 'validation.krContentRequired',
-  '请填写工作描述': 'validation.krNoteRequired',
+  '请填写工作描述': 'validation.workDescriptionRequired',
   '请填写结果或数据': 'validation.resultRequired',
   '请填写成果名称或链接说明': 'validation.evidenceName',
-  '请选择成果类型': 'validation.evidenceType',
+  '仅支持上传文件作为成果附件': 'validation.evidenceFile',
   '请选择有效的成果密级': 'validation.evidenceClassification',
   '请选择有效的日报密级': 'validation.reportClassification',
 };
@@ -59,10 +59,12 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
   const [status, setStatus] = useState<LocalizedMessage | null>(null);
   const nextBlockId = useRef(initialDraft?.blocks.length ?? 1);
+  const fieldRefs = useRef(new Map<string, HTMLElement>());
+  const validationOptions = useMemo(() => ({ allowLegacyLinkEvidence: mode === 'edit' }), [mode]);
 
   const validationErrors = useMemo(() => showSubmitErrors
-    ? Object.fromEntries(validateDailyReportDraft(draft).map((issue) => [issue.field, localizeValidation(issue.message, t)!])) as Record<string, string>
-    : {}, [draft, showSubmitErrors, t]);
+    ? Object.fromEntries(validateDailyReportDraft(draft, validationOptions).map((issue) => [issue.field, localizeValidation(issue.message, t)!])) as Record<string, string>
+    : {}, [draft, showSubmitErrors, t, validationOptions]);
 
   const objectiveById = useMemo(() => new Map(objectives.map((objective) => [objective.id, objective])), [objectives]);
 
@@ -70,6 +72,11 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
 
   const updateBlock = (id: string, patch: Partial<DailyOkrBlockDraft>) => {
     setDraft((current) => ({ ...current, blocks: current.blocks.map((block) => block.id === id ? { ...block, ...patch } : block) }));
+  };
+
+  const registerField = (field: string, element: HTMLElement | null) => {
+    if (element) fieldRefs.current.set(field, element);
+    else fieldRefs.current.delete(field);
   };
 
   const addBlock = () => {
@@ -83,12 +90,17 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
     setDraft((current) => ({ ...current, blocks: current.blocks.filter((block) => block.id !== id) }));
   };
 
-  const lastBlockComplete = validateDailyReportDraft({ blocks: [draft.blocks[draft.blocks.length - 1]!], classification: draft.classification }).length === 0;
+  const lastBlockComplete = validateDailyReportDraft({ blocks: [draft.blocks[draft.blocks.length - 1]!], classification: draft.classification }, validationOptions).length === 0;
 
   const submit = async () => {
     setShowSubmitErrors(true);
-    if (validateDailyReportDraft(draft).length > 0) {
+    const issues = validateDailyReportDraft(draft, validationOptions);
+    if (issues.length > 0) {
       setStatus({ key: 'daily.fixRequired' });
+      const firstIssue = issues[0]!;
+      const control = fieldRefs.current.get(firstIssue.field);
+      control?.focus();
+      control?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
       return;
     }
     const result = await onSubmit(draft);
@@ -101,6 +113,8 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
         {draft.blocks.map((block, index) => {
           const prefix = `blocks.${index}`;
           const hoursValue = block.hours === 0 ? '' : String(block.hours);
+          const errorFor = (field: keyof Omit<DailyOkrBlockDraft, 'id' | 'evidence'>) => validationErrors[`${prefix}.${field}`];
+          const errorId = (field: keyof Omit<DailyOkrBlockDraft, 'id' | 'evidence'>) => `${block.id}-${field}-error`;
           return (
             <section key={block.id} className="form-card form-section daily-okr-block" aria-labelledby={`${block.id}-heading`}>
               <div className="daily-evidence__header">
@@ -113,8 +127,11 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
               <label className="modal-field">
                 <span>{t('daily.linkedQuarterlyKr')} *</span>
                 <select
+                  id={`${block.id}-linked-key-result`}
+                  ref={(element) => registerField(`${prefix}.linkedKeyResultId`, element)}
                   value={block.linkedKeyResultId}
-                  aria-invalid={Boolean(validationErrors[`${prefix}.linkedKeyResultId`])}
+                  aria-invalid={Boolean(errorFor('linkedKeyResultId'))}
+                  aria-describedby={errorFor('linkedKeyResultId') ? errorId('linkedKeyResultId') : undefined}
                   onChange={(event) => updateBlock(block.id, { linkedKeyResultId: event.target.value })}
                 >
                   <option value="">{t('daily.select')}</option>
@@ -127,51 +144,61 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                     );
                   })}
                 </select>
+                {errorFor('linkedKeyResultId') && <span id={errorId('linkedKeyResultId')} role="alert" className="field-error">{errorFor('linkedKeyResultId')}</span>}
               </label>
 
               <label className="modal-field">
                 <span>{t('daily.objective')} *</span>
                 <input
+                  id={`${block.id}-daily-objective`}
+                  ref={(element) => registerField(`${prefix}.dailyObjective`, element)}
                   value={block.dailyObjective}
-                  aria-invalid={Boolean(validationErrors[`${prefix}.dailyObjective`])}
+                  aria-invalid={Boolean(errorFor('dailyObjective'))}
+                  aria-describedby={errorFor('dailyObjective') ? errorId('dailyObjective') : undefined}
                   onChange={(event) => updateBlock(block.id, { dailyObjective: event.target.value })}
                   placeholder={t('daily.objectivePlaceholder')}
                 />
+                {errorFor('dailyObjective') && <span id={errorId('dailyObjective')} role="alert" className="field-error">{errorFor('dailyObjective')}</span>}
               </label>
 
               {block.linkedKeyResultId ? <p className="modal-field"><span>{t('alignment.companyO')}</span><strong>{objectiveById.get(ownedKeyResults.find((keyResult) => keyResult.id === block.linkedKeyResultId)?.objectiveId ?? '')?.title ?? '—'}</strong></p> : null}
 
               <label className="modal-field">
                 <span>{t('daily.workDescription')} *</span>
-                <textarea value={block.workDescription} aria-invalid={Boolean(validationErrors[`${prefix}.workDescription`])} onChange={(event) => updateBlock(block.id, { workDescription: event.target.value })} rows={3} />
+                <textarea id={`${block.id}-work-description`} ref={(element) => registerField(`${prefix}.workDescription`, element)} value={block.workDescription} aria-invalid={Boolean(errorFor('workDescription'))} aria-describedby={errorFor('workDescription') ? errorId('workDescription') : undefined} onChange={(event) => updateBlock(block.id, { workDescription: event.target.value })} rows={3} />
+                {errorFor('workDescription') && <span id={errorId('workDescription')} role="alert" className="field-error">{errorFor('workDescription')}</span>}
               </label>
 
               <label className="modal-field">
                 <span>{t('daily.result')} *</span>
-                <textarea value={block.result} aria-invalid={Boolean(validationErrors[`${prefix}.result`])} onChange={(event) => updateBlock(block.id, { result: event.target.value })} rows={2} />
+                <textarea id={`${block.id}-result`} ref={(element) => registerField(`${prefix}.result`, element)} value={block.result} aria-invalid={Boolean(errorFor('result'))} aria-describedby={errorFor('result') ? errorId('result') : undefined} onChange={(event) => updateBlock(block.id, { result: event.target.value })} rows={2} />
+                {errorFor('result') && <span id={errorId('result')} role="alert" className="field-error">{errorFor('result')}</span>}
               </label>
 
               <DailyReportEvidence
-                objectives={[]}
                 evidence={block.evidence}
                 idPrefix={block.id}
                 errorPrefix={`${prefix}.`}
-                onLinkedObjectiveChange={() => undefined}
                 onEvidenceChange={(evidence) => updateBlock(block.id, { evidence })}
                 errors={validationErrors}
+                onFieldRef={registerField}
               />
 
               <label className="modal-field">
                 <span>{t('daily.blockHours')} *</span>
                 <input
+                  id={`${block.id}-hours`}
+                  ref={(element) => registerField(`${prefix}.hours`, element)}
                   type="number"
                   min="0"
                   step="0.5"
                   inputMode="decimal"
                   value={hoursValue}
-                  aria-invalid={Boolean(validationErrors[`${prefix}.hours`])}
+                  aria-invalid={Boolean(errorFor('hours'))}
+                  aria-describedby={errorFor('hours') ? errorId('hours') : undefined}
                   onChange={(event) => updateBlock(block.id, { hours: event.target.value === '' ? 0 : Number(event.target.value) })}
                 />
+                {errorFor('hours') && <span id={errorId('hours')} role="alert" className="field-error">{errorFor('hours')}</span>}
               </label>
 
             </section>

@@ -119,7 +119,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       submissionNonce: nextLocalSubmissionNonce.current,
       keyResults: data.keyResults,
       objectives: data.objectives,
-    });
+    }, { allowLegacyLinkEvidence: Boolean(editingReport) });
     if (!conversion.ok) {
       return { ok: false as const, error: { key: conversion.error.code === 'KEY_RESULT_NOT_AVAILABLE' ? 'daily.krMismatch' : 'daily.fixRequired' } satisfies LocalizedMessage };
     }

@@ -770,7 +770,7 @@ select {
 .daily-form-grid--type-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .daily-wide-field { grid-column: 1 / -1; }
 .daily-evidence__header { align-items: center; }
-.daily-evidence__row { display: grid; grid-template-columns: minmax(0, 1fr) 130px 130px; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid #e2e8f0; }
+.daily-evidence__row { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto; align-items: end; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid #e2e8f0; }
 .daily-entry-help { align-self: start; display: grid; gap: var(--space-3); background: #f8fafc; }
 .daily-entry-help-shell { align-self: start; }
 .daily-entry-help__eyebrow { color: #1d4ed8 !important; font-weight: 800; }
