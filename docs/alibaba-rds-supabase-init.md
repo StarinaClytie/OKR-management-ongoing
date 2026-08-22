@@ -58,7 +58,7 @@
 
 ## 2. 迁移清单（必须按此顺序全部应用）
 
-旧 `docs/supabase-setup.md` 只列了 5 个迁移，已过期。全新实例需按序应用以下 **15 个**迁移文件：
+旧 `docs/supabase-setup.md` 只列了 5 个迁移，已过期。全新实例需按序应用以下 **18 个**迁移文件：
 
 1. `202608130001_core_schema.sql` — 核心表、枚举、外键、`updated_at` 触发器
 2. `202608130002_security.sql` — RLS、权限辅助函数、日报 RPC、`hr_workload` 视图
@@ -74,9 +74,12 @@
 12. `202608190003_okr_permissions.sql` — OKR 角色模型、Objective/KR 创建与编辑 RPC
 13. `202608190004_daily_okr_blocks.sql` — `daily_okr_blocks`
 14. `202608200001_org_membership.sql` — 组织成员目录、项目成员集成
-15. `202608200002_kr_owner_membership.sql` — 负责人项目成员约束（本次新增）
+15. `202608200002_kr_owner_membership.sql` — 负责人项目成员约束
+16. `202608210001_okr_owner_auto_membership.sql` — KR 负责人自动加入项目成员
+17. `202608210002_daily_report_upsert_entries.sql` — 日报按日更新及条目写入
+18. `202608220001_eligible_kr_owners.sql` — 合格 KR 负责人候选人 RPC
 
-> 本次切换未新增任何迁移；直接复用上述文件即可。**不要**编辑或回退迁移历史，也不要手工删表。
+> 部署当前 `supabase/migrations/` 中的完整迁移序列（包括新增的迁移文件）；**不要**编辑或回退迁移历史，也不要手工删表。
 
 ---
 
