@@ -134,7 +134,69 @@ select to_regprocedure('public.begin_daily_report_upload_session(date,public.rep
        to_regprocedure('public.finalize_attachment_upload(uuid,text)') as finalize_upload_rpc,
        to_regprocedure('public.save_daily_report(date,public.report_status,public.classification,jsonb,uuid,jsonb)') as save_report_rpc,
        to_regprocedure('public.adopt_daily_report_revision_attachments(uuid,uuid,uuid[])') as adopt_rpc,
-       to_regprocedure('public.list_daily_report_upload_session_cleanup(uuid)') as cleanup_list_rpc;
+       to_regprocedure('public.list_daily_report_upload_session_cleanup(uuid)') as cleanup_list_rpc,
+       to_regprocedure('public.delete_daily_report_upload_attachment(uuid)') as cleanup_delete_rpc,
+       to_regprocedure('public.abandon_daily_report_upload_session(uuid)') as abandon_session_rpc,
+       to_regprocedure('public.soft_delete_attachment(uuid)') as soft_delete_rpc,
+       to_regprocedure('public.authorize_attachment_revision_removal(uuid)') as authorize_revision_removal_rpc;
+
+-- 每行必须是 function_exists=true 且 authenticated_execute=true。
+with expected(signature) as (
+  values
+    ('public.begin_daily_report_upload_session(date,public.report_status,public.classification)'),
+    ('public.begin_entry_attachment_upload(uuid,uuid,integer,text,text,integer,public.classification,text)'),
+    ('public.finalize_attachment_upload(uuid,text)'),
+    ('public.save_daily_report(date,public.report_status,public.classification,jsonb,uuid,jsonb)'),
+    ('public.adopt_daily_report_revision_attachments(uuid,uuid,uuid[])'),
+    ('public.list_daily_report_upload_session_cleanup(uuid)'),
+    ('public.delete_daily_report_upload_attachment(uuid)'),
+    ('public.abandon_daily_report_upload_session(uuid)'),
+    ('public.soft_delete_attachment(uuid)'),
+    ('public.authorize_attachment_revision_removal(uuid)')
+)
+select signature,
+       to_regprocedure(signature) is not null as function_exists,
+       coalesce(
+         has_function_privilege(
+           'authenticated',
+           to_regprocedure(signature),
+           'EXECUTE'
+         ),
+         false
+       ) as authenticated_execute
+from expected
+order by signature;
+
+-- 旧的无 session 写入口可能仍保留在迁移历史中，但每行
+-- authenticated_execute 必须为 false；不得为了前端回滚重新授权。
+with legacy(signature) as (
+  values
+    ('public.begin_attachment_upload(uuid,text,text,integer,public.classification)'),
+    ('public.begin_entry_attachment_upload(uuid,integer,text,text,integer,public.classification)'),
+    ('public.begin_entry_attachment_upload(uuid,integer,text,text,integer,public.classification,text)'),
+    ('public.begin_daily_report_with_attachments(date,public.report_status,public.classification)'),
+    ('public.create_daily_report(date,public.report_status,public.classification,jsonb,jsonb)'),
+    ('public.update_daily_report(uuid,integer,public.report_status,public.classification,jsonb,jsonb)'),
+    ('public.update_daily_report_with_attachments(uuid,integer,public.report_status,public.classification,jsonb,jsonb)'),
+    ('public.save_daily_report(date,public.report_status,public.classification,jsonb,jsonb)'),
+    ('public.replace_attachment(uuid,text,text,integer,public.classification)'),
+    ('public.create_daily_report(uuid,uuid,date,public.report_status,public.classification,numeric,text,numeric,jsonb,jsonb)'),
+    ('public.update_daily_report(uuid,integer,public.report_status,public.classification,numeric,text,numeric,jsonb,jsonb)'),
+    ('public.begin_daily_report_with_attachments(uuid,uuid,date,public.report_status,public.classification,numeric)'),
+    ('public.update_daily_report_with_attachments(uuid,integer,public.report_status,public.classification,numeric,text,numeric,jsonb,jsonb)')
+)
+select signature,
+       to_regprocedure(signature) is not null as function_exists,
+       coalesce(
+         has_function_privilege(
+           'authenticated',
+           to_regprocedure(signature),
+           'EXECUTE'
+         ),
+         false
+       ) as authenticated_execute
+from legacy
+order by signature;
 
 select relname, relrowsecurity, relforcerowsecurity
 from pg_class
@@ -177,7 +239,7 @@ SQL
 
 ### 5.1 生产残留清理边界
 
-正常取消/刷新恢复由前端按 `list_daily_report_upload_session_cleanup` → `delete_daily_report_upload_attachment` → Storage DELETE → `abandon_daily_report_upload_session` 顺序完成。不要定时清理 active session，因为它可能正在上传，也可能在刷新后恢复。
+正常取消/刷新恢复由前端在 session 仍为 active 且日报可编辑时，按 `list_daily_report_upload_session_cleanup` → `delete_daily_report_upload_attachment` → Storage DELETE → `abandon_daily_report_upload_session` 顺序完成。删除 RPC 先把未关联 metadata 标记为 `deleted`，随后普通 `authenticated` 用户才满足 Storage DELETE RLS（该策略只允许 metadata 状态为 `replaced` / `deleted`）。不要在完成该顺序前手工把 session 改为 abandoned，也不要定时清理 active session，因为它可能正在上传，也可能在刷新后恢复。
 
 如果确需生产人工清理，只处理超过已审批保留期、`status='abandoned'` 的 session 中，同时满足 `state='pending'`、`revision_id is null` 且 `daily_okr_block_id is null` 的**未关联**附件。先用以下只读查询生成受控候选清单：
 
@@ -205,7 +267,16 @@ where session.organization_id = '<approved-organization-uuid>'::uuid
 order by session.abandoned_at, attachment.id;
 ```
 
-候选中如果 `storage_object_exists=true`，必须先经受控的 Supabase Storage API 按**完全匹配的 path**删除对象并复查；不要直接删 `storage.objects` 记录。对已确认无 Storage 对象的同一批次，可在变更单附带的显式 organization/cutoff 边界内将 metadata 软删除：
+对已是 abandoned 的 session，现有删除 RPC 会因 session 非 active 而拒绝；同时 `pending` metadata 不满足 Storage DELETE RLS，因此普通 `authenticated` 用户**无法也不应**删除这类 Storage 对象。不得通过临时改 RLS、把 session 改回 active、在浏览器使用高权限 key，或直接删 `storage.objects` 记录来绕过该状态机。
+
+如果候选中 `storage_object_exists=true`，这是一次受控的服务端运维修复，而不是普通用户流程。推荐流程为：
+
+1. 变更单固定 organization、session ID、attachment ID、完整 storage path、cutoff、候选数量和执行时间窗口；双人复核只读候选清单。
+2. 专用的服务端维护 job 仅在该窗口内从密码库直接注入短时 service-role/admin 凭据，按清单的完整 path 调用 Storage API。凭据或 token 值不进入浏览器、命令行参数、shell history、本文档、Git 或日志，本文档也不提供带凭据的临时删除命令。
+3. job 只记录变更单 ID、执行人/进程身份、session/attachment ID、path 的不可逆摘要、删除结果、前后数量和时间戳，不记录凭据、Authorization header 或文件内容。
+4. 删除后用只读查询确认清单中每个 Storage 对象已不存在，再执行下方 rollback-first metadata 软删除；最后撤销/失效短时凭据并归档审计记录。
+
+对已确认无 Storage 对象的同一批次，可在变更单附带的显式 organization/cutoff 边界内将 metadata 软删除：
 
 ```sql
 begin;
@@ -334,11 +405,32 @@ revoke execute on function public.save_daily_report(date, public.report_status, 
 revoke execute on function public.adopt_daily_report_revision_attachments(uuid, uuid, uuid[]) from authenticated;
 revoke execute on function public.delete_daily_report_upload_attachment(uuid) from authenticated;
 revoke execute on function public.abandon_daily_report_upload_session(uuid) from authenticated;
+revoke execute on function public.soft_delete_attachment(uuid) from authenticated;
+revoke execute on function public.authorize_attachment_revision_removal(uuid) from authenticated;
 select pg_notify('pgrst', 'reload schema');
 commit;
 ```
 
-修复并重新验证后，用对称的 `grant execute ... to authenticated` 恢复上述精确签名，再次 `pg_notify`。如果问题需要改变数据库结构或函数实现，必须新建已审核的 forward migration，不直接改已应用文件。
+上述集合覆盖了当前 session/report/attachment 写工作流；`list_daily_report_upload_session_cleanup`、`create_attachment_download` 等只读入口保持可用。`authorize_attachment_revision_removal` 本身只校验、不写数据，但为了停止完整的附件修订工作流也在止血集合中。
+
+修复并重新验证后，仅用以下对称授权恢复同一集合，然后 reload PostgREST：
+
+```sql
+begin;
+grant execute on function public.begin_daily_report_upload_session(date, public.report_status, public.classification) to authenticated;
+grant execute on function public.begin_entry_attachment_upload(uuid, uuid, integer, text, text, integer, public.classification, text) to authenticated;
+grant execute on function public.finalize_attachment_upload(uuid, text) to authenticated;
+grant execute on function public.save_daily_report(date, public.report_status, public.classification, jsonb, uuid, jsonb) to authenticated;
+grant execute on function public.adopt_daily_report_revision_attachments(uuid, uuid, uuid[]) to authenticated;
+grant execute on function public.delete_daily_report_upload_attachment(uuid) to authenticated;
+grant execute on function public.abandon_daily_report_upload_session(uuid) to authenticated;
+grant execute on function public.soft_delete_attachment(uuid) to authenticated;
+grant execute on function public.authorize_attachment_revision_removal(uuid) to authenticated;
+select pg_notify('pgrst', 'reload schema');
+commit;
+```
+
+如果问题需要改变数据库结构或函数实现，必须新建已审核的 forward migration，不直接改已应用文件。
 
 ---
 
