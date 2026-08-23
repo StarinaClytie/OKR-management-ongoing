@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(19);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select '00000000-0000-0000-0000-000000000001', id, 'authenticated', 'authenticated', email, 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()
@@ -65,6 +65,14 @@ select throws_ok(
 select throws_ok(
   $$select public.begin_attachment_upload('75000000-0000-0000-0000-000000000001', 'large.pdf', 'application/pdf', 10485761, 'internal')$$,
   '22023', 'Attachment size must be between 1 and 10485760 bytes', '10 MB plus one byte is rejected'
+);
+
+select ok(
+  private.can_insert_attachment_object(
+    (select storage_path from public.report_attachments where state = 'pending' limit 1),
+    '{}'::jsonb
+  ),
+  'storage insert accepts an authorized pending path before backend metadata is populated'
 );
 
 insert into storage.objects (bucket_id, name, owner_id, metadata)
