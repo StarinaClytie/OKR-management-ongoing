@@ -121,6 +121,11 @@ export interface DailyOkrBlockInput {
   hours: number;
   result: string;
   evidenceLinks: unknown[];
+  attachments?: Array<{
+    attachmentId: string;
+    displayName: string;
+    classification: Classification;
+  }>;
 }
 
 export interface DailyReportInput {

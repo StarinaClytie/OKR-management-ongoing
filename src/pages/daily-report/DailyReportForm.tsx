@@ -16,6 +16,8 @@ interface DailyReportFormProps {
   objectives: readonly Objective[];
   onCancel: () => void;
   onSubmit: (draft: DailyReportDraft) => DailyReportSubmitResult | Promise<DailyReportSubmitResult>;
+  onDownloadAttachment?: (attachmentId: string) => void | Promise<void>;
+  onRemoveAttachment?: (attachmentId: string) => boolean | Promise<boolean>;
 }
 
 const validationKeys: Record<string, MessageKey> = {
@@ -56,7 +58,7 @@ function newBlock(id: string, linkedKeyResultId = ''): DailyOkrBlockDraft {
   };
 }
 
-export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults, objectives, onCancel, onSubmit }: DailyReportFormProps) {
+export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults, objectives, onCancel, onSubmit, onDownloadAttachment, onRemoveAttachment }: DailyReportFormProps) {
   const { t } = useLocale();
   const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft
     ? structuredClone(initialDraft)
@@ -187,6 +189,8 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                 onEvidenceChange={(evidence) => updateBlock(block.id, { evidence })}
                 errors={validationErrors}
                 onFieldRef={registerField}
+                onDownloadAttachment={onDownloadAttachment}
+                onRemoveAttachment={onRemoveAttachment}
               />
 
               <label className="modal-field">

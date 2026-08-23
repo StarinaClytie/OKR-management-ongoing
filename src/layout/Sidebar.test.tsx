@@ -79,6 +79,11 @@ describe('application sidebar', () => {
     expect(languageButton.querySelector('svg')).toBeInTheDocument();
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
+    await user.hover(dashboardLink);
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent('仪表盘');
+    expect(sidebar).not.toContainElement(tooltip);
+
     await user.click(toggle);
     expect(onCollapsedChange).toHaveBeenCalledWith(false);
   });

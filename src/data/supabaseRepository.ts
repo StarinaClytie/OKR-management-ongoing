@@ -80,17 +80,19 @@ function mapOrganizationUser(row: Record<string, unknown>): OrganizationUser | n
 
 function numberValue(value: unknown): number { return typeof value === 'number' ? value : Number(value) || 0; }
 
-function mapReportAttachment(row: Record<string, unknown>): DailyEvidenceDraft | null {
+function mapReportAttachment(row: Record<string, unknown>, revisionMetadata?: Record<string, unknown>): DailyEvidenceDraft | null {
   if (typeof row.id !== 'string' || typeof row.report_id !== 'string' || row.state !== 'uploaded') return null;
   const originalName = typeof row.original_name === 'string' ? row.original_name : '';
-  const displayName = typeof row.display_name === 'string' && row.display_name.trim() ? row.display_name : originalName;
+  const displayName = typeof revisionMetadata?.display_name === 'string' && revisionMetadata.display_name.trim()
+    ? revisionMetadata.display_name
+    : typeof row.display_name === 'string' && row.display_name.trim() ? row.display_name : originalName;
   if (!displayName) return null;
   return {
     id: `attachment-${row.id}`,
     attachmentId: row.id,
     label: displayName,
     kind: 'file',
-    classification: row.classification as import('../domain/types').Classification,
+    classification: (revisionMetadata?.classification ?? row.classification) as import('../domain/types').Classification,
     uploadState: 'uploaded',
     uploadProgress: 100,
   };
@@ -188,12 +190,14 @@ export class SupabaseOkrRepository implements OkrRepository {
       this.selectRows('kr_assignments', 'id,kr_id,profile_id,assignment_role'),
       this.selectRows('kr_progress_updates', 'id,kr_id,author_id,previous_progress,new_progress,summary,blocker,reason,next_action,evidence,created_at'),
       this.selectRows('daily_reports', 'id,author_id,project_id,objective_id,report_date,status,classification,total_hours,current_revision,updated_at'),
+      this.selectRows('daily_report_revisions', 'id,report_id,revision_number'),
       this.selectRows('daily_okr_blocks', 'id,report_id,revision_id,position,daily_objective,linked_key_result_id,work_description,hours,result,key_results,evidence_links'),
       this.selectRows('report_attachments', 'id,report_id,revision_id,daily_okr_block_id,original_name,display_name,classification,state'),
+      this.selectRows('report_attachment_revisions', 'report_id,revision_id,daily_okr_block_id,attachment_id,display_name,classification'),
     ]);
     const failed = results.find((result) => !result.ok);
     if (failed && !failed.ok) return failed;
-    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyBlockResult, attachmentResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
+    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyRevisionResult, dailyBlockResult, attachmentResult, attachmentRevisionResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
 
     const users = profileResult.data.map(mapProfile).filter((user): user is User => user !== null);
     const currentUser = users.find((user) => user.id === session.data.session!.user.id);
@@ -300,21 +304,47 @@ export class SupabaseOkrRepository implements OkrRepository {
       createdAt: typeof row.created_at === 'string' ? row.created_at : '',
     }));
 
+    const currentRevisionIdByReportId = new Map<string, string>();
+    for (const report of dailyReportResult.data) {
+      const revision = dailyRevisionResult.data.find((candidate) => candidate.report_id === report.id && numberValue(candidate.revision_number) === numberValue(report.current_revision));
+      if (typeof revision?.id === 'string') currentRevisionIdByReportId.set(String(report.id), revision.id);
+    }
     const blocksByReportId = new Map<string, Array<Record<string, unknown>>>();
     for (const row of dailyBlockResult.data) {
       const reportId = String(row.report_id);
+      if (row.revision_id !== currentRevisionIdByReportId.get(reportId)) continue;
       const list = blocksByReportId.get(reportId) ?? [];
       list.push(row);
       blocksByReportId.set(reportId, list);
     }
+    const attachmentRowById = new Map(attachmentResult.data.map((row) => [String(row.id), row]));
     const attachmentsByBlockId = new Map<string, DailyEvidenceDraft[]>();
     const legacyAttachmentsByReportId = new Map<string, DailyEvidenceDraft[]>();
+    const associatedAttachmentIds = new Set<string>();
+    for (const metadata of attachmentRevisionResult.data) {
+      const reportId = String(metadata.report_id);
+      if (metadata.revision_id !== currentRevisionIdByReportId.get(reportId)) continue;
+      const attachmentId = String(metadata.attachment_id);
+      const row = attachmentRowById.get(attachmentId);
+      if (!row) continue;
+      const attachment = mapReportAttachment(row, metadata);
+      if (!attachment) continue;
+      associatedAttachmentIds.add(attachmentId);
+      const blockId = typeof metadata.daily_okr_block_id === 'string' ? metadata.daily_okr_block_id : undefined;
+      const collection = blockId ? attachmentsByBlockId : legacyAttachmentsByReportId;
+      const key = blockId ?? reportId;
+      collection.set(key, [...(collection.get(key) ?? []), attachment]);
+    }
+    // Backward compatibility for attachments saved before revision-scoped
+    // metadata existed. Only rows belonging to the current revision qualify.
     for (const row of attachmentResult.data) {
+      const reportId = String(row.report_id);
+      if (associatedAttachmentIds.has(String(row.id)) || row.revision_id !== currentRevisionIdByReportId.get(reportId)) continue;
       const attachment = mapReportAttachment(row);
       if (!attachment) continue;
       const blockId = typeof row.daily_okr_block_id === 'string' ? row.daily_okr_block_id : undefined;
       const collection = blockId ? attachmentsByBlockId : legacyAttachmentsByReportId;
-      const key = blockId ?? String(row.report_id);
+      const key = blockId ?? reportId;
       collection.set(key, [...(collection.get(key) ?? []), attachment]);
     }
     const dailyReports: DailyReport[] = dailyReportResult.data.map((row) => {

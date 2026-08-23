@@ -1,5 +1,6 @@
 import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
-import type { Ref } from 'react';
+import { useState, type Ref } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { PermissionGate } from '../auth/PermissionGate';
@@ -37,8 +38,16 @@ export function Sidebar(props: SidebarProps) {
   const dashboardPath = navigationItems[0].path;
   const visibleItems = navigationItems.filter((item) => !item.roles || (currentUser && item.roles.includes(currentUser.role)));
   const collapseLabel = collapsed ? t('navigation.expandSidebar') : t('navigation.collapseSidebar');
+  const [tooltip, setTooltip] = useState<{ path: string; label: string; top: number; left: number } | null>(null);
+  const showTooltip = (path: string, label: string, element: HTMLElement) => {
+    if (!collapsed) return;
+    const rect = element.getBoundingClientRect();
+    setTooltip({ path, label, top: rect.top + rect.height / 2, left: rect.right + 10 });
+  };
+  const hideTooltip = (path: string) => setTooltip((current) => current?.path === path ? null : current);
 
   return (
+    <>
     <aside
       ref={drawerRef}
       className={`app-sidebar app-sidebar--${props.variant}${mobileOpen ? ' app-sidebar--open' : ''}${collapsed ? ' app-sidebar--collapsed' : ''}`}
@@ -76,6 +85,11 @@ export function Sidebar(props: SidebarProps) {
                 onClick={props.onNavigate}
                 title={collapsed ? t(item.labelKey) : undefined}
                 data-tooltip={collapsed ? t(item.labelKey) : undefined}
+                aria-describedby={tooltip?.path === item.path ? 'sidebar-navigation-tooltip' : undefined}
+                onMouseEnter={(event) => showTooltip(item.path, t(item.labelKey), event.currentTarget)}
+                onMouseLeave={() => hideTooltip(item.path)}
+                onFocus={(event) => showTooltip(item.path, t(item.labelKey), event.currentTarget)}
+                onBlur={() => hideTooltip(item.path)}
               >
                 <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
                 <span className={collapsed ? 'sr-only' : undefined}>{t(item.labelKey)}</span>
@@ -105,5 +119,10 @@ export function Sidebar(props: SidebarProps) {
         ) : null}
       </div>
     </aside>
+    {tooltip && typeof document !== 'undefined' ? createPortal(
+      <div id="sidebar-navigation-tooltip" role="tooltip" className="sidebar-tooltip" style={{ top: tooltip.top, left: tooltip.left }}>{tooltip.label}</div>,
+      document.body,
+    ) : null}
+    </>
   );
 }

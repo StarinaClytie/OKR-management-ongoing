@@ -140,6 +140,11 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
           hours: block.hours,
           result: block.result,
           evidenceLinks: block.evidence.filter((item) => item.kind === 'link'),
+          attachments: block.evidence.flatMap((item) => item.kind === 'file' && item.attachmentId ? [{
+            attachmentId: item.attachmentId,
+            displayName: item.label,
+            classification: item.classification,
+          }] : []),
         })),
         evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
@@ -158,6 +163,27 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     restoreAuthoringFocus.current = true;
     setIsAuthoring(false);
     return { ok: true as const };
+  }
+
+  async function downloadPersistedAttachment(attachmentId: string) {
+    const result = await dataRepository.createAttachmentDownload(attachmentId);
+    if (!result.ok) {
+      setNotice('common.requestFailed');
+      return;
+    }
+    const anchor = document.createElement('a');
+    anchor.href = result.data.url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
+  async function removePersistedAttachment(attachmentId: string) {
+    const result = await dataRepository.removeAttachment(attachmentId);
+    if (!result.ok) setNotice('common.requestFailed');
+    return result.ok;
   }
 
   const reportContent = (report: DailyReport) => {
@@ -209,6 +235,8 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
             objectives={linkableObjectives}
             onCancel={() => { restoreAuthoringFocus.current = true; setEditingReport(undefined); setIsAuthoring(false); }}
             onSubmit={handleSubmit}
+            onDownloadAttachment={downloadPersistedAttachment}
+            onRemoveAttachment={removePersistedAttachment}
           />
           {editingReport && revisions.length > 0 && <RevisionHistory revisions={revisions} />}
         </section>

@@ -11,6 +11,8 @@ interface DailyReportEvidenceProps {
   idPrefix?: string;
   errorPrefix?: string;
   onFieldRef?: (field: string, element: HTMLElement | null) => void;
+  onDownloadAttachment?: (attachmentId: string) => void | Promise<void>;
+  onRemoveAttachment?: (attachmentId: string) => boolean | Promise<boolean>;
 }
 
 const classifications: Array<{ value: Classification; label: MessageKey }> = [
@@ -20,7 +22,7 @@ const classifications: Array<{ value: Classification; label: MessageKey }> = [
   { value: 'restricted', label: 'classification.restricted' },
 ];
 
-export function DailyReportEvidence({ evidence, onEvidenceChange, errors = {}, idPrefix = 'daily', errorPrefix = '', onFieldRef }: DailyReportEvidenceProps) {
+export function DailyReportEvidence({ evidence, onEvidenceChange, errors = {}, idPrefix = 'daily', errorPrefix = '', onFieldRef, onDownloadAttachment, onRemoveAttachment }: DailyReportEvidenceProps) {
   const { t } = useLocale();
 
   return (
@@ -55,7 +57,14 @@ export function DailyReportEvidence({ evidence, onEvidenceChange, errors = {}, i
               </select>
               {errorFor('classification') && <span id={errorId('classification')} role="alert" className="field-error">{errorFor('classification')}</span>}
             </label>
-            <button type="button" className="button button--secondary" onClick={() => onEvidenceChange(evidence.filter((candidate) => candidate.id !== item.id))}>{t('daily.remove')}</button>
+            {item.attachmentId && onDownloadAttachment ? <button type="button" className="button button--secondary" onClick={() => void onDownloadAttachment(item.attachmentId!)}>{t('daily.download')}</button> : null}
+            <button type="button" className="button button--secondary" onClick={async () => {
+              if (item.attachmentId && onRemoveAttachment) {
+                const removed = await onRemoveAttachment(item.attachmentId);
+                if (!removed) return;
+              }
+              onEvidenceChange(evidence.filter((candidate) => candidate.id !== item.id));
+            }}>{t('daily.remove')}</button>
           </div>
         );
       })}

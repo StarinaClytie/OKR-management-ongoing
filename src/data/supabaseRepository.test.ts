@@ -344,7 +344,7 @@ describe('SupabaseOkrRepository', () => {
       progressSnapshots: [expect.objectContaining({ id: 'snapshot-1', keyResultId: 'kr-1', actual: 0, planned: 25, weekOf: '2026-08-14' })],
     }) });
     expect(from.mock.calls.map(([table]) => table)).toEqual([
-      'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_okr_blocks', 'report_attachments',
+      'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_report_revisions', 'daily_okr_blocks', 'report_attachments', 'report_attachment_revisions',
     ]);
     if (!result.ok) throw new Error('Expected dashboard data');
     expectTypeOf(result.data.risks[0]).toMatchTypeOf<{ keyResultId?: string; objectiveId?: string; resolved: boolean } | undefined>();
@@ -466,8 +466,10 @@ describe('SupabaseOkrRepository', () => {
       objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'leader-1', title: '目标', description: '', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
       key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
       daily_reports: [{ id: 'report-1', author_id: 'profile-1', project_id: 'project-1', objective_id: 'objective-1', report_date: '2026-08-13', status: 'submitted', classification: 'internal', total_hours: 2, current_revision: 1 }],
+      daily_report_revisions: [{ id: 'revision-1', report_id: 'report-1', revision_number: 1 }],
       daily_okr_blocks: [{ id: 'block-db-1', report_id: 'report-1', revision_id: 'revision-1', position: 1, daily_objective: '目标', linked_key_result_id: 'kr-1', work_description: '执行 KR', hours: 2, result: '完成', key_results: [], evidence_links: [] }],
       report_attachments: [{ id: 'attachment-1', report_id: 'report-1', revision_id: 'revision-1', daily_okr_block_id: 'block-db-1', original_name: 'proof.pdf', display_name: '验收结果图', classification: 'confidential', state: 'uploaded' }],
+      report_attachment_revisions: [{ report_id: 'report-1', revision_id: 'revision-1', daily_okr_block_id: 'block-db-1', attachment_id: 'attachment-1', display_name: '验收结果图', classification: 'confidential' }],
       progress_baselines: [], milestones: [], risks: [], progress_snapshots: [], kr_assignments: [], kr_progress_updates: [],
     });
     const reloaded = await new SupabaseOkrRepository(dashboardClient.client).getDashboardData();
@@ -476,5 +478,45 @@ describe('SupabaseOkrRepository', () => {
     expect(dailyReportToDraft(reloaded.data.dailyReports[0]!)).toEqual(expect.objectContaining({
       blocks: [expect.objectContaining({ evidence: [expect.objectContaining({ attachmentId: 'attachment-1', label: '验收结果图', classification: 'confidential', kind: 'file' })] })],
     }));
+  });
+
+  it('loads only the current report revision and its revision-scoped attachment metadata', async () => {
+    const dashboardClient = createDashboardClient({
+      profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      projects: [{ id: 'project-1', name: '项目一', description: '', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
+      objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'leader-1', title: '目标', description: '', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      daily_reports: [{ id: 'report-1', author_id: 'profile-1', project_id: 'project-1', objective_id: 'objective-1', report_date: '2026-08-13', status: 'submitted', classification: 'internal', total_hours: 3, current_revision: 2 }],
+      daily_report_revisions: [
+        { id: 'revision-1', report_id: 'report-1', revision_number: 1 },
+        { id: 'revision-2', report_id: 'report-1', revision_number: 2 },
+      ],
+      daily_okr_blocks: [
+        { id: 'block-1', report_id: 'report-1', revision_id: 'revision-1', position: 1, daily_objective: '旧目标', linked_key_result_id: 'kr-1', work_description: '旧工作', hours: 2, result: '旧结果', key_results: [], evidence_links: [] },
+        { id: 'block-2', report_id: 'report-1', revision_id: 'revision-2', position: 1, daily_objective: '新目标', linked_key_result_id: 'kr-1', work_description: '新工作', hours: 3, result: '新结果', key_results: [], evidence_links: [] },
+      ],
+      report_attachments: [
+        { id: 'attachment-retained', report_id: 'report-1', revision_id: 'revision-1', daily_okr_block_id: 'block-1', original_name: 'retained.pdf', display_name: '旧名称', classification: 'internal', state: 'uploaded' },
+        { id: 'attachment-removed', report_id: 'report-1', revision_id: 'revision-1', daily_okr_block_id: 'block-1', original_name: 'removed.pdf', display_name: '已移除', classification: 'internal', state: 'deleted' },
+      ],
+      report_attachment_revisions: [
+        { report_id: 'report-1', revision_id: 'revision-1', daily_okr_block_id: 'block-1', attachment_id: 'attachment-retained', display_name: '旧名称', classification: 'internal' },
+        { report_id: 'report-1', revision_id: 'revision-1', daily_okr_block_id: 'block-1', attachment_id: 'attachment-removed', display_name: '已移除', classification: 'internal' },
+        { report_id: 'report-1', revision_id: 'revision-2', daily_okr_block_id: 'block-2', attachment_id: 'attachment-retained', display_name: '新名称', classification: 'confidential' },
+      ],
+      progress_baselines: [], milestones: [], risks: [], progress_snapshots: [], kr_assignments: [], kr_progress_updates: [],
+    });
+
+    const reloaded = await new SupabaseOkrRepository(dashboardClient.client).getDashboardData();
+    if (!reloaded.ok) throw new Error(reloaded.error.message);
+    const report = reloaded.data.dailyReports[0]!;
+
+    expect(report.blocks).toEqual([expect.objectContaining({
+      id: 'block-2',
+      dailyObjective: '新目标',
+      evidenceItems: [expect.objectContaining({ attachmentId: 'attachment-retained', label: '新名称', classification: 'confidential' })],
+    })]);
+    expect(JSON.stringify(report)).not.toContain('旧目标');
+    expect(JSON.stringify(report)).not.toContain('已移除');
   });
 });

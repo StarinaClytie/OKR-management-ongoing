@@ -22,4 +22,30 @@ describe('DailyReportEvidence', () => {
     await user.upload(screen.getByLabelText('选择成果附件'), file);
     expect(onEvidenceChange).toHaveBeenCalledWith([expect.objectContaining({ file, label: 'proof.pdf', kind: 'file', classification: 'internal', uploadState: 'selected' })]);
   });
+
+  it('authorizes persisted evidence download and removal before updating the draft', async () => {
+    const user = userEvent.setup();
+    const item = { id: 'one', attachmentId: 'attachment-1', label: 'proof.pdf', kind: 'file' as const, classification: 'internal' as const, uploadState: 'uploaded' as const };
+    const onEvidenceChange = vi.fn();
+    const onDownloadAttachment = vi.fn().mockResolvedValue(undefined);
+    const onRemoveAttachment = vi.fn().mockResolvedValue(true);
+    render(<DailyReportEvidence evidence={[item]} onEvidenceChange={onEvidenceChange} onDownloadAttachment={onDownloadAttachment} onRemoveAttachment={onRemoveAttachment} />);
+
+    await user.click(screen.getByRole('button', { name: '下载' }));
+    expect(onDownloadAttachment).toHaveBeenCalledWith('attachment-1');
+
+    await user.click(screen.getByRole('button', { name: '移除' }));
+    expect(onRemoveAttachment).toHaveBeenCalledWith('attachment-1');
+    expect(onEvidenceChange).toHaveBeenCalledWith([]);
+  });
+
+  it('keeps persisted evidence in the draft when authorized removal fails', async () => {
+    const user = userEvent.setup();
+    const item = { id: 'one', attachmentId: 'attachment-1', label: 'proof.pdf', kind: 'file' as const, classification: 'internal' as const, uploadState: 'uploaded' as const };
+    const onEvidenceChange = vi.fn();
+    render(<DailyReportEvidence evidence={[item]} onEvidenceChange={onEvidenceChange} onRemoveAttachment={vi.fn().mockResolvedValue(false)} />);
+
+    await user.click(screen.getByRole('button', { name: '移除' }));
+    expect(onEvidenceChange).not.toHaveBeenCalled();
+  });
 });

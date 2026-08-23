@@ -151,12 +151,9 @@ a {
   position: relative;
 }
 
-.app-sidebar--collapsed .sidebar-link::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  z-index: 20;
-  left: calc(100% + 10px);
-  top: 50%;
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 1000;
   translate: 0 -50%;
   width: max-content;
   max-width: 220px;
@@ -166,14 +163,7 @@ a {
   color: #fff;
   font-size: 0.78rem;
   line-height: 1.2;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.app-sidebar--collapsed .sidebar-link:hover::after,
-.app-sidebar--collapsed .sidebar-link:focus-visible::after {
-  opacity: 1;
 }
 
 .app-sidebar__utilities {
