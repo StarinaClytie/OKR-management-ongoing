@@ -19,7 +19,7 @@
 | 目标 | `objectives` |
 | 关键结果 | `key_results`、`kr_assignments`、`kr_progress_updates`、`progress_snapshots`、`progress_baselines` |
 | 里程碑/风险 | `milestones`、`risks`、`legacy_project_risks` |
-| 日报/周报 | `daily_reports`、`daily_report_revisions`、`daily_report_revision_krs`、`daily_objectives`、`daily_key_results`、`daily_okr_blocks`、`report_evidence_links`、`report_attachments` |
+| 日报/周报 | `daily_reports`、`daily_report_revisions`、`daily_report_revision_krs`、`daily_objectives`、`daily_key_results`、`daily_okr_blocks`、`report_evidence_links`、`report_attachments`、`report_attachment_revisions`、`daily_report_upload_sessions` |
 | 资源与补给 | `resources`、`resource_attachments`、`resource_problems`、`resource_problem_notifications` |
 
 ### 1.2 枚举类型（`public.*`）
@@ -28,7 +28,7 @@
 
 ### 1.3 数据库函数
 
-- **公开 RPC**：所有写操作均为 `SECURITY DEFINER` RPC（如 `create_project`、`create_objective`、`create_key_result`、`update_key_result`、`save_kr_progress_update`、`approve_pending_user`、`set_user_active`、`begin_attachment_upload`、`create_attachment_download`、`list_organization_users`、`list_projects` 等）。
+- **公开 RPC**：所有写操作均为 `SECURITY DEFINER` RPC（如 `create_project`、`create_objective`、`create_key_result`、`update_key_result`、`save_kr_progress_update`、`approve_pending_user`、`set_user_active`、`begin_attachment_upload`、`create_attachment_download`、`list_organization_users`、`list_projects` 等）。日报附件以 `begin_daily_report_upload_session` 开始，经 `begin_entry_attachment_upload` / `finalize_attachment_upload` 上传并校验，以 session-aware `save_daily_report` 提交；同日编辑还使用 `adopt_daily_report_revision_attachments`。
 - **私有辅助函数**：`private.*`，包含权限判定（`has_role`、`is_project_leader`、`is_project_member`、`has_clearance`、`can_read_business_subject`、`can_read_report_detail`、`is_eligible_kr_owner`、`is_eligible_project_assignee` 等）。
 
 ### 1.4 触发器
@@ -59,6 +59,12 @@
 ## 2. 迁移清单与历史原则
 
 `supabase/migrations/` 是唯一迁移清单。文件名前缀决定顺序；部署前用 `npx supabase migration list` 对比本地与远端历史，不在文档中维护容易过期的手工数量或文件副本。
+
+本次日报附件生命周期发布必须按顺序包含以下三个 additive migration：
+
+1. `202608230006_daily_upload_sessions_and_locks.sql`：上传 session、服务端终态校验、上海业务日及审核锁定。
+2. `202608230007_daily_attachment_adoption.sql`：同日编辑的历史附件继承、可重试的 session 清理 RPC。
+3. `202608230008_daily_upload_cleanup_session_recovery.sql`：刷新后恢复仍有未关联清理目标的 active session。
 
 > 只追加新迁移；**不要**编辑、重命名、回退或重新执行远端已经记录的迁移，也不要手工删表。生产升级只允许本次发布审批过的迁移处于 pending 状态。
 
@@ -117,15 +123,29 @@ select column_name, is_nullable
 from information_schema.columns
 where table_schema = 'public'
   and table_name = 'report_attachments'
-  and column_name = 'display_name';
+  and column_name in ('display_name', 'upload_session_id')
+order by column_name;
 
-select to_regprocedure('public.begin_entry_attachment_upload(uuid,integer,text,text,integer,public.classification,text)') as named_entry_upload_rpc;
+select to_regclass('public.daily_report_upload_sessions') as upload_sessions,
+       to_regclass('public.report_attachment_revisions') as attachment_revisions;
+
+select to_regprocedure('public.begin_daily_report_upload_session(date,public.report_status,public.classification)') as begin_session_rpc,
+       to_regprocedure('public.begin_entry_attachment_upload(uuid,uuid,integer,text,text,integer,public.classification,text)') as begin_upload_rpc,
+       to_regprocedure('public.finalize_attachment_upload(uuid,text)') as finalize_upload_rpc,
+       to_regprocedure('public.save_daily_report(date,public.report_status,public.classification,jsonb,uuid,jsonb)') as save_report_rpc,
+       to_regprocedure('public.adopt_daily_report_revision_attachments(uuid,uuid,uuid[])') as adopt_rpc,
+       to_regprocedure('public.list_daily_report_upload_session_cleanup(uuid)') as cleanup_list_rpc;
+
+select relname, relrowsecurity, relforcerowsecurity
+from pg_class
+where oid in ('public.daily_report_upload_sessions'::regclass,
+              'public.report_attachments'::regclass);
 
 select pg_notify('pgrst', 'reload schema');
 SQL
 ```
 
-再次确认 `migration list` 的本地/远端版本完全对齐，并用受控真实账号验证 Administrator、Project Leader、Employee 的允许与拒绝路径。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 PostgREST 服务；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据**。
+再次确认 `migration list` 的本地/远端版本完全对齐。`pg_notify` 成功只说明通知已发送；还必须从 PostgREST 公网 API 用受控真实账号调用一个新 RPC，确认 schema cache 已更新。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 PostgREST 服务；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据**。
 
 ---
 
@@ -152,7 +172,74 @@ SQL
 
 - 两个私有 bucket 由迁移自动创建，**无需手工建 bucket**，也不要改成 public。
 - `storage.objects` 的 RLS 策略依赖 `auth.uid()` 与 `storage.buckets` 表，自托管 Storage 服务需与 Auth 共用同一 JWT 才能让策略生效。
-- 日报/周报附件上传与下载走授权 RPC（`begin_attachment_upload` → `storage.from(bucket).upload` → `finalize_attachment_upload`；下载走 `create_attachment_download` → `createSignedUrl`），**不需要迁移旧附件**。
+- 日报附件上传从服务端 session 开始，经 `begin_entry_attachment_upload` 领取受限 path，浏览器通过 `https://api.okr.trspectra.com/storage/v1/...` 上传，再由 `finalize_attachment_upload` 核对 Storage metadata。下载仍走 `create_attachment_download` 与 signed URL，**不需要迁移旧附件**。
+- 前端只需绑定 `api.okr.trspectra.com` 这个 Supabase API 入口；**不需要、也不应该把 OSS bucket 域名或 OSS AccessKey 绑到/注入前端**。OSS endpoint、bucket 凭据和跨域策略是自托管 Storage 服务的服务端配置；生产 bundle 不得包含内部 RDS 主机名或 OSS 凭据。
+
+### 5.1 生产残留清理边界
+
+正常取消/刷新恢复由前端按 `list_daily_report_upload_session_cleanup` → `delete_daily_report_upload_attachment` → Storage DELETE → `abandon_daily_report_upload_session` 顺序完成。不要定时清理 active session，因为它可能正在上传，也可能在刷新后恢复。
+
+如果确需生产人工清理，只处理超过已审批保留期、`status='abandoned'` 的 session 中，同时满足 `state='pending'`、`revision_id is null` 且 `daily_okr_block_id is null` 的**未关联**附件。先用以下只读查询生成受控候选清单：
+
+```sql
+select session.id as session_id,
+       attachment.id as attachment_id,
+       attachment.storage_path,
+       session.abandoned_at,
+       exists (
+         select 1 from storage.objects object
+         where object.bucket_id = 'report-attachments'
+           and object.name = attachment.storage_path
+       ) as storage_object_exists
+from public.daily_report_upload_sessions session
+join public.report_attachments attachment
+  on attachment.upload_session_id = session.id
+ and attachment.organization_id = session.organization_id
+ and attachment.report_id = session.report_id
+where session.organization_id = '<approved-organization-uuid>'::uuid
+  and session.status = 'abandoned'
+  and session.abandoned_at < '<approved-cutoff-timestamptz>'::timestamptz
+  and attachment.state = 'pending'
+  and attachment.revision_id is null
+  and attachment.daily_okr_block_id is null
+order by session.abandoned_at, attachment.id;
+```
+
+候选中如果 `storage_object_exists=true`，必须先经受控的 Supabase Storage API 按**完全匹配的 path**删除对象并复查；不要直接删 `storage.objects` 记录。对已确认无 Storage 对象的同一批次，可在变更单附带的显式 organization/cutoff 边界内将 metadata 软删除：
+
+```sql
+begin;
+
+with approved_candidates as (
+  select attachment.id
+  from public.daily_report_upload_sessions session
+  join public.report_attachments attachment
+    on attachment.upload_session_id = session.id
+   and attachment.organization_id = session.organization_id
+   and attachment.report_id = session.report_id
+  where session.organization_id = '<approved-organization-uuid>'::uuid
+    and session.status = 'abandoned'
+    and session.abandoned_at < '<approved-cutoff-timestamptz>'::timestamptz
+    and attachment.state = 'pending'
+    and attachment.revision_id is null
+    and attachment.daily_okr_block_id is null
+    and not exists (
+      select 1 from storage.objects object
+      where object.bucket_id = 'report-attachments'
+        and object.name = attachment.storage_path
+    )
+)
+update public.report_attachments attachment
+set state = 'deleted'
+from approved_candidates candidate
+where attachment.id = candidate.id
+returning attachment.id, attachment.upload_session_id;
+
+-- 核对 returning 行数与已批准清单完全一致后才 COMMIT，否则 ROLLBACK。
+rollback;
+```
+
+首次演练保留 `rollback`；只有返回集与审批清单完全一致后，才在变更窗口把最后一行改为 `commit`。绝不处理 active/completed session、已终态上传、已关联 revision/block 的附件，或审核后日报的证据。
 
 ---
 
@@ -197,12 +284,61 @@ insert into public.organizations (id, name) values (gen_random_uuid(), '<组织�
 
 ```dotenv
 VITE_APP_MODE=supabase
-VITE_SUPABASE_URL=https://<阿里云 RDS Supabase 域名或 IP>
+VITE_SUPABASE_URL=https://api.okr.trspectra.com
 VITE_SUPABASE_ANON_KEY=<publishable/anon key>
 ```
 
 - `.env.production` 已加入 `.gitignore`，真实值只存在于构建服务器/受保护 CI 环境。
 - `build:production` 会先跑 `verify-supabase-config.mjs --production`，拒绝占位值、service-role/secret key、非 HTTPS URL。
+- 构建后用 `rg -a 'https://api\.okr\.trspectra\.com' dist` 确认公开 API 域名已入包，并用 `rg -a -i 'rds\.aliyuncs\.com|rm-[a-z0-9-]+\..*aliyuncs\.com' dist` 确认内部 RDS 主机名为零匹配。任何命中都停止发布。
+
+### 8.1 上线后只读验证
+
+除了 RPC 存在性和 RLS 检查，还应记录以下不包含凭据的聚合结果：
+
+```sql
+select status, count(*)
+from public.daily_report_upload_sessions
+group by status
+order by status;
+
+select count(*) as invalid_session_attachment_links
+from public.report_attachments attachment
+join public.daily_report_upload_sessions session
+  on session.id = attachment.upload_session_id
+where attachment.organization_id <> session.organization_id
+   or attachment.report_id <> session.report_id
+   or attachment.uploader_id <> session.author_id;
+
+select count(*) as associated_deleted_attachments
+from public.report_attachments
+where state = 'deleted'
+  and (revision_id is not null or daily_okr_block_id is not null);
+```
+
+`invalid_session_attachment_links` 必须为 0。`associated_deleted_attachments` 若非 0，先核对是否为合法的历史软删除，不得自动清理。业务 QA 仅使用已批准的测试组织、测试账号和无敏感附件；不使用生产员工资料。
+
+### 8.2 回滚与紧急止血
+
+这三个数据库迁移是 additive/forward-only，且旧的无 session 写 RPC 已撤销 `authenticated` 权限。**不要** drop 新表/列、删除 migration history，也不要为了回滚前端重新开放旧 RPC；那会恢复残留 pending 和越过锁定的路径。
+
+- 前端回滚只能回到与 session-aware RPC 签名兼容的已审核构建。
+- 若需要立即止血，先撤销新日报写 RPC 的 `authenticated` 执行权限，使日报暂时只读，再 reload PostgREST。该操作必须有变更审批：
+
+```sql
+begin;
+revoke execute on function public.begin_daily_report_upload_session(date, public.report_status, public.classification) from authenticated;
+revoke execute on function public.begin_entry_attachment_upload(uuid, uuid, integer, text, text, integer, public.classification, text) from authenticated;
+revoke execute on function public.finalize_attachment_upload(uuid, text) from authenticated;
+revoke execute on function public.save_daily_report(date, public.report_status, public.classification, jsonb, uuid, jsonb) from authenticated;
+revoke execute on function public.adopt_daily_report_revision_attachments(uuid, uuid, uuid[]) from authenticated;
+revoke execute on function public.delete_daily_report_upload_attachment(uuid) from authenticated;
+revoke execute on function public.abandon_daily_report_upload_session(uuid) from authenticated;
+select pg_notify('pgrst', 'reload schema');
+commit;
+```
+
+修复并重新验证后，用对称的 `grant execute ... to authenticated` 恢复上述精确签名，再次 `pg_notify`。如果问题需要改变数据库结构或函数实现，必须新建已审核的 forward migration，不直接改已应用文件。
 
 ---
 
@@ -213,3 +349,11 @@ VITE_SUPABASE_ANON_KEY=<publishable/anon key>
 - 新实例：注册→登录→session→管理员审批→角色绑定端到端可用。
 - 附件上传/下载、两个私有 bucket、RLS 拒绝项逐项冒烟。
 - 结构迁移后 `supabase db lint` 零错误。
+
+日报附件发布的角色化手工 QA 门禁：
+
+1. Employee 和 Project Leader 各自在当日日报选择一个无敏感小文件；确认选择后立即上传，且进度条/百分比可观测。
+2. 在等待、上传中、服务器校验中、失败或删除中的任一状态，“提交日报”必须为原生 disabled；仅在所有附件服务端终态校验完成并显示 100% 后可提交。
+3. 提交成功后 reload，确认内容、工时、附件及显示名均持久化；在同一上海业务日编辑，保留或删除历史附件后再次提交并 reload 核对。
+4. Management 确认该报告后，Employee reload 必须同步看到已确认/已锁定，编辑入口消失；直接调用任何 save/finalize/abandon/delete RPC 也必须被数据库拒绝。
+5. 使用前一上海业务日的报告重复锁定验证；无论状态是否 confirmed，都不得编辑或新建上传 session。
