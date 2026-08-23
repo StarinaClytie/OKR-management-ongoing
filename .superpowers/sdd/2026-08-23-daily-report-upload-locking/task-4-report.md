@@ -4,6 +4,7 @@ Implementation commits:
 
 - `b54666d` — `feat: upload daily evidence before submission`
 - `7adde4b` — `fix: integrate daily upload sessions end to end` (review fix round 1/5)
+- `9912b87` — `fix: preserve daily attachment cleanup recovery` (review fix round 2/5)
 
 ## Delivered
 
@@ -40,13 +41,22 @@ Round 1 TDD evidence:
 - Page RED: 4 failures for absent clearance/session/upload wiring and missing confirmed/prior-day locks.
 - pgTAP was authored before the additive migration. Its RED/GREEN execution remains environment-blocked as described below.
 
+## Review Fix Round 2/5
+
+- Local report conversion now derives `attachmentIds` from file evidence in every block. `DailyReportsPage` also derives the persisted identity set directly from block evidence (with top-level IDs as compatibility input), so the locally refreshed aggregate retains the real server attachment IDs.
+- Added a no-refresh regression that saves the same report twice in succession. The retained attachment is explicitly adopted into `session-edit-2` for the first save and into the distinct `session-edit-3` for the second save before each session-aware submission.
+- Cleanup discovery now includes unassociated `deleted` metadata rows. This is required because Storage DELETE RLS first requires the metadata state to be `deleted`; a failed Storage request can therefore retry the same authorized path instead of losing it from discovery.
+- Added a repository regression proving a Storage failure is returned, `abandon_daily_report_upload_session` is not called, and the next cancellation attempt retries the same deleted row/path before abandonment.
+- Strengthened the server boundary beyond the client ordering: abandonment checks `storage.objects` and keeps the session active while any unassociated deleted attachment object still exists. Only after the Storage catalog confirms deletion can adopted historical evidence detach and the session become abandoned. Historical revision evidence remains excluded by the `revision_id`/`daily_okr_block_id` predicates.
+- The continuous-edit page test failed RED because adoption was called only once. The pgTAP additions were written before the migration adjustment, but their RED/GREEN execution is environment-blocked. The repository retry test locks the already-required client ordering while pgTAP covers the missing server guarantee.
+
 ## Verification
 
-Fresh verification after review fix round 1:
+Fresh verification after review fix round 2:
 
 ```text
 npm test -- --run src/data/supabaseRepository.test.ts src/pages/DailyReportsPage.test.tsx src/pages/daily-report/DailyReportForm.test.tsx src/pages/daily-report/DailyReportEvidence.test.tsx src/pages/daily-report/AttachmentList.test.tsx
-  5 files passed; 94 tests passed
+  5 files passed; 95 tests passed
 
 npm run typecheck
   passed
@@ -55,13 +65,13 @@ npm run build
   passed (Vite emitted its existing >500 kB chunk-size advisory)
 
 npm test -- --run
-  58 files passed; 451 tests passed
+  58 files passed; 452 tests passed
 
 git diff --check
   passed
 ```
 
-The lifecycle pgTAP plan now contains 46 assertions. These commands were each
+The lifecycle pgTAP plan now contains 49 assertions. These commands were each
 attempted after the final code change:
 
 ```text
@@ -77,4 +87,4 @@ suite and database lint are therefore **not claimed as passing** in this report.
 
 ## Remaining Concerns
 
-- The only verification gap is environmental: the additive migration and 46-assertion pgTAP suite need a running local Supabase instance. JS/TS integration, build, typecheck, and full unit/component regression are verified as above.
+- The only verification gap is environmental: the additive migration and 49-assertion pgTAP suite need a running local Supabase instance. JS/TS integration, build, typecheck, and full unit/component regression are verified as above.
