@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(46);
+select plan(49);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -413,6 +413,29 @@ select is(
   'deleted',
   'destructive cleanup marks only the unassociated session attachment deleted'
 );
+set local role authenticated;
+select results_eq(
+  $$select attachment_id from public.list_daily_report_upload_session_cleanup(
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null)
+  )$$,
+  $$values ((select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null))$$,
+  'deleted metadata remains discoverable until the client confirms Storage deletion'
+);
+select lives_ok(
+  $$select public.abandon_daily_report_upload_session(
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null)
+  )$$,
+  'metadata deletion alone cannot abandon a session while its Storage object still exists'
+);
+set local role postgres;
+select is(
+  (select status from public.daily_report_upload_sessions where id = (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null)),
+  'active',
+  'the session stays active until Storage deletion is observable server-side'
+);
+delete from storage.objects
+where bucket_id = 'report-attachments'
+  and name = (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null);
 set local role authenticated;
 select lives_ok(
   $$select public.abandon_daily_report_upload_session(

@@ -73,7 +73,11 @@ describe('DailyReportsPage', () => {
     };
     const createAttachmentDownload = vi.fn(async () => ({ ok: true as const, data: { url: 'https://storage.example/signed' } }));
     const removeAttachment = vi.fn(async () => ({ ok: true as const, data: undefined }));
-    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: report.id, sessionId: 'session-edit' } }));
+    let sessionNumber = 0;
+    const beginDailyReportUploadSession = vi.fn(async () => {
+      sessionNumber += 1;
+      return { ok: true as const, data: { reportId: report.id, sessionId: `session-edit-${sessionNumber}` } };
+    });
     const adoptDailyReportAttachments = vi.fn(async () => ({ ok: true as const, data: undefined }));
     const submitDailyReportSession = vi.fn(async () => ({ ok: true as const, data: { id: report.id, revision: 2 } }));
     const uploadDailyReportAttachment = vi.fn(async () => ({ ok: true as const, data: { attachmentId: 'attachment-new' } }));
@@ -124,12 +128,12 @@ describe('DailyReportsPage', () => {
     await user.click(screen.getByRole('button', { name: '保存日报修改' }));
     expect(beginDailyReportUploadSession).toHaveBeenLastCalledWith(expect.objectContaining({ reportDate: currentBusinessDate() }));
     expect(adoptDailyReportAttachments).toHaveBeenCalledWith(
-      { reportId: report.id, sessionId: 'session-edit' },
+      { reportId: report.id, sessionId: 'session-edit-2' },
       ['attachment-retained'],
     );
     expect(submitDailyReportSession).toHaveBeenCalledWith(expect.objectContaining({ blocks: [expect.objectContaining({
       attachments: [{ attachmentId: 'attachment-retained', displayName: '保留附件新名称', classification: 'internal' }],
-    })], reportDate: currentBusinessDate() }), 'session-edit');
+    })], reportDate: currentBusinessDate() }), 'session-edit-2');
     expect(removeAttachment).toHaveBeenCalledTimes(2);
     expect(screen.getAllByRole('button', { name: '编辑我的日报' })).toHaveLength(1);
     expect(screen.getByRole('cell', { name: currentBusinessDate() })).toBeVisible();
@@ -138,6 +142,13 @@ describe('DailyReportsPage', () => {
     expect(screen.getByDisplayValue('保留附件新名称')).toBeVisible();
     expect(screen.queryByDisplayValue('保留附件')).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('移除附件')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '保存日报修改' }));
+    expect(adoptDailyReportAttachments).toHaveBeenNthCalledWith(
+      2,
+      { reportId: report.id, sessionId: 'session-edit-3' },
+      ['attachment-retained'],
+    );
+    expect(submitDailyReportSession).toHaveBeenNthCalledWith(2, expect.anything(), 'session-edit-3');
     anchorClick.mockRestore();
   });
 

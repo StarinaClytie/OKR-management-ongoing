@@ -171,7 +171,12 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       if (!uploadSession || !dataRepository.submitDailyReportSession) {
         return { ok: false as const, error: { key: 'common.requestFailed' } satisfies LocalizedMessage };
       }
-      const persistedAttachmentIds = new Set(editingReport?.attachmentIds ?? []);
+      const persistedAttachmentIds = new Set([
+        ...(editingReport?.attachmentIds ?? []),
+        ...(editingReport?.blocks ?? []).flatMap((block) => (block.evidenceItems ?? []).flatMap((item) => (
+          item.kind === 'file' && item.attachmentId ? [item.attachmentId] : []
+        ))),
+      ]);
       const retainedAttachmentIds = draft.blocks.flatMap((block) => block.evidence.flatMap((item) => item.kind === 'file' && item.attachmentId && persistedAttachmentIds.has(item.attachmentId) ? [item.attachmentId] : []));
       if (retainedAttachmentIds.length > 0) {
         if (!dataRepository.adoptDailyReportAttachments) {

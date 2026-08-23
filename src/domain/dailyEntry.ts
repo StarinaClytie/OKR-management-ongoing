@@ -198,7 +198,9 @@ export function toLocalDailyReport(
       evidence: draft.blocks.flatMap((block) => block.evidence.map((item) => item.label)),
       evidenceItems: draft.blocks.flatMap((block) => block.evidence.map((item) => ({ ...item }))),
       evidenceClassification: draft.blocks.flatMap((block) => block.evidence).reduce<Classification>(mostRestrictiveClassification, 'public'),
-      attachmentIds: [],
+      attachmentIds: draft.blocks.flatMap((block) => block.evidence.flatMap((item) => (
+        item.kind === 'file' && item.attachmentId ? [item.attachmentId] : []
+      ))),
       status: 'submitted',
     },
   };

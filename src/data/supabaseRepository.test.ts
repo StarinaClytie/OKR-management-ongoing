@@ -255,6 +255,36 @@ describe('SupabaseOkrRepository', () => {
     expect(result).toEqual({ ok: false, error: { code: 'network', message: '请求未完成，请稍后重试' } });
   });
 
+  it('retries deleted metadata cleanup and never abandons before Storage deletion succeeds', async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'list_daily_report_upload_session_cleanup') return { data: [{ attachment_id: 'attachment-deleted' }], error: null };
+      if (name === 'delete_daily_report_upload_attachment') return { data: { id: 'attachment-deleted', bucket: 'report-attachments', path: 'organization/o/reports/r/deleted.pdf' }, error: null };
+      return { data: null, error: null };
+    });
+    const remove = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'storage unavailable' } })
+      .mockResolvedValueOnce({ data: {}, error: null });
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.storage.from = vi.fn(() => ({ upload: vi.fn(), createSignedUrl: vi.fn(), remove }));
+    const repository = new SupabaseOkrRepository(client);
+
+    await expect(repository.abandonDailyReportUploadSession('session-current')).resolves.toEqual({
+      ok: false, error: { code: 'network', message: '请求未完成，请稍后重试' },
+    });
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('abandon_daily_report_upload_session');
+
+    await expect(repository.abandonDailyReportUploadSession('session-current')).resolves.toEqual({ ok: true, data: undefined });
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'list_daily_report_upload_session_cleanup',
+      'delete_daily_report_upload_attachment',
+      'list_daily_report_upload_session_cleanup',
+      'delete_daily_report_upload_attachment',
+      'abandon_daily_report_upload_session',
+    ]);
+  });
+
   it('cleans recovered unassociated uploads before abandoning exactly the selected session', async () => {
     const rpc = vi.fn(async (name: string) => {
       if (name === 'list_daily_report_upload_session_cleanup') return { data: [{ attachment_id: 'attachment-recovered' }], error: null };

@@ -117,7 +117,10 @@ begin
     and attachment.uploader_id = auth.uid()
     and attachment.revision_id is null
     and attachment.daily_okr_block_id is null
-    and attachment.state in ('pending', 'uploaded', 'failed')
+    -- A metadata row is marked deleted before the Storage API call because
+    -- the Storage DELETE policy authorizes only deleted/replaced rows. Keep
+    -- it discoverable so a failed Storage request can retry the same path.
+    and attachment.state in ('pending', 'uploaded', 'failed', 'deleted')
   order by attachment.created_at, attachment.id;
 end;
 $$;
@@ -209,6 +212,26 @@ begin
     and attachment.revision_id is null
     and attachment.daily_okr_block_id is null
     and attachment.state = 'pending';
+
+  -- Metadata must be marked deleted before Storage RLS permits object
+  -- deletion. Do not retire the session until the Storage catalog confirms
+  -- that every unassociated deleted object's removal actually completed.
+  if exists (
+    select 1
+    from public.report_attachments attachment
+    join storage.objects object
+      on object.bucket_id = 'report-attachments'
+     and object.name = attachment.storage_path
+    where attachment.upload_session_id = target_session.id
+      and attachment.organization_id = target_session.organization_id
+      and attachment.report_id = target_session.report_id
+      and attachment.uploader_id = auth.uid()
+      and attachment.revision_id is null
+      and attachment.daily_okr_block_id is null
+      and attachment.state = 'deleted'
+  ) then
+    return;
+  end if;
 
   -- Finalized unassociated uploads remain recoverable until the client has
   -- explicitly deleted both metadata and the Storage object.
