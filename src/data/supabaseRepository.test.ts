@@ -29,7 +29,7 @@ function createClient(options?: {
   builder.eq.mockReturnValue(builder);
   const rpc = vi.fn(async () => ({ data: options?.rpcData ?? null, error: options?.rpcError ?? null }));
   const createSignedUrl = vi.fn(async () => ({ data: options?.signedUrl ? { signedUrl: options.signedUrl } : null, error: options?.signedUrl ? null : { message: 'not configured' } }));
-  const storageFrom = vi.fn(() => ({ upload: vi.fn(), createSignedUrl, remove: vi.fn() }));
+  const storageFrom = vi.fn(() => ({ upload: vi.fn(), createSignedUrl, remove: vi.fn(async () => ({ data: {}, error: null })) }));
   const client: SupabaseClientLike = {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: { user: { id: 'profile-1' } } }, error: null })),
@@ -160,10 +160,27 @@ describe('SupabaseOkrRepository', () => {
     expect(uploadStorageObject).not.toHaveBeenCalled();
   });
 
+  it('explicitly adopts retained revision attachments into the active edit session', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const repository = new SupabaseOkrRepository(client);
+
+    await expect(repository.adoptDailyReportAttachments(
+      { reportId: 'report-1', sessionId: 'session-edit' },
+      ['attachment-retained'],
+    )).resolves.toEqual({ ok: true, data: undefined });
+
+    expect(rpc).toHaveBeenCalledWith('adopt_daily_report_revision_attachments', {
+      p_report_id: 'report-1',
+      p_upload_session_id: 'session-edit',
+      p_attachment_ids: ['attachment-retained'],
+    });
+  });
+
   it('cleans only the failed session attachment so retry can create one replacement row', async () => {
+    const failedUpdates: Array<{ state: string; attachmentId?: string }> = [];
     const rpc = vi.fn()
       .mockResolvedValueOnce({ data: { id: 'attachment-failed', path: 'organization/o/reports/r/failed.pdf', bucket: 'report-attachments' }, error: null })
-      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-failed', path: 'organization/o/reports/r/failed.pdf', bucket: 'report-attachments' }, error: null })
       .mockResolvedValueOnce({ data: { id: 'attachment-retry', path: 'organization/o/reports/r/retry.pdf', bucket: 'report-attachments' }, error: null })
       .mockResolvedValueOnce({ data: { id: 'attachment-retry' }, error: null });
     const remove = vi.fn().mockResolvedValue({ data: {}, error: null });
@@ -176,25 +193,85 @@ describe('SupabaseOkrRepository', () => {
       .mockResolvedValueOnce(undefined);
     const repository = new SupabaseOkrRepository(client);
     const file = new File(['proof'], 'proof.pdf', { type: 'application/pdf' });
-    const base = { session: { reportId: 'report-1', sessionId: 'session-1' }, file, entryPosition: 1, label: 'proof.pdf', classification: 'internal' as const, onChange: vi.fn() };
+    const base = { session: { reportId: 'report-1', sessionId: 'session-1' }, file, entryPosition: 1, label: 'proof.pdf', classification: 'internal' as const, onChange: (update: { state: string; attachmentId?: string }) => failedUpdates.push(update) };
 
     await expect(repository.uploadDailyReportAttachment(base)).resolves.toEqual({ ok: false, error: expect.objectContaining({ code: 'network' }) });
     await expect(repository.uploadDailyReportAttachment(base)).resolves.toEqual({ ok: true, data: { attachmentId: 'attachment-retry' } });
 
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
       'begin_entry_attachment_upload',
-      'soft_delete_attachment',
+      'delete_daily_report_upload_attachment',
       'begin_entry_attachment_upload',
       'finalize_attachment_upload',
     ]);
     expect(remove).toHaveBeenCalledWith(['organization/o/reports/r/failed.pdf']);
+    expect([...failedUpdates].reverse().find((update) => update.state === 'failed')).toEqual({ state: 'failed', progress: 0, attachmentId: undefined, error: '请求未完成，请稍后重试' });
   });
 
-  it('abandons exactly the selected upload session', async () => {
-    const { client, rpc } = createClient({ rpcData: null });
+  it('propagates metadata cleanup failure instead of hiding an orphaned upload row', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { id: 'attachment-failed', path: 'organization/o/reports/r/failed.pdf', bucket: 'report-attachments' }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'cleanup denied' } });
+    const { client, storageFrom } = createClient();
+    client.rpc = rpc;
+    client.auth.getSession = vi.fn(async () => ({ data: { session: { user: { id: 'profile-1' }, access_token: 'access-token' } }, error: null }));
+    vi.mocked(uploadStorageObject).mockRejectedValueOnce(new Error('upload failed'));
+    const updates: Array<{ state: string; attachmentId?: string; error?: string }> = [];
+
+    const result = await new SupabaseOkrRepository(client).uploadDailyReportAttachment({
+      session: { reportId: 'report-1', sessionId: 'session-1' },
+      file: new File(['proof'], 'proof.pdf', { type: 'application/pdf' }),
+      entryPosition: 1,
+      label: 'proof.pdf',
+      classification: 'internal',
+      onChange: (update) => updates.push(update),
+    });
+
+    expect(result).toEqual({ ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } });
+    expect(updates.at(-1)).toEqual({ state: 'failed', progress: 0, attachmentId: undefined, error: '无权访问请求的资源' });
+    expect(storageFrom).not.toHaveBeenCalled();
+  });
+
+  it('propagates Storage cleanup failure after metadata deletion', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { id: 'attachment-failed', path: 'organization/o/reports/r/failed.pdf', bucket: 'report-attachments' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-failed', path: 'organization/o/reports/r/failed.pdf', bucket: 'report-attachments' }, error: null });
+    const remove = vi.fn(async () => ({ data: null, error: { message: 'storage cleanup failed' } }));
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.storage.from = vi.fn(() => ({ upload: vi.fn(), createSignedUrl: vi.fn(), remove }));
+    client.auth.getSession = vi.fn(async () => ({ data: { session: { user: { id: 'profile-1' }, access_token: 'access-token' } }, error: null }));
+    vi.mocked(uploadStorageObject).mockRejectedValueOnce(new Error('upload failed'));
+
+    const result = await new SupabaseOkrRepository(client).uploadDailyReportAttachment({
+      session: { reportId: 'report-1', sessionId: 'session-1' },
+      file: new File(['proof'], 'proof.pdf', { type: 'application/pdf' }),
+      entryPosition: 1,
+      label: 'proof.pdf',
+      classification: 'internal',
+      onChange: vi.fn(),
+    });
+
+    expect(result).toEqual({ ok: false, error: { code: 'network', message: '请求未完成，请稍后重试' } });
+  });
+
+  it('cleans recovered unassociated uploads before abandoning exactly the selected session', async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'list_daily_report_upload_session_cleanup') return { data: [{ attachment_id: 'attachment-recovered' }], error: null };
+      if (name === 'delete_daily_report_upload_attachment') return { data: { id: 'attachment-recovered', bucket: 'report-attachments', path: 'organization/o/reports/r/recovered.pdf' }, error: null };
+      return { data: null, error: null };
+    });
+    const remove = vi.fn(async () => ({ data: {}, error: null }));
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.storage.from = vi.fn(() => ({ upload: vi.fn(), createSignedUrl: vi.fn(), remove }));
     await expect(new SupabaseOkrRepository(client).abandonDailyReportUploadSession('session-current')).resolves.toEqual({ ok: true, data: undefined });
-    expect(rpc).toHaveBeenCalledWith('abandon_daily_report_upload_session', { p_upload_session_id: 'session-current' });
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'list_daily_report_upload_session_cleanup',
+      'delete_daily_report_upload_attachment',
+      'abandon_daily_report_upload_session',
+    ]);
+    expect(remove).toHaveBeenCalledWith(['organization/o/reports/r/recovered.pdf']);
   });
 
   it('maps only recognized profile roles without widening strings', async () => {

@@ -459,6 +459,7 @@ export interface OkrRepository {
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;
   saveDailyReport(input: DailyReportInput, attachments?: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   beginDailyReportUploadSession?(input: Pick<DailyReportInput, 'reportDate' | 'status' | 'classification'>): Promise<RepositoryResult<DailyReportUploadSession>>;
+  adoptDailyReportAttachments?(session: DailyReportUploadSession, attachmentIds: string[]): Promise<RepositoryResult<void>>;
   uploadDailyReportAttachment?(input: DailyReportAttachmentUploadInput): Promise<RepositoryResult<{ attachmentId: string }>>;
   abandonDailyReportUploadSession?(sessionId: string): Promise<RepositoryResult<void>>;
   submitDailyReportSession?(input: DailyReportInput, sessionId: string): Promise<RepositoryResult<{ id: string; revision: number }>>;

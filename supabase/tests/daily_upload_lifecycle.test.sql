@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(31);
+select plan(46);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -53,6 +53,10 @@ create temporary table upload_lifecycle_ids (
   resumed_session_id uuid,
   associated_attachment_id uuid,
   associated_path text,
+  cancel_session_id uuid,
+  cleanup_attachment_id uuid,
+  cleanup_path text,
+  edit_session_id uuid,
   locked_session_id uuid,
   locked_attachment_id uuid
 );
@@ -319,6 +323,149 @@ select throws_ok(
   '42501', 'Attachment is not available for deletion',
   'an attachment already associated with an immutable revision cannot be soft-deleted'
 );
+
+insert into upload_lifecycle_ids (cancel_session_id)
+select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
+select throws_ok(
+  $$select public.adopt_daily_report_revision_attachments(
+    '96000000-0000-0000-0000-000000000001',
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null),
+    array[
+      (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null),
+      (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)
+    ]
+  )$$,
+  '22023', 'Daily report attachment metadata is duplicated',
+  'adoption rejects duplicate attachment identities'
+);
+select throws_ok(
+  $$select public.adopt_daily_report_revision_attachments(
+    '96000000-0000-0000-0000-000000000001',
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null),
+    array[(select over_clearance_attachment_id from upload_lifecycle_ids where over_clearance_attachment_id is not null)]
+  )$$,
+  '42501', 'Attachment is not available for adoption',
+  'adoption rejects an uploaded attachment outside the current revision'
+);
+select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000002', true);
+select throws_ok(
+  $$select public.adopt_daily_report_revision_attachments(
+    '96000000-0000-0000-0000-000000000001',
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null),
+    array[(select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)]
+  )$$,
+  '42501', 'Upload session is not available',
+  'another user cannot adopt evidence into the owner session'
+);
+select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000001', true);
+select lives_ok(
+  $$select public.adopt_daily_report_revision_attachments(
+    '96000000-0000-0000-0000-000000000001',
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null),
+    array[(select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)]
+  )$$,
+  'the current revision attachment is explicitly adopted into a new edit session'
+);
+set local role postgres;
+select is(
+  (select upload_session_id::text from public.report_attachments where id = (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)),
+  (select cancel_session_id::text from upload_lifecycle_ids where cancel_session_id is not null),
+  'adoption binds the retained attachment to the requested session instead of relying on its old session'
+);
+set local role authenticated;
+with started as (
+  select public.begin_entry_attachment_upload(
+    '96000000-0000-0000-0000-000000000001',
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null),
+    1, 'cancel-cleanup.pdf', 'application/pdf', 128, 'internal', 'Cancel cleanup'
+  ) as value
+)
+insert into upload_lifecycle_ids (cleanup_attachment_id, cleanup_path)
+select (value->>'id')::uuid, value->>'path' from started;
+insert into storage.objects (bucket_id, name, owner_id, metadata)
+select 'report-attachments', cleanup_path, auth.uid()::text,
+  jsonb_build_object('mimetype', 'application/pdf', 'size', 128)
+from upload_lifecycle_ids where cleanup_attachment_id is not null;
+select lives_ok(
+  $$select public.finalize_attachment_upload(
+    (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null),
+    'sha256:cancel-cleanup'
+  )$$,
+  'a new session attachment is finalized before cancellation cleanup'
+);
+select results_eq(
+  $$select attachment_id from public.list_daily_report_upload_session_cleanup(
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null)
+  )$$,
+  $$values ((select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null))$$,
+  'cleanup discovery returns new finalized uploads but excludes adopted revision evidence'
+);
+select is(
+  (public.delete_daily_report_upload_attachment(
+    (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null)
+  )->>'path'),
+  (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null),
+  'destructive cleanup returns the Storage path for checked object deletion'
+);
+set local role postgres;
+select is(
+  (select state::text from public.report_attachments where id = (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null)),
+  'deleted',
+  'destructive cleanup marks only the unassociated session attachment deleted'
+);
+set local role authenticated;
+select lives_ok(
+  $$select public.abandon_daily_report_upload_session(
+    (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null)
+  )$$,
+  'the cleaned edit session can be abandoned'
+);
+set local role postgres;
+select is(
+  (select upload_session_id::text from public.report_attachments where id = (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)),
+  null,
+  'abandoning detaches adopted immutable evidence from the cancelled session'
+);
+select is(
+  (select status from public.daily_report_upload_sessions where id = (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null)),
+  'abandoned',
+  'the cancelled edit session is retired after cleanup'
+);
+set local role authenticated;
+insert into upload_lifecycle_ids (edit_session_id)
+select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
+select lives_ok(
+  $$select public.adopt_daily_report_revision_attachments(
+    '96000000-0000-0000-0000-000000000001',
+    (select edit_session_id from upload_lifecycle_ids where edit_session_id is not null),
+    array[(select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)]
+  )$$,
+  'retained evidence can be adopted again for a later edit attempt'
+);
+select lives_ok(
+  $$select * from public.save_daily_report(
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal',
+    jsonb_build_array(jsonb_build_object(
+      'dailyObjective', 'Edited objective',
+      'linkedKeyResultId', '95000000-0000-0000-0000-000000000001',
+      'workDescription', 'Edited work', 'hours', 3, 'result', 'Edited result',
+      'attachments', jsonb_build_array(jsonb_build_object(
+        'attachmentId', (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null),
+        'displayName', 'Associated upload retained', 'classification', 'internal'
+      ))
+    )),
+    (select edit_session_id from upload_lifecycle_ids where edit_session_id is not null),
+    '[]'::jsonb
+  )$$,
+  'an explicitly adopted current-revision attachment can be carried into the next revision'
+);
+set local role postgres;
+select is(
+  (select count(*) from public.report_attachment_revisions where attachment_id = (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)),
+  2::bigint,
+  'copy-forward preserves the prior immutable association and adds the new revision association'
+);
+set local role authenticated;
 
 select ok(
   private.daily_report_is_editable(

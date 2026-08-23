@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider } from '../auth/AuthContext';
@@ -6,8 +6,9 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import { AppRoutes } from '../app/routes';
 import { LocaleProvider } from '../i18n/LocaleProvider';
 import { mockRepository } from '../mocks/repository';
-import type { OkrRepository } from '../data/types';
+import type { DailyReportAttachmentUploadInput, OkrRepository } from '../data/types';
 import type { DailyReport } from '../domain/types';
+import { currentBusinessDate } from '../domain/progressStatus';
 import { DailyReportsPage } from './DailyReportsPage';
 
 function renderPageAs(userId: string) {
@@ -54,13 +55,13 @@ describe('DailyReportsPage', () => {
     expect(screen.queryByLabelText(/当日 O/)).not.toBeInTheDocument();
   });
 
-  it('edits a prior-day report in place and reopens only its new revision aggregate', async () => {
+  it('edits today\'s unconfirmed report through explicit attachment adoption and session submission', async () => {
     const user = userEvent.setup();
     const data = mockRepository.getDashboardData('user-employee');
     const employee = data.currentUser;
     const report: DailyReport = {
       id: 'report-current', authorId: employee.id, projectId: 'project-orion', objectiveId: 'objective-orion-activation',
-      keyResultIds: ['kr-orion-onboarding'], date: '2026-08-20', content: '当前目标', dailyObjective: '当前目标', classification: 'internal', hours: 2,
+      keyResultIds: ['kr-orion-onboarding'], date: currentBusinessDate(), content: '当前目标', dailyObjective: '当前目标', classification: 'internal', hours: 2,
       evidence: ['保留附件', '移除附件'], evidenceClassification: 'internal', attachmentIds: ['attachment-retained', 'attachment-removed'], status: 'submitted', currentRevision: 1,
       blocks: [{
         id: 'block-current', dailyObjective: '当前目标', keyResultId: 'kr-orion-onboarding', workDescription: '当前工作', hours: 2, result: '当前结果', keyResults: [],
@@ -72,14 +73,22 @@ describe('DailyReportsPage', () => {
     };
     const createAttachmentDownload = vi.fn(async () => ({ ok: true as const, data: { url: 'https://storage.example/signed' } }));
     const removeAttachment = vi.fn(async () => ({ ok: true as const, data: undefined }));
-    const saveDailyReport = vi.fn(async () => ({ ok: true as const, data: { id: report.id, revision: 2 } }));
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: report.id, sessionId: 'session-edit' } }));
+    const adoptDailyReportAttachments = vi.fn(async () => ({ ok: true as const, data: undefined }));
+    const submitDailyReportSession = vi.fn(async () => ({ ok: true as const, data: { id: report.id, revision: 2 } }));
+    const uploadDailyReportAttachment = vi.fn(async () => ({ ok: true as const, data: { attachmentId: 'attachment-new' } }));
+    const abandonDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: undefined }));
     const dataRepository = {
       mode: 'supabase',
       getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
       listReportRevisions: vi.fn(async () => ({ ok: true as const, data: [] })),
       createAttachmentDownload,
       removeAttachment,
-      saveDailyReport,
+      beginDailyReportUploadSession,
+      adoptDailyReportAttachments,
+      submitDailyReportSession,
+      uploadDailyReportAttachment,
+      abandonDailyReportUploadSession,
     } as unknown as OkrRepository;
     const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: employee, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
@@ -98,7 +107,7 @@ describe('DailyReportsPage', () => {
 
     await user.clear(screen.getByLabelText('成果 1'));
     await user.type(screen.getByLabelText('成果 1'), '保留附件新名称');
-    await user.selectOptions(screen.getByLabelText('成果 1 密级'), 'confidential');
+    expect(screen.queryByRole('option', { name: '机密' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '移除 移除附件' }));
     expect(removeAttachment).toHaveBeenCalledWith('attachment-removed', { preserveRevisionHistory: true });
     expect(screen.queryByDisplayValue('移除附件')).not.toBeInTheDocument();
@@ -110,21 +119,89 @@ describe('DailyReportsPage', () => {
 
     await user.clear(screen.getByLabelText('成果 1'));
     await user.type(screen.getByLabelText('成果 1'), '保留附件新名称');
-    await user.selectOptions(screen.getByLabelText('成果 1 密级'), 'confidential');
     await user.click(screen.getByRole('button', { name: '移除 移除附件' }));
 
     await user.click(screen.getByRole('button', { name: '保存日报修改' }));
-    expect(saveDailyReport).toHaveBeenCalledWith(expect.objectContaining({ blocks: [expect.objectContaining({
-      attachments: [{ attachmentId: 'attachment-retained', displayName: '保留附件新名称', classification: 'confidential' }],
-    })], reportDate: '2026-08-20' }), []);
+    expect(beginDailyReportUploadSession).toHaveBeenLastCalledWith(expect.objectContaining({ reportDate: currentBusinessDate() }));
+    expect(adoptDailyReportAttachments).toHaveBeenCalledWith(
+      { reportId: report.id, sessionId: 'session-edit' },
+      ['attachment-retained'],
+    );
+    expect(submitDailyReportSession).toHaveBeenCalledWith(expect.objectContaining({ blocks: [expect.objectContaining({
+      attachments: [{ attachmentId: 'attachment-retained', displayName: '保留附件新名称', classification: 'internal' }],
+    })], reportDate: currentBusinessDate() }), 'session-edit');
     expect(removeAttachment).toHaveBeenCalledTimes(2);
     expect(screen.getAllByRole('button', { name: '编辑我的日报' })).toHaveLength(1);
-    expect(screen.getByRole('cell', { name: '2026-08-20' })).toBeVisible();
+    expect(screen.getByRole('cell', { name: currentBusinessDate() })).toBeVisible();
 
     await user.click(screen.getByRole('button', { name: '编辑我的日报' }));
     expect(screen.getByDisplayValue('保留附件新名称')).toBeVisible();
     expect(screen.queryByDisplayValue('保留附件')).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue('移除附件')).not.toBeInTheDocument();
     anchorClick.mockRestore();
+  });
+
+  it('passes today, clearance, and upload transport into the real authoring form', async () => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-employee');
+    const employee = data.currentUser;
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-today', sessionId: 'session-today' } }));
+    const uploadDailyReportAttachment = vi.fn(async ({ onChange }: DailyReportAttachmentUploadInput) => {
+      onChange({ state: 'uploaded', progress: 100, attachmentId: 'attachment-new' });
+      return { ok: true as const, data: { attachmentId: 'attachment-new' } };
+    });
+    const removeAttachment = vi.fn(async () => ({ ok: true as const, data: undefined }));
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data })),
+      beginDailyReportUploadSession,
+      uploadDailyReportAttachment,
+      abandonDailyReportUploadSession: vi.fn(async () => ({ ok: true as const, data: undefined })),
+      adoptDailyReportAttachments: vi.fn(async () => ({ ok: true as const, data: undefined })),
+      submitDailyReportSession: vi.fn(async () => ({ ok: true as const, data: { id: 'report-today', revision: 1 } })),
+      removeAttachment,
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: employee, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '填写今日日报' }));
+    expect(screen.queryByRole('option', { name: '机密' })).not.toBeInTheDocument();
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'page.pdf', { type: 'application/pdf' }));
+
+    await waitFor(() => expect(uploadDailyReportAttachment).toHaveBeenCalledOnce());
+    expect(beginDailyReportUploadSession).toHaveBeenCalledWith({
+      reportDate: currentBusinessDate(), status: 'submitted', classification: 'internal',
+    });
+    await user.click(screen.getByRole('button', { name: '移除 page.pdf' }));
+    expect(removeAttachment).toHaveBeenCalledWith('attachment-new', { preserveRevisionHistory: false });
+  });
+
+  it.each([
+    ['a prior-day report', { date: '2026-08-20', status: 'submitted' as const }],
+    ['a confirmed report today', { date: currentBusinessDate(), status: 'confirmed' as const }],
+  ])('locks %s in the page before opening the form', async (_label, state) => {
+    const data = mockRepository.getDashboardData('user-employee');
+    const report = { ...data.dailyReports.find((candidate) => candidate.authorId === data.currentUser.id)!, ...state };
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    expect(await screen.findByText('已锁定')).toBeVisible();
+    expect(screen.queryByRole('button', { name: '编辑我的日报' })).not.toBeInTheDocument();
   });
 });

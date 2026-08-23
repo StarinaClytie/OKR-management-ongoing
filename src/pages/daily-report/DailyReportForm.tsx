@@ -156,7 +156,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
         }),
       });
       if (result.ok) finalizedAttachmentIdsRef.current.set(item.id, result.data.attachmentId);
-      else patchEvidence(blockId, item.id, { uploadState: 'failed', error: result.error.message });
+      else patchEvidence(blockId, item.id, { uploadState: 'failed', attachmentId: undefined, error: result.error.message });
       uploadControllersRef.current.delete(item.id);
     })().finally(() => {
       setActiveMutations((count) => Math.max(0, count - 1));
@@ -209,10 +209,43 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const cancel = async () => {
     if (activeMutations > 0 || isSubmitting) return;
     setActiveMutations((count) => count + 1);
-    const session = uploadSessionRef.current;
-    if (session && uploadRepository) await uploadRepository.abandonDailyReportUploadSession(session.sessionId);
-    setActiveMutations((count) => Math.max(0, count - 1));
-    onCancel();
+    try {
+      let cleanupFailed = false;
+      for (const [evidenceId, attachmentId] of finalizedAttachmentIdsRef.current) {
+        const removed = onRemoveAttachment
+          ? await onRemoveAttachment(attachmentId, { preserveRevisionHistory: false })
+          : false;
+        if (removed) {
+          finalizedAttachmentIdsRef.current.delete(evidenceId);
+          setDraft((current) => ({
+            ...current,
+            blocks: current.blocks.map((block) => ({ ...block, evidence: block.evidence.filter((item) => item.id !== evidenceId) })),
+          }));
+        } else {
+          cleanupFailed = true;
+        }
+      }
+      if (cleanupFailed) {
+        setStatus({ key: 'common.requestFailed' });
+        return;
+      }
+
+      const session = uploadSessionRef.current ?? (uploadRepository && reportDate ? await ensureUploadSession() : undefined);
+      if (uploadRepository && reportDate && !session) {
+        setStatus({ key: 'common.requestFailed' });
+        return;
+      }
+      if (session && uploadRepository) {
+        const abandoned = await uploadRepository.abandonDailyReportUploadSession(session.sessionId);
+        if (!abandoned.ok) {
+          setStatus({ key: 'common.requestFailed' });
+          return;
+        }
+      }
+      onCancel();
+    } finally {
+      setActiveMutations((count) => Math.max(0, count - 1));
+    }
   };
 
   const removeEvidence = async (blockId: string, item: DailyEvidenceDraft): Promise<boolean> => {
@@ -246,6 +279,12 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
     if (!block) return;
     for (const item of block.evidence) {
       if (!await removeEvidence(block.id, item)) return;
+      setDraft((current) => ({
+        ...current,
+        blocks: current.blocks.map((candidate) => candidate.id === block.id
+          ? { ...candidate, evidence: candidate.evidence.filter((evidence) => evidence.id !== item.id) }
+          : candidate),
+      }));
     }
     setDraft((current) => ({ ...current, blocks: current.blocks.filter((candidate) => candidate.id !== id) }));
   };

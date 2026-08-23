@@ -461,6 +461,15 @@ export class SupabaseOkrRepository implements OkrRepository {
     });
   }
 
+  async adoptDailyReportAttachments(session: DailyReportUploadSession, attachmentIds: string[]): Promise<RepositoryResult<void>> {
+    const adopted = await this.callRpc<null>('adopt_daily_report_revision_attachments', {
+      p_report_id: session.reportId,
+      p_upload_session_id: session.sessionId,
+      p_attachment_ids: attachmentIds,
+    });
+    return adopted.ok ? { ok: true, data: undefined } : adopted;
+  }
+
   async uploadDailyReportAttachment(input: DailyReportAttachmentUploadInput): Promise<RepositoryResult<{ attachmentId: string }>> {
     const invalid = validateAttachment(input.file);
     if (invalid) {
@@ -489,11 +498,13 @@ export class SupabaseOkrRepository implements OkrRepository {
     input.onChange({ state: 'uploading', progress: 0, attachmentId });
     const session = await this.client.auth.getSession();
     if (session.error || !session.data.session?.access_token) {
-      await this.cleanupUploadAttempt([pending.data]);
-      const result: { ok: false; error: { code: RepositoryErrorCode; message: string } } = session.error
-        ? failure<{ attachmentId: string }>(session.error)
-        : { ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } };
-      input.onChange({ state: 'failed', progress: 0, attachmentId, error: result.error.message });
+      const cleanup = await this.cleanupUploadAttempt([pending.data]);
+      const result: { ok: false; error: { code: RepositoryErrorCode; message: string } } = !cleanup.ok
+        ? cleanup
+        : session.error
+          ? failure<{ attachmentId: string }>(session.error)
+          : { ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } };
+      input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, error: result.error.message });
       return result;
     }
 
@@ -510,24 +521,33 @@ export class SupabaseOkrRepository implements OkrRepository {
         onProgress: (progress) => input.onChange({ state: 'uploading', progress, attachmentId }),
       });
     } catch (error) {
-      await this.cleanupUploadAttempt([pending.data]);
-      const result = failure<{ attachmentId: string }>({ message: error instanceof Error ? error.message : 'Storage upload failed' });
-      input.onChange({ state: 'failed', progress: 0, attachmentId, error: result.error.message });
+      const cleanup = await this.cleanupUploadAttempt([pending.data]);
+      const result = cleanup.ok
+        ? failure<{ attachmentId: string }>({ message: error instanceof Error ? error.message : 'Storage upload failed' })
+        : cleanup;
+      input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, error: result.error.message });
       return result;
     }
 
     input.onChange({ state: 'verifying', progress: 100, attachmentId });
     const finalized = await this.finalizeAttachmentUpload(attachmentId);
     if (!finalized.ok) {
-      await this.cleanupUploadAttempt([pending.data]);
-      input.onChange({ state: 'failed', progress: 100, attachmentId, error: finalized.error.message });
-      return finalized as RepositoryResult<{ attachmentId: string }>;
+      const cleanup = await this.cleanupUploadAttempt([pending.data]);
+      const result = cleanup.ok ? finalized : cleanup;
+      input.onChange({ state: 'failed', progress: 100, attachmentId: undefined, error: result.error.message });
+      return result as RepositoryResult<{ attachmentId: string }>;
     }
     input.onChange({ state: 'uploaded', progress: 100, attachmentId });
     return { ok: true, data: { attachmentId } };
   }
 
   async abandonDailyReportUploadSession(sessionId: string): Promise<RepositoryResult<void>> {
+    const cleanupTargets = await this.callRpc<Array<{ attachment_id: string }>>('list_daily_report_upload_session_cleanup', { p_upload_session_id: sessionId });
+    if (!cleanupTargets.ok) return cleanupTargets;
+    for (const target of cleanupTargets.data) {
+      const cleaned = await this.removeAttachment(target.attachment_id, { preserveRevisionHistory: false });
+      if (!cleaned.ok) return cleaned;
+    }
     const abandoned = await this.callRpc<null>('abandon_daily_report_upload_session', { p_upload_session_id: sessionId });
     return abandoned.ok ? { ok: true, data: undefined } : abandoned;
   }
@@ -568,12 +588,13 @@ export class SupabaseOkrRepository implements OkrRepository {
     return { ok: true, data: undefined };
   }
 
-  private async cleanupUploadAttempt(started: AttachmentUploadTarget[]): Promise<void> {
+  private async cleanupUploadAttempt(started: AttachmentUploadTarget[]): Promise<RepositoryResult<void>> {
     const cleanupOrder = [...started].reverse();
-    for (const target of cleanupOrder) await this.removeAttachment(target.id);
-    if (cleanupOrder.length > 0) {
-      await this.client.storage.from('report-attachments').remove(cleanupOrder.map((target) => target.path));
+    for (const target of cleanupOrder) {
+      const removed = await this.removeAttachment(target.id, { preserveRevisionHistory: false });
+      if (!removed.ok) return removed;
     }
+    return { ok: true, data: undefined };
   }
 
   private async uploadAll(reportId: string, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<AttachmentUploadTarget[]>> {
@@ -975,11 +996,14 @@ export class SupabaseOkrRepository implements OkrRepository {
     return this.callRpc('replace_attachment', { p_attachment_id: id, ...input });
   }
   async removeAttachment(id: string, options?: { preserveRevisionHistory?: boolean }): Promise<RepositoryResult<void>> {
-    const functionName = options?.preserveRevisionHistory
-      ? 'authorize_attachment_revision_removal'
-      : 'soft_delete_attachment';
-    const result = await this.callRpc<null>(functionName, { p_attachment_id: id });
-    return result.ok ? { ok: true, data: undefined } : result;
+    if (options?.preserveRevisionHistory) {
+      const authorized = await this.callRpc<null>('authorize_attachment_revision_removal', { p_attachment_id: id });
+      return authorized.ok ? { ok: true, data: undefined } : authorized;
+    }
+    const deleted = await this.callRpc<AttachmentUploadTarget>('delete_daily_report_upload_attachment', { p_attachment_id: id });
+    if (!deleted.ok) return deleted;
+    const removed = await this.client.storage.from(deleted.data.bucket).remove([deleted.data.path]);
+    return removed.error ? failure(removed.error) : { ok: true, data: undefined };
   }
   async createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>> {
     const authorized = await this.callRpc<{ bucket: string; path: string; expiresIn: number }>('create_attachment_download', { p_attachment_id: id });

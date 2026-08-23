@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { toLocalDailyReport, type DailyReportDraft } from '../domain/dailyEntry';
 import { getDailyReportBodyPermissionScope } from '../domain/permissions';
 import { currentBusinessDate } from '../domain/progressStatus';
+import { canEditDailyReport } from '../domain/dailyReportPolicy';
 import type { DailyReport, KeyResult, User } from '../domain/types';
 import { isKrOwner } from '../domain/krAssignments';
 import { DailyReportForm } from './daily-report/DailyReportForm';
@@ -16,7 +17,7 @@ import { repository } from '../lib/supabase';
 import { RevisionHistory, type RevisionSummary } from './daily-report/RevisionHistory';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { LocalizedMessage, MessageKey } from '../i18n/messages';
-import type { DailyReportInput, OkrRepository } from '../data/types';
+import type { DailyReportInput, DailyReportUploadSession, OkrRepository } from '../data/types';
 import { useDashboardData } from '../data/useDashboardData';
 import { RepositoryDataState } from '../components/RepositoryDataState';
 
@@ -76,6 +77,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     return <section className="business-page" aria-labelledby="daily-reports-page-title"><PageHeader title={t('daily.title')} description={t('daily.description')} /><RepositoryDataState state={dashboard} /></section>;
   }
   const currentUserId = currentUser.id;
+  const businessDate = currentBusinessDate();
   const data = dashboard.data;
   const currentLocalReports = localReports.ownerId === currentUser.id ? localReports.reports : [];
   const localReportIds = new Set(currentLocalReports.map((report) => report.id));
@@ -116,8 +118,21 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     ? { blocks: [blankBlock(requestedKr.id)], classification: 'internal' }
     : undefined;
 
-  async function handleSubmit(draft: DailyReportDraft) {
-    const reportDate = editingReport?.date ?? currentBusinessDate();
+  const uploadRepository = dataRepository.mode === 'supabase'
+    && dataRepository.beginDailyReportUploadSession
+    && dataRepository.uploadDailyReportAttachment
+    && dataRepository.abandonDailyReportUploadSession
+    && dataRepository.submitDailyReportSession
+    ? {
+        beginDailyReportUploadSession: (input: Parameters<NonNullable<OkrRepository['beginDailyReportUploadSession']>>[0]) => dataRepository.beginDailyReportUploadSession!(input),
+        uploadDailyReportAttachment: (input: Parameters<NonNullable<OkrRepository['uploadDailyReportAttachment']>>[0]) => dataRepository.uploadDailyReportAttachment!(input),
+        abandonDailyReportUploadSession: (sessionId: string) => dataRepository.abandonDailyReportUploadSession!(sessionId),
+        submitDailyReportSession: (input: DailyReportInput, sessionId: string) => dataRepository.submitDailyReportSession!(input, sessionId),
+      }
+    : undefined;
+
+  async function handleSubmit(draft: DailyReportDraft, uploadSession?: DailyReportUploadSession) {
+    const reportDate = editingReport?.date ?? businessDate;
     const conversion = toLocalDailyReport(draft, {
       authorId: currentUserId,
       date: reportDate,
@@ -153,8 +168,19 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
         })),
         evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
-      const files = draft.blocks.flatMap((block, index) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification, entryPosition: index + 1, label: item.label }] : []));
-      const persisted = await dataRepository.saveDailyReport(input, files);
+      if (!uploadSession || !dataRepository.submitDailyReportSession) {
+        return { ok: false as const, error: { key: 'common.requestFailed' } satisfies LocalizedMessage };
+      }
+      const persistedAttachmentIds = new Set(editingReport?.attachmentIds ?? []);
+      const retainedAttachmentIds = draft.blocks.flatMap((block) => block.evidence.flatMap((item) => item.kind === 'file' && item.attachmentId && persistedAttachmentIds.has(item.attachmentId) ? [item.attachmentId] : []));
+      if (retainedAttachmentIds.length > 0) {
+        if (!dataRepository.adoptDailyReportAttachments) {
+          return { ok: false as const, error: { key: 'common.requestFailed' } satisfies LocalizedMessage };
+        }
+        const adopted = await dataRepository.adoptDailyReportAttachments(uploadSession, retainedAttachmentIds);
+        if (!adopted.ok) return { ok: false as const, error: { key: adopted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
+      }
+      const persisted = await dataRepository.submitDailyReportSession(input, uploadSession.sessionId);
       if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
       if (editingReport && persisted.data.id !== editingReport.id) return { ok: false as const, error: { key: 'daily.conflict' } satisfies LocalizedMessage };
       savedId = persisted.data.id;
@@ -186,11 +212,12 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     anchor.remove();
   }
 
-  async function removePersistedAttachment(attachmentId: string) {
-    // Persisted evidence belongs to an immutable revision. This call performs
-    // server-side authorization only; omission from the next save detaches it
-    // without soft-deleting the historical file or its prior associations.
-    const result = await dataRepository.removeAttachment(attachmentId, { preserveRevisionHistory: true });
+  async function removePersistedAttachment(attachmentId: string, options?: { preserveRevisionHistory?: boolean }) {
+    // Persisted evidence is authorized for omission from the next revision;
+    // new session evidence is destructively removed from metadata and Storage.
+    const result = await dataRepository.removeAttachment(attachmentId, {
+      preserveRevisionHistory: options?.preserveRevisionHistory ?? true,
+    });
     if (!result.ok) setNotice('common.requestFailed');
     return result.ok;
   }
@@ -222,7 +249,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     { key: 'content', label: t('daily.content'), render: (report: DailyReport) => reportContent(report) },
     { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
     { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
-    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (dataRepository.mode === 'supabase') { const history = await dataRepository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
+    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed && canEditDailyReport(currentUserId, report, businessDate) ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (dataRepository.mode === 'supabase') { const history = await dataRepository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
   ];
 
   return (
@@ -246,6 +273,9 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
             onSubmit={handleSubmit}
             onDownloadAttachment={downloadPersistedAttachment}
             onRemoveAttachment={removePersistedAttachment}
+            clearance={currentUser.clearance}
+            reportDate={editingReport?.date ?? businessDate}
+            uploadRepository={uploadRepository}
           />
           {editingReport && revisions.length > 0 && <RevisionHistory revisions={revisions} />}
         </section>
