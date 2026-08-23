@@ -206,6 +206,18 @@ begin
     raise exception 'Daily report is locked' using errcode = '42501';
   end if;
 
+  -- Serialize abandonment with finalization using the same attachment-row
+  -- boundary as recovery. Pending rows lose to this lock; an upload that
+  -- finalized first keeps the session recoverable rather than orphaned.
+  perform 1
+  from public.report_attachments attachment
+  where attachment.upload_session_id = target_session.id
+    and attachment.organization_id = target_session.organization_id
+    and attachment.report_id = target_session.report_id
+    and attachment.uploader_id = auth.uid()
+    and attachment.state = 'pending'
+  for update;
+
   update public.report_attachments attachment
   set state = 'deleted'
   where attachment.upload_session_id = target_session.id
@@ -213,6 +225,18 @@ begin
     and attachment.report_id = target_session.report_id
     and attachment.uploader_id = auth.uid()
     and attachment.state = 'pending';
+
+  if exists (
+    select 1
+    from public.report_attachments attachment
+    where attachment.upload_session_id = target_session.id
+      and attachment.organization_id = target_session.organization_id
+      and attachment.report_id = target_session.report_id
+      and attachment.uploader_id = auth.uid()
+      and attachment.state = 'uploaded'
+  ) then
+    return;
+  end if;
 
   update public.daily_report_upload_sessions
   set status = 'abandoned', abandoned_at = timezone('utc', now())

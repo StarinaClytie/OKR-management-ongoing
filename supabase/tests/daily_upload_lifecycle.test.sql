@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(30);
+select plan(31);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -281,6 +281,12 @@ from upload_lifecycle_ids where associated_attachment_id is not null;
 select public.finalize_attachment_upload(
   (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null),
   'sha256:associated'
+);
+select lives_ok(
+  $$select public.abandon_daily_report_upload_session(
+    (select associated_session_id from upload_lifecycle_ids where associated_session_id is not null)
+  )$$,
+  'abandonment keeps a session recoverable when it already owns a finalized upload'
 );
 insert into upload_lifecycle_ids (resumed_session_id)
 select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
