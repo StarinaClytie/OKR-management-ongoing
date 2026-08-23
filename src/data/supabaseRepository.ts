@@ -485,7 +485,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     const invalid = validateAttachment(input.file);
     if (invalid) {
       const result: RepositoryResult<{ attachmentId: string }> = { ok: false, error: { code: 'validation', message: invalid.message } };
-      input.onChange({ state: 'failed', progress: 0, error: result.error.message });
+      input.onChange({ state: 'failed', progress: 0, errorCode: result.error.code, error: result.error.message });
       return result;
     }
 
@@ -501,7 +501,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_display_name: input.label.trim() || input.file.name,
     });
     if (!pending.ok) {
-      input.onChange({ state: 'failed', progress: 0, error: pending.error.message });
+      input.onChange({ state: 'failed', progress: 0, errorCode: pending.error.code, error: pending.error.message });
       return pending;
     }
 
@@ -515,7 +515,7 @@ export class SupabaseOkrRepository implements OkrRepository {
         : session.error
           ? failure<{ attachmentId: string }>(session.error)
           : { ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } };
-      input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, error: result.error.message });
+      input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, errorCode: result.error.code, error: result.error.message });
       return result;
     }
 
@@ -536,7 +536,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       const result = cleanup.ok
         ? storageTransferFailure<{ attachmentId: string }>(error)
         : cleanup;
-      input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, error: result.error.message });
+      input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, errorCode: result.error.code, error: result.error.message });
       return result;
     }
 
@@ -545,7 +545,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (!finalized.ok) {
       const cleanup = await this.cleanupUploadAttempt([pending.data]);
       const result = cleanup.ok ? finalized : cleanup;
-      input.onChange({ state: 'failed', progress: 100, attachmentId: undefined, error: result.error.message });
+      input.onChange({ state: 'failed', progress: 100, attachmentId: undefined, errorCode: result.error.code, error: result.error.message });
       return result as RepositoryResult<{ attachmentId: string }>;
     }
     input.onChange({ state: 'uploaded', progress: 100, attachmentId });

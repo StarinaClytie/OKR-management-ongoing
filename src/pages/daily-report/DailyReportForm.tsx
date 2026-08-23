@@ -140,7 +140,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
       setActiveMutations((count) => count + 1);
       const session = await ensureUploadSession();
       if (!session) {
-        patchEvidence(blockId, item.id, { uploadState: 'failed', uploadProgress: 0, error: uploadSessionErrorRef.current ?? 'unknown' });
+        patchEvidence(blockId, item.id, { uploadState: 'failed', uploadProgress: 0, errorCode: uploadSessionErrorRef.current ?? 'unknown' });
         return;
       }
       if (removingEvidenceIdsRef.current.has(item.id)) return;
@@ -157,12 +157,13 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
           uploadState: update.state,
           uploadProgress: update.progress,
           attachmentId: update.attachmentId,
+          errorCode: update.errorCode,
           error: update.error,
           ...(update.state === 'uploaded' ? { file: undefined } : {}),
         }),
       });
       if (result.ok) finalizedAttachmentIdsRef.current.set(item.id, result.data.attachmentId);
-      else patchEvidence(blockId, item.id, { uploadState: 'failed', attachmentId: undefined, error: result.error.code });
+      else patchEvidence(blockId, item.id, { uploadState: 'failed', attachmentId: undefined, errorCode: result.error.code, error: result.error.message });
       uploadControllersRef.current.delete(item.id);
     })().finally(() => {
       setActiveMutations((count) => Math.max(0, count - 1));
@@ -423,7 +424,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
           <button type="button" className="button button--secondary" disabled={activeMutations > 0 || isSubmitting} onClick={() => void cancel()}>{t('common.cancel')}</button>
           <button type="submit" className="button button--primary" disabled={submitDisabled} aria-describedby={incompleteAttachments.length ? 'daily-upload-incomplete' : undefined}>{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
         </div>
-        {incompleteAttachments.length > 0 && <p id="daily-upload-incomplete" className="daily-form-actions__hint">{t('daily.uploadIncomplete', { count: incompleteAttachments.length })}</p>}
+        {incompleteAttachments.length > 0 && <p id="daily-upload-incomplete" className="daily-form-actions__hint">{t('daily.uploadIncomplete', { names: incompleteAttachments.map((item) => item.label).join('、') })}</p>}
         {status && <p className="page-notice" role="status">{t(status.key, status.values)}</p>}
       </div>
     </form>

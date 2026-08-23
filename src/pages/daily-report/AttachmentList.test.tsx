@@ -4,7 +4,7 @@ import { vi } from 'vitest';
 import { AttachmentList } from './AttachmentList';
 
 it.each([1, 50, 100])('renders real progress value %s in the matching attachment progressbar', (progress) => {
-  render(<AttachmentList items={[{ id: 'progress-item', label: 'proof.pdf', kind: 'file', classification: 'internal', uploadState: progress === 100 ? 'uploaded' : 'uploading', uploadProgress: progress }]} />);
+  render(<AttachmentList items={[{ id: 'progress-item', label: 'proof.pdf', kind: 'file', classification: 'internal', uploadState: progress === 100 ? 'uploaded' : 'uploading', uploadProgress: progress, attachmentId: progress === 100 ? 'attachment-1' : undefined }]} />);
   expect(screen.getByRole('progressbar', { name: 'proof.pdf 上传进度' })).toHaveValue(progress);
 });
 
@@ -13,7 +13,7 @@ it('uses localized upload states and a visible percentage for each attachment', 
     { id: 'waiting', label: 'waiting.pdf', kind: 'file', classification: 'internal', uploadState: 'selected', uploadProgress: 0 },
     { id: 'uploading', label: 'uploading.pdf', kind: 'file', classification: 'internal', uploadState: 'uploading', uploadProgress: 42 },
     { id: 'verifying', label: 'verifying.pdf', kind: 'file', classification: 'internal', uploadState: 'verifying', uploadProgress: 100 },
-    { id: 'complete', label: 'complete.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100 },
+    { id: 'complete', label: 'complete.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100, attachmentId: 'attachment-complete' },
     { id: 'failed', label: 'failed.pdf', kind: 'file', classification: 'internal', uploadState: 'failed', uploadProgress: 0 },
   ]} />);
 
@@ -23,6 +23,15 @@ it('uses localized upload states and a visible percentage for each attachment', 
   expect(screen.getByText('上传完成')).toBeVisible();
   expect(screen.getByText('上传失败')).toBeVisible();
   expect(screen.getAllByText('100%')).toHaveLength(2);
+});
+
+it('does not present an uploaded item without an attachment id as complete', () => {
+  render(<AttachmentList items={[{ id: 'unverified', label: 'unverified.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100 }]} />);
+
+  expect(screen.getByRole('progressbar', { name: 'unverified.pdf 上传进度' })).toHaveValue(0);
+  expect(screen.getByText('服务器校验中')).toBeVisible();
+  expect(screen.queryByText('上传完成')).not.toBeInTheDocument();
+  expect(screen.queryByText('100%')).not.toBeInTheDocument();
 });
 
 it('shows progress, retry, replace, remove, and signed-download actions', async () => {

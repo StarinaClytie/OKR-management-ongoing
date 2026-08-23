@@ -1,4 +1,5 @@
 import type { Classification, DailyReport, KeyResult, Objective } from './types';
+import type { RepositoryErrorCode } from '../data/types';
 import { validateAttachment } from '../services/attachmentService';
 
 /** A single 今日 KR inside a Daily OKR block. */
@@ -49,6 +50,7 @@ export interface DailyEvidenceDraft {
   attachmentId?: string;
   uploadState?: 'selected' | 'pending' | 'uploading' | 'verifying' | 'uploaded' | 'failed' | 'deleting';
   uploadProgress?: number;
+  errorCode?: RepositoryErrorCode;
   error?: string;
 }
 

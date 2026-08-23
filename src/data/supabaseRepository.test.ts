@@ -141,7 +141,7 @@ describe('SupabaseOkrRepository', () => {
     ['Attachment classification exceeds user clearance', 'clearance'],
   ])('preserves the upload failure category for %s', async (message, expectedCode) => {
     const { client } = createClient({ rpcError: { code: '42501', message } });
-    const updates: Array<{ state: string; error?: string }> = [];
+    const updates: Array<{ state: string; errorCode?: string; error?: string }> = [];
 
     const result = await new SupabaseOkrRepository(client).uploadDailyReportAttachment({
       session: { reportId: 'report-1', sessionId: 'session-1' },
@@ -153,7 +153,7 @@ describe('SupabaseOkrRepository', () => {
     });
 
     expect(result).toEqual({ ok: false, error: { code: expectedCode, message: '请求未完成，请稍后重试' } });
-    expect(updates.at(-1)).toEqual({ state: 'failed', progress: 0, error: '请求未完成，请稍后重试' });
+    expect(updates.at(-1)).toEqual({ state: 'failed', progress: 0, errorCode: expectedCode, error: '请求未完成，请稍后重试' });
   });
 
   it('submits a session with finalized attachment identities and no file transfer', async () => {
@@ -225,7 +225,7 @@ describe('SupabaseOkrRepository', () => {
       'finalize_attachment_upload',
     ]);
     expect(remove).toHaveBeenCalledWith(['organization/o/reports/r/failed.pdf']);
-    expect([...failedUpdates].reverse().find((update) => update.state === 'failed')).toEqual({ state: 'failed', progress: 0, attachmentId: undefined, error: '请求未完成，请稍后重试' });
+    expect([...failedUpdates].reverse().find((update) => update.state === 'failed')).toEqual({ state: 'failed', progress: 0, attachmentId: undefined, errorCode: 'network', error: '请求未完成，请稍后重试' });
   });
 
   it('classifies a non-network storage transfer failure for actionable upload copy', async () => {
@@ -267,7 +267,7 @@ describe('SupabaseOkrRepository', () => {
     });
 
     expect(result).toEqual({ ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } });
-    expect(updates.at(-1)).toEqual({ state: 'failed', progress: 0, attachmentId: undefined, error: '无权访问请求的资源' });
+    expect(updates.at(-1)).toEqual({ state: 'failed', progress: 0, attachmentId: undefined, errorCode: 'unauthorized', error: '无权访问请求的资源' });
     expect(storageFrom).not.toHaveBeenCalled();
   });
 

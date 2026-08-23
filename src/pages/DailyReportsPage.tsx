@@ -17,9 +17,10 @@ import { repository } from '../lib/supabase';
 import { RevisionHistory, type RevisionSummary } from './daily-report/RevisionHistory';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { LocalizedMessage, MessageKey } from '../i18n/messages';
-import type { DailyReportInput, DailyReportUploadSession, OkrRepository } from '../data/types';
+import type { DailyReportInput, DailyReportUploadSession, OkrRepository, RepositoryErrorCode } from '../data/types';
 import { useDashboardData } from '../data/useDashboardData';
 import { RepositoryDataState } from '../components/RepositoryDataState';
+import { repositoryErrorKey } from '../i18n/repositoryErrors';
 
 function authorName(authorId: string, users: User[], fallback: string) {
   return users.find((user) => user.id === authorId)?.name ?? fallback;
@@ -39,6 +40,10 @@ function blankBlock(linkedKeyResultId = ''): DailyReportDraft['blocks'][number] 
     result: '',
     evidence: [],
   };
+}
+
+function dailyReportMutationErrorKey(code: RepositoryErrorCode): MessageKey {
+  return code === 'conflict' ? 'daily.conflict' : repositoryErrorKey(code);
 }
 
 export function DailyReportsPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
@@ -183,10 +188,10 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
           return { ok: false as const, error: { key: 'common.requestFailed' } satisfies LocalizedMessage };
         }
         const adopted = await dataRepository.adoptDailyReportAttachments(uploadSession, retainedAttachmentIds);
-        if (!adopted.ok) return { ok: false as const, error: { key: adopted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
+        if (!adopted.ok) return { ok: false as const, error: { key: dailyReportMutationErrorKey(adopted.error.code) } satisfies LocalizedMessage };
       }
       const persisted = await dataRepository.submitDailyReportSession(input, uploadSession.sessionId);
-      if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
+      if (!persisted.ok) return { ok: false as const, error: { key: dailyReportMutationErrorKey(persisted.error.code) } satisfies LocalizedMessage };
       if (editingReport && persisted.data.id !== editingReport.id) return { ok: false as const, error: { key: 'daily.conflict' } satisfies LocalizedMessage };
       savedId = persisted.data.id;
       savedRevision = persisted.data.revision;

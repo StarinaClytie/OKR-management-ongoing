@@ -11,7 +11,7 @@ const errorKeys: Record<RepositoryErrorCode, MessageKey> = {
   locked: 'daily.reportLocked',
   clearance: 'daily.attachmentClearance',
   storage: 'daily.uploadStorageFailed',
-  network: 'common.requestFailed',
+  network: 'daily.uploadNetworkFailed',
   unknown: 'common.requestFailed',
 };
 

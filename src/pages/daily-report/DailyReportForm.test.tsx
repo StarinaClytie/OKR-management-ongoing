@@ -53,14 +53,15 @@ describe('DailyReportForm', () => {
     expect(screen.getByRole('button', { name: '提交日报' })).toBeEnabled();
   });
 
-  it('keeps submission disabled and explains the incomplete attachment when an uploaded state has no attachment id', () => {
+  it('keeps submission disabled and names every incomplete attachment when an uploaded state has no attachment id', () => {
     const draft = completeDraft('uploaded');
     draft.blocks[0]!.evidence[0]!.attachmentId = undefined;
+    draft.blocks[0]!.evidence.push({ id: 'file-2', label: 'second-proof.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100 });
 
     render(<DailyReportForm initialDraft={draft} ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
 
     expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
-    expect(screen.getByText('还有 1 个附件未完成上传。')).toBeVisible();
+    expect(screen.getByText('附件未完成上传：proof.pdf、second-proof.pdf。')).toBeVisible();
   });
 
   it('keeps submission disabled until a persisted over-clearance attachment is authorized for removal', () => {
@@ -365,6 +366,26 @@ describe('DailyReportForm', () => {
 
     expect(beginDailyReportUploadSession).toHaveBeenCalledOnce();
     expect(onSubmit).toHaveBeenCalledWith(expect.anything(), { reportId: 'report-1', sessionId: 'session-submit' });
+  });
+
+  it('shows the dedicated network message when a no-attachment report cannot begin its session', async () => {
+    const user = userEvent.setup();
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: false as const, error: { code: 'network' as const, message: '请求未完成，请稍后重试' } }));
+    const onSubmit = vi.fn(async () => ({ ok: true as const }));
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ beginDailyReportUploadSession })}
+      onCancel={vi.fn()}
+      onSubmit={onSubmit}
+    />);
+
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    expect(await screen.findByText('网络错误，请检查连接后重试。')).toBeVisible();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('cleans finalized evidence before removing its Daily OKR block', async () => {

@@ -1,6 +1,8 @@
-import type { DailyEvidenceDraft } from '../../domain/dailyEntry';
+import { dailyEvidenceIsUploaded, type DailyEvidenceDraft } from '../../domain/dailyEntry';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { MessageKey } from '../../i18n/messages';
+import type { RepositoryErrorCode } from '../../data/types';
+import { repositoryErrorKey } from '../../i18n/repositoryErrors';
 
 const uploadStateKeys: Record<NonNullable<DailyEvidenceDraft['uploadState']>, MessageKey> = {
   selected: 'daily.uploadPending', pending: 'daily.uploadPending', uploading: 'daily.uploading', verifying: 'daily.uploadVerifying', uploaded: 'daily.uploaded', failed: 'daily.uploadFailed', deleting: 'daily.deleting',
@@ -9,7 +11,8 @@ const classificationKeys: Record<DailyEvidenceDraft['classification'], MessageKe
   public: 'classification.public', internal: 'classification.internal', confidential: 'classification.confidential', restricted: 'classification.restricted',
 };
 
-function uploadFailureKey(error: string | undefined): MessageKey {
+function uploadFailureKey(errorCode: RepositoryErrorCode | undefined, error: string | undefined): MessageKey {
+  if (errorCode) return repositoryErrorKey(errorCode);
   const text = error?.toLowerCase() ?? '';
   if (text === 'locked') return 'daily.reportLocked';
   if (text === 'clearance') return 'daily.attachmentClearance';
@@ -33,20 +36,23 @@ export function AttachmentList({ items, onRetry, onReplace, onRemove, onDownload
   const { t } = useLocale();
   if (!items.length) return null;
   return <ul aria-label={t('daily.selectedAttachments')} className="attachment-list">{items.map((item) => {
-    const progress = item.uploadProgress ?? (item.uploadState === 'uploaded' ? 100 : 0);
-    const status = item.error
-      ? t(uploadFailureKey(item.error))
-      : item.uploadState === 'uploading'
+    const isUploaded = dailyEvidenceIsUploaded(item);
+    const missingAttachmentId = item.uploadState === 'uploaded' && !isUploaded;
+    const state = missingAttachmentId ? 'verifying' : item.uploadState;
+    const progress = missingAttachmentId ? 0 : item.uploadProgress ?? (isUploaded ? 100 : 0);
+    const status = item.errorCode || item.error
+      ? t(uploadFailureKey(item.errorCode, item.error))
+      : state === 'uploading'
         ? t('daily.uploadingPercent', { percent: progress })
-        : item.uploadState
-          ? t(uploadStateKeys[item.uploadState])
+        : state
+          ? t(uploadStateKeys[state])
           : '';
     return <li key={item.id}>
     <span>{item.label}</span><span>{t(classificationKeys[item.classification])}</span>
     <span className="attachment-list__progress"><progress aria-label={t('daily.uploadProgress', { name: item.label })} max={100} value={progress} /><span aria-hidden="true">{progress}%</span></span>
-    <span className="attachment-list__status" role={item.error ? 'alert' : undefined}>{status}</span>
+    <span className="attachment-list__status" role={item.errorCode || item.error ? 'alert' : undefined}>{status}</span>
     {item.uploadState === 'failed' && <button type="button" onClick={() => onRetry?.(item.id)}>{t('daily.retry')}</button>}
-    {item.uploadState === 'uploaded' && onDownload ? <button type="button" onClick={() => onDownload(item.id)}>{t('daily.download')}</button> : null}
+    {isUploaded && onDownload ? <button type="button" onClick={() => onDownload(item.id)}>{t('daily.download')}</button> : null}
     {onReplace ? <label className="text-button">{t('daily.replace')}<input className="sr-only" aria-label={t('daily.replaceLabel', { name: item.label })} type="file" onChange={(event) => event.target.files?.[0] && onReplace(item.id, event.target.files[0])} /></label> : null}
     {onRemove ? <button type="button" onClick={() => onRemove(item.id)}>{t('daily.remove')}</button> : null}
   </li>;

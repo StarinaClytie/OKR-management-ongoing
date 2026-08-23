@@ -21,6 +21,18 @@ function renderPageAs(userId: string) {
   );
 }
 
+function editableReport(authorId: string, withRetainedAttachment = false): DailyReport {
+  const attachment = withRetainedAttachment
+    ? [{ id: 'retained', attachmentId: 'attachment-retained', label: '保留附件', kind: 'file' as const, classification: 'internal' as const, uploadState: 'uploaded' as const }]
+    : [];
+  return {
+    id: 'report-server-authority', authorId, projectId: 'project-orion', objectiveId: 'objective-orion-activation', keyResultIds: ['kr-orion-onboarding'],
+    date: currentBusinessDate(), content: '当前目标', dailyObjective: '当前目标', classification: 'internal', hours: 2,
+    evidence: attachment.map((item) => item.label), evidenceClassification: 'internal', attachmentIds: attachment.flatMap((item) => item.attachmentId ? [item.attachmentId] : []), status: 'submitted', currentRevision: 1,
+    blocks: [{ id: 'block-current', dailyObjective: '当前目标', keyResultId: 'kr-orion-onboarding', workDescription: '当前工作', hours: 2, result: '当前结果', keyResults: [], evidenceItems: attachment }],
+  };
+}
+
 describe('DailyReportsPage', () => {
   it('shows a clear fill-today CTA when the employee owns assigned KRs', () => {
     renderPageAs('user-employee');
@@ -250,5 +262,45 @@ describe('DailyReportsPage', () => {
 
     expect(await screen.findByText('已锁定')).toBeVisible();
     expect(screen.queryByRole('button', { name: '编辑我的日报' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['save', 'locked', '日报已锁定'],
+    ['adoption', 'clearance', '附件密级超过权限'],
+  ] as const)('keeps the typed %s failure actionable when the database rejects %s', async (stage, code, expectedMessage) => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-employee');
+    const report = editableReport(data.currentUser.id, stage === 'adoption');
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: report.id, sessionId: 'session-server-authority' } }));
+    const adoptDailyReportAttachments = vi.fn(async () => stage === 'adoption'
+      ? { ok: false as const, error: { code, message: '请求未完成，请稍后重试' } }
+      : { ok: true as const, data: undefined });
+    const submitDailyReportSession = vi.fn(async () => stage === 'save'
+      ? { ok: false as const, error: { code, message: '请求未完成，请稍后重试' } }
+      : { ok: true as const, data: { id: report.id, revision: 2 } });
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
+      listReportRevisions: vi.fn(async () => ({ ok: true as const, data: [] })),
+      beginDailyReportUploadSession,
+      uploadDailyReportAttachment: vi.fn(),
+      abandonDailyReportUploadSession: vi.fn(async () => ({ ok: true as const, data: undefined })),
+      adoptDailyReportAttachments,
+      submitDailyReportSession,
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '编辑我的日报' }));
+    await user.click(screen.getByRole('button', { name: '保存日报修改' }));
+
+    expect(await screen.findByText(expectedMessage)).toBeVisible();
+    if (stage === 'adoption') expect(submitDailyReportSession).not.toHaveBeenCalled();
   });
 });

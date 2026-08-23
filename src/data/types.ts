@@ -121,6 +121,7 @@ export type DailyReportAttachmentUploadUpdate = {
   state: 'pending' | 'uploading' | 'verifying' | 'uploaded' | 'failed';
   progress: number;
   attachmentId?: string;
+  errorCode?: RepositoryErrorCode;
   error?: string;
 };
 
