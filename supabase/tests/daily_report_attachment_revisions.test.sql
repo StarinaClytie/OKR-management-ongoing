@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(22);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -29,15 +29,15 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000001', true);
 
 select lives_ok(
-  $$select public.begin_daily_report_with_attachments(current_date, 'submitted', 'internal')$$,
+  $$select public.begin_daily_report_with_attachments(current_date - 3, 'submitted', 'confidential')$$,
   'author creates the report shell before uploading evidence'
 );
 select lives_ok(
-  $$select public.begin_entry_attachment_upload((select id from public.daily_reports where report_date = current_date), 1, 'retain.pdf', 'application/pdf', 128, 'internal', 'Retain old label')$$,
+  $$select public.begin_entry_attachment_upload((select id from public.daily_reports where report_date = current_date - 3), 1, 'retain.pdf', 'application/pdf', 128, 'internal', 'Retain old label')$$,
   'author uploads evidence that will be retained'
 );
 select lives_ok(
-  $$select public.begin_entry_attachment_upload((select id from public.daily_reports where report_date = current_date), 1, 'remove.pdf', 'application/pdf', 128, 'internal', 'Remove old label')$$,
+  $$select public.begin_entry_attachment_upload((select id from public.daily_reports where report_date = current_date - 3), 1, 'remove.pdf', 'application/pdf', 128, 'internal', 'Remove old label')$$,
   'author uploads evidence that will later be removed'
 );
 insert into storage.objects (bucket_id, name, owner_id, metadata)
@@ -48,14 +48,14 @@ from public.report_attachments where state = 'pending';
 
 select lives_ok(
   $$select * from public.save_daily_report(
-    current_date, 'submitted', 'internal',
+    current_date - 3, 'submitted', 'confidential',
     '[{"dailyObjective":"Revision one","linkedKeyResultId":"85000000-0000-0000-0000-000000000001","workDescription":"First work","hours":2,"result":"First result","evidenceLinks":[],"attachments":[]}]'::jsonb,
     '[]'::jsonb
   )$$,
   'first submission creates revision-scoped associations for new uploads'
 );
 select is((select count(*) from public.report_attachment_revisions), 2::bigint, 'revision one retains both attachment associations');
-select is((select current_revision from public.daily_reports where report_date = current_date), 1, 'the first reload resolves revision one as current');
+select is((select current_revision from public.daily_reports where report_date = current_date - 3), 1, 'the first reload resolves revision one as current');
 select is(
   (select count(*) from public.report_attachment_revisions rar join public.daily_report_revisions rr on rr.id = rar.revision_id join public.daily_reports dr on dr.id = rr.report_id where rr.revision_number = dr.current_revision),
   2::bigint,
@@ -74,7 +74,7 @@ select is(
 );
 select lives_ok(
   $$select * from public.save_daily_report(
-    current_date, 'submitted', 'internal',
+    current_date - 3, 'submitted', 'internal',
     jsonb_build_array(jsonb_build_object(
       'dailyObjective', 'Revision two',
       'linkedKeyResultId', '85000000-0000-0000-0000-000000000001',
@@ -98,14 +98,24 @@ select is(
   0::bigint,
   'a reader below the retained current evidence classification cannot read current association metadata'
 );
+select is(
+  (select count(*) from public.report_attachment_revisions where display_name = 'Remove old label'),
+  0::bigint,
+  'a lower-clearance reader cannot select an internal attachment association from a confidential historical revision after the report becomes internal'
+);
 select throws_ok(
   $$select public.create_attachment_download((select id from public.report_attachments where original_name = 'retain.pdf'))$$,
   '42501', 'Attachment is not available',
   'a reader below the retained evidence classification cannot authorize a download'
 );
+select throws_ok(
+  $$select public.create_attachment_download((select id from public.report_attachments where original_name = 'remove.pdf'))$$,
+  '42501', 'Attachment is not available',
+  'a lower-clearance reader cannot download an internal attachment from a confidential historical revision omitted by the current internal revision'
+);
 set local role postgres;
-select is((select current_revision from public.daily_reports where report_date = current_date), 2, 'two submissions advance the current revision twice');
-select is((select count(*) from public.daily_okr_blocks where report_id = (select id from public.daily_reports where report_date = current_date)), 2::bigint, 'both immutable block revisions remain stored');
+select is((select current_revision from public.daily_reports where report_date = current_date - 3), 2, 'editing the prior-day report advances its current revision in place');
+select is((select count(*) from public.daily_okr_blocks where report_id = (select id from public.daily_reports where report_date = current_date - 3)), 2::bigint, 'both immutable block revisions remain stored for the same prior-day report');
 select is((select count(*) from public.report_attachment_revisions), 3::bigint, 'revision two adds only the retained association without duplicating revision one');
 select is(
   (select display_name from public.report_attachment_revisions rar join public.daily_report_revisions rr on rr.id = rar.revision_id where rr.revision_number = 2),

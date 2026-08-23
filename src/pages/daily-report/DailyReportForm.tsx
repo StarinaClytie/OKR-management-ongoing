@@ -186,7 +186,13 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                 evidence={block.evidence}
                 idPrefix={block.id}
                 errorPrefix={`${prefix}.`}
-                onEvidenceChange={(evidence) => updateBlock(block.id, { evidence })}
+                onEvidenceChange={(update) => setDraft((current) => ({
+                  ...current,
+                  blocks: current.blocks.map((candidate) => candidate.id === block.id ? {
+                    ...candidate,
+                    evidence: typeof update === 'function' ? update(candidate.evidence) : update,
+                  } : candidate),
+                }))}
                 errors={validationErrors}
                 onFieldRef={registerField}
                 onDownloadAttachment={onDownloadAttachment}

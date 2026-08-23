@@ -84,6 +84,9 @@ describe('application sidebar', () => {
     expect(tooltip).toHaveTextContent('仪表盘');
     expect(sidebar).not.toContainElement(tooltip);
 
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
     await user.click(toggle);
     expect(onCollapsedChange).toHaveBeenCalledWith(false);
   });

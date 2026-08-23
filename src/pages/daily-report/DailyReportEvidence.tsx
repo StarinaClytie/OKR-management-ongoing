@@ -6,7 +6,7 @@ import type { MessageKey } from '../../i18n/messages';
 
 interface DailyReportEvidenceProps {
   evidence: DailyEvidenceDraft[];
-  onEvidenceChange: (items: DailyEvidenceDraft[]) => void;
+  onEvidenceChange: (update: DailyEvidenceDraft[] | ((current: DailyEvidenceDraft[]) => DailyEvidenceDraft[])) => void;
   errors?: Record<string, string>;
   idPrefix?: string;
   errorPrefix?: string;
@@ -33,7 +33,7 @@ export function DailyReportEvidence({ evidence, onEvidenceChange, errors = {}, i
             const error = validateAttachment(file);
             return { id: `file-${Date.now()}-${index}`, label: file.name, kind: 'file', classification: 'internal', file, uploadState: error ? 'failed' : 'selected', uploadProgress: 0, error: error?.message };
           });
-          onEvidenceChange([...evidence, ...selected]);
+          onEvidenceChange((current) => [...current, ...selected]);
         }} />
       </label>
       {evidence.map((item, index) => {
@@ -47,23 +47,23 @@ export function DailyReportEvidence({ evidence, onEvidenceChange, errors = {}, i
           <div className="daily-evidence__row" key={item.id}>
             <label htmlFor={`evidence-${item.id}-label`}>
               {t('daily.evidenceNumber', { number })}
-              <input ref={(element) => { onFieldRef?.(labelField, element); onFieldRef?.(`${errorPrefix}evidence.${index}.kind`, element); onFieldRef?.(`${errorPrefix}evidence.${index}.file`, element); }} id={`evidence-${item.id}-label`} value={item.label} aria-invalid={Boolean(labelError)} aria-describedby={labelError ? errorId(labelErrorField) : undefined} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, label: event.target.value } : candidate))} placeholder={t('daily.evidencePlaceholder')} />
+              <input ref={(element) => { onFieldRef?.(labelField, element); onFieldRef?.(`${errorPrefix}evidence.${index}.kind`, element); onFieldRef?.(`${errorPrefix}evidence.${index}.file`, element); }} id={`evidence-${item.id}-label`} value={item.label} aria-invalid={Boolean(labelError)} aria-describedby={labelError ? errorId(labelErrorField) : undefined} onChange={(event) => { const label = event.target.value; onEvidenceChange((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, label } : candidate)); }} placeholder={t('daily.evidencePlaceholder')} />
               {labelError && <span id={errorId(labelErrorField)} role="alert" className="field-error">{labelError}</span>}
             </label>
             <label htmlFor={`evidence-${item.id}-classification`}>
               {t('daily.evidenceLevel', { number })}
-              <select ref={(element) => onFieldRef?.(`${errorPrefix}evidence.${index}.classification`, element)} id={`evidence-${item.id}-classification`} value={item.classification} aria-invalid={Boolean(errorFor('classification'))} aria-describedby={errorFor('classification') ? errorId('classification') : undefined} onChange={(event) => onEvidenceChange(evidence.map((candidate) => candidate.id === item.id ? { ...candidate, classification: event.target.value as Classification } : candidate))}>
+              <select ref={(element) => onFieldRef?.(`${errorPrefix}evidence.${index}.classification`, element)} id={`evidence-${item.id}-classification`} value={item.classification} aria-invalid={Boolean(errorFor('classification'))} aria-describedby={errorFor('classification') ? errorId('classification') : undefined} onChange={(event) => { const classification = event.target.value as Classification; onEvidenceChange((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, classification } : candidate)); }}>
                 {classifications.map((classification) => <option key={classification.value} value={classification.value}>{t(classification.label)}</option>)}
               </select>
               {errorFor('classification') && <span id={errorId('classification')} role="alert" className="field-error">{errorFor('classification')}</span>}
             </label>
-            {item.attachmentId && onDownloadAttachment ? <button type="button" className="button button--secondary" onClick={() => void onDownloadAttachment(item.attachmentId!)}>{t('daily.download')}</button> : null}
-            <button type="button" className="button button--secondary" onClick={async () => {
+            {item.attachmentId && onDownloadAttachment ? <button type="button" className="button button--secondary" aria-label={`${t('daily.download')} ${item.label}`} onClick={() => void onDownloadAttachment(item.attachmentId!)}>{t('daily.download')}</button> : null}
+            <button type="button" className="button button--secondary" aria-label={`${t('daily.remove')} ${item.label}`} onClick={async () => {
               if (item.attachmentId && onRemoveAttachment) {
                 const removed = await onRemoveAttachment(item.attachmentId);
                 if (!removed) return;
               }
-              onEvidenceChange(evidence.filter((candidate) => candidate.id !== item.id));
+              onEvidenceChange((current) => current.filter((candidate) => candidate.id !== item.id));
             }}>{t('daily.remove')}</button>
           </div>
         );

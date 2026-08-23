@@ -1,5 +1,5 @@
 import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
-import { useState, type Ref } from 'react';
+import { useEffect, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -39,10 +39,26 @@ export function Sidebar(props: SidebarProps) {
   const visibleItems = navigationItems.filter((item) => !item.roles || (currentUser && item.roles.includes(currentUser.role)));
   const collapseLabel = collapsed ? t('navigation.expandSidebar') : t('navigation.collapseSidebar');
   const [tooltip, setTooltip] = useState<{ path: string; label: string; top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!tooltip) return;
+
+    const dismissTooltip = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTooltip(null);
+    };
+    document.addEventListener('keydown', dismissTooltip);
+    return () => document.removeEventListener('keydown', dismissTooltip);
+  }, [tooltip]);
   const showTooltip = (path: string, label: string, element: HTMLElement) => {
     if (!collapsed) return;
     const rect = element.getBoundingClientRect();
-    setTooltip({ path, label, top: rect.top + rect.height / 2, left: rect.right + 10 });
+    const tooltipWidth = 238;
+    const viewportPadding = 8;
+    setTooltip({
+      path,
+      label,
+      top: Math.min(Math.max(rect.top + rect.height / 2, 20), window.innerHeight - 20),
+      left: Math.min(rect.right + 10, Math.max(viewportPadding, window.innerWidth - tooltipWidth - viewportPadding)),
+    });
   };
   const hideTooltip = (path: string) => setTooltip((current) => current?.path === path ? null : current);
 
@@ -90,6 +106,7 @@ export function Sidebar(props: SidebarProps) {
                 onMouseLeave={() => hideTooltip(item.path)}
                 onFocus={(event) => showTooltip(item.path, t(item.labelKey), event.currentTarget)}
                 onBlur={() => hideTooltip(item.path)}
+                onKeyDown={(event) => { if (event.key === 'Escape') hideTooltip(item.path); }}
               >
                 <Icon aria-hidden="true" size={18} strokeWidth={1.8} />
                 <span className={collapsed ? 'sr-only' : undefined}>{t(item.labelKey)}</span>

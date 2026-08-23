@@ -78,7 +78,11 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const currentUserId = currentUser.id;
   const data = dashboard.data;
   const currentLocalReports = localReports.ownerId === currentUser.id ? localReports.reports : [];
-  const readableReports = [...currentLocalReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
+  const localReportIds = new Set(currentLocalReports.map((report) => report.id));
+  const readableReports = [
+    ...currentLocalReports,
+    ...data.dailyReports.filter((report) => !localReportIds.has(report.id)),
+  ].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
 
   if (currentUser.role === 'hr') {
     const hoursRows = data.workloads.filter((workload) => can(currentUser, 'worklog.read_hours', workload).allowed);
@@ -113,9 +117,10 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     : undefined;
 
   async function handleSubmit(draft: DailyReportDraft) {
+    const reportDate = editingReport?.date ?? currentBusinessDate();
     const conversion = toLocalDailyReport(draft, {
       authorId: currentUserId,
-      date: currentBusinessDate(),
+      date: reportDate,
       submissionNonce: nextLocalSubmissionNonce.current,
       keyResults: data.keyResults,
       objectives: data.objectives,
@@ -124,9 +129,9 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       return { ok: false as const, error: { key: conversion.error.code === 'KEY_RESULT_NOT_AVAILABLE' ? 'daily.krMismatch' : 'daily.fixRequired' } satisfies LocalizedMessage };
     }
 
-    const existingToday = editingReport ?? currentLocalReports.find((report) => report.date === conversion.report.date);
-    let savedId = existingToday?.id ?? conversion.report.id;
-    let savedRevision = (existingToday?.currentRevision ?? 0) + 1;
+    const existingReport = editingReport ?? currentLocalReports.find((report) => report.date === conversion.report.date);
+    let savedId = existingReport?.id ?? conversion.report.id;
+    let savedRevision = (existingReport?.currentRevision ?? 0) + 1;
 
     if (dataRepository.mode === 'supabase') {
       const input: DailyReportInput = {
@@ -151,6 +156,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       const files = draft.blocks.flatMap((block, index) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification, entryPosition: index + 1, label: item.label }] : []));
       const persisted = await dataRepository.saveDailyReport(input, files);
       if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
+      if (editingReport && persisted.data.id !== editingReport.id) return { ok: false as const, error: { key: 'daily.conflict' } satisfies LocalizedMessage };
       savedId = persisted.data.id;
       savedRevision = persisted.data.revision;
     }

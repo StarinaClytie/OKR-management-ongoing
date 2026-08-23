@@ -54,13 +54,13 @@ describe('DailyReportsPage', () => {
     expect(screen.queryByLabelText(/当日 O/)).not.toBeInTheDocument();
   });
 
-  it('downloads, removes, and carries edited persisted evidence into the next revision', async () => {
+  it('edits a prior-day report in place and reopens only its new revision aggregate', async () => {
     const user = userEvent.setup();
     const data = mockRepository.getDashboardData('user-employee');
     const employee = data.currentUser;
     const report: DailyReport = {
       id: 'report-current', authorId: employee.id, projectId: 'project-orion', objectiveId: 'objective-orion-activation',
-      keyResultIds: ['kr-orion-onboarding'], date: '2026-08-23', content: '当前目标', dailyObjective: '当前目标', classification: 'internal', hours: 2,
+      keyResultIds: ['kr-orion-onboarding'], date: '2026-08-20', content: '当前目标', dailyObjective: '当前目标', classification: 'internal', hours: 2,
       evidence: ['保留附件', '移除附件'], evidenceClassification: 'internal', attachmentIds: ['attachment-retained', 'attachment-removed'], status: 'submitted', currentRevision: 1,
       blocks: [{
         id: 'block-current', dailyObjective: '当前目标', keyResultId: 'kr-orion-onboarding', workDescription: '当前工作', hours: 2, result: '当前结果', keyResults: [],
@@ -92,14 +92,14 @@ describe('DailyReportsPage', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: '编辑我的日报' }));
-    await user.click(screen.getAllByRole('button', { name: '下载' })[0]!);
+    await user.click(screen.getByRole('button', { name: '下载 保留附件' }));
     expect(createAttachmentDownload).toHaveBeenCalledWith('attachment-retained');
     expect(anchorClick).toHaveBeenCalledOnce();
 
     await user.clear(screen.getByLabelText('成果 1'));
     await user.type(screen.getByLabelText('成果 1'), '保留附件新名称');
     await user.selectOptions(screen.getByLabelText('成果 1 密级'), 'confidential');
-    await user.click(screen.getAllByRole('button', { name: '移除' })[1]!);
+    await user.click(screen.getByRole('button', { name: '移除 移除附件' }));
     expect(removeAttachment).toHaveBeenCalledWith('attachment-removed', { preserveRevisionHistory: true });
     expect(screen.queryByDisplayValue('移除附件')).not.toBeInTheDocument();
 
@@ -111,13 +111,20 @@ describe('DailyReportsPage', () => {
     await user.clear(screen.getByLabelText('成果 1'));
     await user.type(screen.getByLabelText('成果 1'), '保留附件新名称');
     await user.selectOptions(screen.getByLabelText('成果 1 密级'), 'confidential');
-    await user.click(screen.getAllByRole('button', { name: '移除' })[1]!);
+    await user.click(screen.getByRole('button', { name: '移除 移除附件' }));
 
     await user.click(screen.getByRole('button', { name: '保存日报修改' }));
     expect(saveDailyReport).toHaveBeenCalledWith(expect.objectContaining({ blocks: [expect.objectContaining({
       attachments: [{ attachmentId: 'attachment-retained', displayName: '保留附件新名称', classification: 'confidential' }],
-    })] }), []);
+    })], reportDate: '2026-08-20' }), []);
     expect(removeAttachment).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole('button', { name: '编辑我的日报' })).toHaveLength(1);
+    expect(screen.getByRole('cell', { name: '2026-08-20' })).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '编辑我的日报' }));
+    expect(screen.getByDisplayValue('保留附件新名称')).toBeVisible();
+    expect(screen.queryByDisplayValue('保留附件')).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue('移除附件')).not.toBeInTheDocument();
     anchorClick.mockRestore();
   });
 });
