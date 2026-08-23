@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(49);
+select plan(51);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -197,7 +197,7 @@ insert into upload_lifecycle_ids (retired_session_id)
 select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
 select ok(
   (select retired_session_id from upload_lifecycle_ids where retired_session_id is not null) is not null,
-  'an editable report can begin an upload session before replacement'
+  'an editable report can begin an upload session before refresh'
 );
 select lives_ok(
   $$select public.begin_entry_attachment_upload(
@@ -205,21 +205,33 @@ select lives_ok(
     (select retired_session_id from upload_lifecycle_ids where retired_session_id is not null),
     1, 'retired.pdf', 'application/pdf', 128, 'internal', 'Retired upload'
   )$$,
-  'the session that will be replaced owns a pending attachment'
+  'the session owns a pending attachment cleanup target'
 );
 insert into upload_lifecycle_ids (fresh_session_id)
 select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
 set local role postgres;
 select is(
   (select status from public.daily_report_upload_sessions where id = (select retired_session_id from upload_lifecycle_ids where retired_session_id is not null)),
-  'abandoned',
-  'beginning a replacement session retires the prior active session'
+  'active',
+  'refresh resumes a session that still owns an unassociated cleanup target'
 );
 select is(
   (select state::text from public.report_attachments where original_name = 'retired.pdf'),
-  'deleted',
-  'replacing a session deletes its incomplete pending attachment rows'
+  'pending',
+  'resuming a session preserves its incomplete attachment for checked cleanup'
 );
+set local role authenticated;
+select public.abandon_daily_report_upload_session(
+  (select retired_session_id from upload_lifecycle_ids where retired_session_id is not null)
+);
+update upload_lifecycle_ids
+set fresh_session_id = (
+  public.begin_daily_report_upload_session(
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal'
+  )->>'sessionId'
+)::uuid
+where fresh_session_id is not null;
+set local role postgres;
 update public.profiles set clearance = 'confidential'
 where id = '91000000-0000-0000-0000-000000000001';
 set local role authenticated;
@@ -433,6 +445,28 @@ select is(
   'active',
   'the session stays active until Storage deletion is observable server-side'
 );
+-- Isolate the failed Storage cleanup from retained revision evidence. The
+-- immutable revision association remains intact; only its temporary edit
+-- session adoption is released for this refresh-recovery regression.
+update public.report_attachments
+set upload_session_id = null
+where id = (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null);
+set local role authenticated;
+select is(
+  public.begin_daily_report_upload_session(
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal'
+  )->>'sessionId',
+  (select cancel_session_id::text from upload_lifecycle_ids where cancel_session_id is not null),
+  'refresh resumes the active session that still owns a deleted cleanup target'
+);
+select is(
+  (public.delete_daily_report_upload_attachment(
+    (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null)
+  )->>'path'),
+  (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null),
+  'the resumed session can retry idempotent metadata deletion before Storage cleanup'
+);
+set local role postgres;
 delete from storage.objects
 where bucket_id = 'report-attachments'
   and name = (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null);

@@ -285,6 +285,40 @@ describe('SupabaseOkrRepository', () => {
     ]);
   });
 
+  it('continues cleanup through the upload session recovered by begin after refresh', async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'begin_daily_report_upload_session') {
+        return { data: { reportId: 'report-1', sessionId: 'session-recovered' }, error: null };
+      }
+      if (name === 'list_daily_report_upload_session_cleanup') {
+        return { data: [{ attachment_id: 'attachment-deleted' }], error: null };
+      }
+      if (name === 'delete_daily_report_upload_attachment') {
+        return { data: { id: 'attachment-deleted', bucket: 'report-attachments', path: 'organization/o/reports/r/deleted.pdf' }, error: null };
+      }
+      return { data: null, error: null };
+    });
+    const remove = vi.fn(async () => ({ data: {}, error: null }));
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.storage.from = vi.fn(() => ({ upload: vi.fn(), createSignedUrl: vi.fn(), remove }));
+    const repository = new SupabaseOkrRepository(client);
+
+    const session = await repository.beginDailyReportUploadSession({
+      reportDate: '2026-08-23', status: 'submitted', classification: 'internal',
+    });
+    expect(session).toEqual({ ok: true, data: { reportId: 'report-1', sessionId: 'session-recovered' } });
+    await expect(repository.abandonDailyReportUploadSession('session-recovered')).resolves.toEqual({ ok: true, data: undefined });
+
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'begin_daily_report_upload_session',
+      'list_daily_report_upload_session_cleanup',
+      'delete_daily_report_upload_attachment',
+      'abandon_daily_report_upload_session',
+    ]);
+    expect(remove).toHaveBeenCalledWith(['organization/o/reports/r/deleted.pdf']);
+  });
+
   it('cleans recovered unassociated uploads before abandoning exactly the selected session', async () => {
     const rpc = vi.fn(async (name: string) => {
       if (name === 'list_daily_report_upload_session_cleanup') return { data: [{ attachment_id: 'attachment-recovered' }], error: null };
