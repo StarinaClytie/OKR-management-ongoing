@@ -53,6 +53,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const [isAuthoring, setIsAuthoring] = useState(false);
   const [editingReport, setEditingReport] = useState<DailyReport>();
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
+  const [confirmedReportIds, setConfirmedReportIds] = useState<Set<string>>(() => new Set());
   const [localReports, setLocalReports] = useState<{ ownerId: string | undefined; reports: DailyReport[] }>(() => ({ ownerId: currentUser?.id, reports: [] }));
   const nextLocalSubmissionNonce = useRef(1);
   const authoringButtonRef = useRef<HTMLButtonElement>(null);
@@ -64,6 +65,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     setIsAuthoring(false);
     setEditingReport(undefined);
     setRevisions([]);
+    setConfirmedReportIds(new Set());
     setLocalReports({ ownerId: currentUser?.id, reports: [] });
     setNotice(null);
     nextLocalSubmissionNonce.current = 1;
@@ -89,7 +91,8 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const readableReports = [
     ...currentLocalReports,
     ...data.dailyReports.filter((report) => !localReportIds.has(report.id)),
-  ].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
+  ].map((report) => confirmedReportIds.has(report.id) ? { ...report, status: 'confirmed' as const } : report)
+    .filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
 
   if (currentUser.role === 'hr') {
     const hoursRows = data.workloads.filter((workload) => can(currentUser, 'worklog.read_hours', workload).allowed);
@@ -120,7 +123,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const canAuthor = ownedKeyResults.length > 0;
 
   const prefillDraft: DailyReportDraft | undefined = requestedKr
-    ? { blocks: [blankBlock(requestedKr.id)], classification: 'internal' }
+    ? { blocks: [blankBlock(requestedKr.id)], classification: 'public' }
     : undefined;
 
   const uploadRepository = dataRepository.mode === 'supabase'
@@ -133,6 +136,9 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
         uploadDailyReportAttachment: (input: Parameters<NonNullable<OkrRepository['uploadDailyReportAttachment']>>[0]) => dataRepository.uploadDailyReportAttachment!(input),
         abandonDailyReportUploadSession: (sessionId: string) => dataRepository.abandonDailyReportUploadSession!(sessionId),
         submitDailyReportSession: (input: DailyReportInput, sessionId: string) => dataRepository.submitDailyReportSession!(input, sessionId),
+        findDailyReportUploadSession: dataRepository.findDailyReportUploadSession
+          ? (reportDate: string) => dataRepository.findDailyReportUploadSession!(reportDate)
+          : undefined,
       }
     : undefined;
 
@@ -249,6 +255,35 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     }
   }
 
+  async function openTodayReport() {
+    const todayReport = ownReports.find((report) => report.date === businessDate);
+    if (!todayReport) {
+      setNotice(null);
+      setEditingReport(undefined);
+      setIsAuthoring(true);
+      return;
+    }
+    if (!can(currentUser, 'daily_report.edit', todayReport).allowed
+      || !canEditDailyReport(currentUserId, todayReport, businessDate)) {
+      setNotice('daily.reportLocked');
+      setEditingReport(undefined);
+      setIsAuthoring(false);
+      return;
+    }
+    await openDailyReportEditor(todayReport, authoringButtonRef.current!);
+  }
+
+  async function confirmMemberReport(report: DailyReport) {
+    if (!dataRepository.confirmDailyReport || !can(currentUser, 'daily_report.review', report).allowed) return;
+    const result = await dataRepository.confirmDailyReport(report.id, report.currentRevision ?? 0);
+    if (!result.ok) {
+      setNotice(dailyReportMutationErrorKey(result.error.code));
+      return;
+    }
+    setConfirmedReportIds((current) => new Set(current).add(report.id));
+    setNotice('daily.confirmedNotice');
+  }
+
   const reportContent = (report: DailyReport) => {
     const blocks = report.blocks ?? [];
     if (blocks.length > 0) {
@@ -270,13 +305,18 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     return <p>{report.dailyObjective ?? report.content}</p>;
   };
 
-  const reportColumns = (showOwnActions: boolean) => [
+  const reportColumns = (showOwnActions: boolean, showReviewActions = false) => [
     { key: 'author', label: t('daily.author'), render: (report: DailyReport) => authorName(report.authorId, data.users, t('daily.unknownMember')) },
     { key: 'date', label: t('daily.date'), render: (report: DailyReport) => report.date },
     { key: 'content', label: t('daily.content'), render: (report: DailyReport) => reportContent(report) },
     { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
     { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
     ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed && canEditDailyReport(currentUserId, report, businessDate) ? <button type="button" className="button button--secondary" onClick={(event) => void openDailyReportEditor(report, event.currentTarget)}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
+    ...(showReviewActions ? [{ key: 'review-actions', label: t('okr.actions'), render: (report: DailyReport) => report.status === 'confirmed'
+      ? <span>{t('daily.locked')}</span>
+      : report.status === 'submitted'
+        ? <button type="button" className="button button--secondary" onClick={() => void confirmMemberReport(report)}>{t('daily.confirm')}</button>
+        : <span>—</span> }] : []),
   ];
 
   return (
@@ -284,7 +324,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       <PageHeader
         title={t('daily.title')}
         description={t('daily.description')}
-        primaryAction={canAuthor ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { setNotice(null); setIsAuthoring(true); } } : undefined}
+        primaryAction={canAuthor ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { void openTodayReport(); } } : undefined}
       />
       {notice && <p className="page-notice" role="status">{t(notice)}</p>}
       {!canAuthor && <p className="data-table__empty">{t('daily.noOwnedKr')}</p>}
@@ -308,7 +348,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
         </section>
       )}
       <section className="page-section" aria-labelledby="my-daily-reports"><h2 id="my-daily-reports">{t('daily.myReports')}</h2><DataTable ariaLabel={t('daily.myReports')} rows={ownReports} getRowKey={(report) => report.id} emptyMessage={t('daily.myReportsEmpty')} columns={reportColumns(true)} /></section>
-      {currentUser.role === 'project_leader' && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">{t('daily.memberReports')}</h2><DataTable ariaLabel={t('daily.memberReports')} rows={memberReports} getRowKey={(report) => report.id} emptyMessage={t('daily.memberReportsEmpty')} columns={reportColumns(false)} /></section>}
+      {(currentUser.role === 'project_leader' || currentUser.role === 'management') && <section className="page-section" aria-labelledby="member-daily-reports"><h2 id="member-daily-reports">{t('daily.memberReports')}</h2><DataTable ariaLabel={t('daily.memberReports')} rows={memberReports} getRowKey={(report) => report.id} emptyMessage={t('daily.memberReportsEmpty')} columns={reportColumns(false, Boolean(dataRepository.confirmDailyReport))} /></section>}
     </section>
   );
 }

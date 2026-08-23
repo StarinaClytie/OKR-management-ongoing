@@ -53,7 +53,7 @@ export interface DashboardData {
 }
 
 export type AppMode = 'demo' | 'supabase';
-export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'locked' | 'clearance' | 'storage' | 'network' | 'unknown';
+export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'locked' | 'clearance' | 'cleanup_required' | 'storage' | 'network' | 'unknown';
 
 export type RepositoryResult<T> =
   | { ok: true; data: T }
@@ -460,10 +460,12 @@ export interface OkrRepository {
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;
   saveDailyReport(input: DailyReportInput, attachments?: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   beginDailyReportUploadSession?(input: Pick<DailyReportInput, 'reportDate' | 'status' | 'classification'>): Promise<RepositoryResult<DailyReportUploadSession>>;
+  findDailyReportUploadSession?(reportDate: string): Promise<RepositoryResult<DailyReportUploadSession | null>>;
   adoptDailyReportAttachments?(session: DailyReportUploadSession, attachmentIds: string[]): Promise<RepositoryResult<void>>;
   uploadDailyReportAttachment?(input: DailyReportAttachmentUploadInput): Promise<RepositoryResult<{ attachmentId: string }>>;
   abandonDailyReportUploadSession?(sessionId: string): Promise<RepositoryResult<void>>;
   submitDailyReportSession?(input: DailyReportInput, sessionId: string): Promise<RepositoryResult<{ id: string; revision: number }>>;
+  confirmDailyReport?(reportId: string, expectedRevision: number): Promise<RepositoryResult<void>>;
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>>;

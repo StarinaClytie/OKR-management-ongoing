@@ -39,6 +39,53 @@ describe('DailyReportsPage', () => {
     expect(screen.getByRole('button', { name: '填写今日日报' })).toBeEnabled();
   });
 
+  it('opens today\'s existing unconfirmed report from the fill-today CTA instead of a blank duplicate', async () => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-employee');
+    const report = editableReport(data.currentUser.id);
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
+      listReportRevisions: vi.fn(async () => ({ ok: true as const, data: [] })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '填写今日日报' }));
+
+    expect(screen.getByRole('heading', { name: '编辑我的日报' })).toBeVisible();
+    expect(screen.getByDisplayValue('当前目标')).toBeVisible();
+  });
+
+  it('keeps the fill-today CTA locked when today\'s report is already confirmed', async () => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-employee');
+    const report = { ...editableReport(data.currentUser.id), status: 'confirmed' as const };
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '填写今日日报' }));
+
+    expect(screen.getByText('日报已锁定')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: '填写今日日报' })).not.toBeInTheDocument();
+  });
+
   it('lets an employee submit a Daily OKR entry with work, result, and hours', async () => {
     const user = userEvent.setup();
     renderPageAs('user-employee');
@@ -58,6 +105,53 @@ describe('DailyReportsPage', () => {
   it('keeps management out of daily report authoring', () => {
     renderPageAs('user-management');
     expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
+  });
+
+  it('lets an authorized project leader confirm a member report through the dedicated review path', async () => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-project-leader');
+    const memberReport = editableReport('user-employee');
+    const confirmDailyReport = vi.fn(async () => ({ ok: true as const, data: undefined }));
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [memberReport] } })),
+      confirmDailyReport,
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '确认成员日报' }));
+
+    expect(confirmDailyReport).toHaveBeenCalledWith(memberReport.id, memberReport.currentRevision);
+    expect(screen.getByText('成员日报已确认。')).toBeVisible();
+    expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer review confirmation for an unfinished draft shell', async () => {
+    const data = mockRepository.getDashboardData('user-project-leader');
+    const draftReport = { ...editableReport('user-employee'), status: 'draft' as const, currentRevision: 0 };
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [draftReport] } })),
+      confirmDailyReport: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await screen.findByRole('table', { name: '项目成员日报' });
+    expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
   });
 
   it('keeps HR on an hours-only view without report bodies', () => {
@@ -140,12 +234,12 @@ describe('DailyReportsPage', () => {
     await user.click(screen.getByRole('button', { name: '保存日报修改' }));
     expect(beginDailyReportUploadSession).toHaveBeenLastCalledWith(expect.objectContaining({ reportDate: currentBusinessDate() }));
     expect(adoptDailyReportAttachments).toHaveBeenCalledWith(
-      { reportId: report.id, sessionId: 'session-edit-2' },
+      { reportId: report.id, sessionId: 'session-edit-1' },
       ['attachment-retained'],
     );
     expect(submitDailyReportSession).toHaveBeenCalledWith(expect.objectContaining({ blocks: [expect.objectContaining({
       attachments: [{ attachmentId: 'attachment-retained', displayName: '保留附件新名称', classification: 'internal' }],
-    })], reportDate: currentBusinessDate() }), 'session-edit-2');
+    })], reportDate: currentBusinessDate() }), 'session-edit-1');
     expect(removeAttachment).toHaveBeenCalledTimes(2);
     expect(screen.getAllByRole('button', { name: '编辑我的日报' })).toHaveLength(1);
     expect(screen.getByRole('cell', { name: currentBusinessDate() })).toBeVisible();
@@ -157,10 +251,10 @@ describe('DailyReportsPage', () => {
     await user.click(screen.getByRole('button', { name: '保存日报修改' }));
     expect(adoptDailyReportAttachments).toHaveBeenNthCalledWith(
       2,
-      { reportId: report.id, sessionId: 'session-edit-3' },
+      { reportId: report.id, sessionId: 'session-edit-2' },
       ['attachment-retained'],
     );
-    expect(submitDailyReportSession).toHaveBeenNthCalledWith(2, expect.anything(), 'session-edit-3');
+    expect(submitDailyReportSession).toHaveBeenNthCalledWith(2, expect.anything(), 'session-edit-2');
     anchorClick.mockRestore();
   });
 
@@ -202,7 +296,7 @@ describe('DailyReportsPage', () => {
     expect(screen.getByText('上传完成')).toBeVisible();
     expect(screen.getByText('100%')).toBeVisible();
     expect(beginDailyReportUploadSession).toHaveBeenCalledWith({
-      reportDate: currentBusinessDate(), status: 'submitted', classification: 'internal',
+      reportDate: currentBusinessDate(), status: 'submitted', classification: 'public',
     });
     await user.click(screen.getByRole('button', { name: '移除 page.pdf' }));
     expect(removeAttachment).toHaveBeenCalledWith('attachment-new', { preserveRevisionHistory: false });

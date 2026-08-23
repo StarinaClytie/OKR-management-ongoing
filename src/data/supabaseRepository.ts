@@ -26,6 +26,8 @@ function failure<T>(error: { code?: string; message: string } | null): Extract<R
         : 'unauthorized'
     : source === '40001'
       ? 'conflict'
+      : source === '55000' && message.includes('requiring cleanup')
+        ? 'cleanup_required'
       : source === '23505'
         ? 'duplicate'
         : source === 'DTC01'
@@ -470,6 +472,20 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_status: input.status,
       p_classification: input.classification,
     });
+  }
+
+  async findDailyReportUploadSession(reportDate: string): Promise<RepositoryResult<DailyReportUploadSession | null>> {
+    return this.callRpc<DailyReportUploadSession | null>('find_daily_report_upload_session', {
+      p_report_date: reportDate,
+    });
+  }
+
+  async confirmDailyReport(reportId: string, expectedRevision: number): Promise<RepositoryResult<void>> {
+    const confirmed = await this.callRpc<null>('confirm_daily_report', {
+      p_report_id: reportId,
+      p_expected_revision: expectedRevision,
+    });
+    return confirmed.ok ? { ok: true, data: undefined } : confirmed;
   }
 
   async adoptDailyReportAttachments(session: DailyReportUploadSession, attachmentIds: string[]): Promise<RepositoryResult<void>> {

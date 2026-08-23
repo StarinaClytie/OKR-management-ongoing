@@ -30,7 +30,8 @@ function completeDraft(uploadState?: NonNullable<DailyReportDraft['blocks'][numb
   };
 }
 
-type UploadRepository = Required<Pick<OkrRepository, 'beginDailyReportUploadSession' | 'uploadDailyReportAttachment' | 'abandonDailyReportUploadSession' | 'submitDailyReportSession'>>;
+type UploadRepository = Required<Pick<OkrRepository, 'beginDailyReportUploadSession' | 'uploadDailyReportAttachment' | 'abandonDailyReportUploadSession' | 'submitDailyReportSession'>>
+  & Pick<OkrRepository, 'findDailyReportUploadSession'>;
 
 function uploadRepository(overrides: Partial<UploadRepository> = {}): UploadRepository {
   return {
@@ -68,7 +69,31 @@ describe('DailyReportForm', () => {
     const draft = completeDraft('uploaded');
     draft.blocks[0]!.evidence[0]!.classification = 'confidential';
     render(<DailyReportForm initialDraft={draft} clearance="internal" ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
-    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
+    const submit = screen.getByRole('button', { name: '提交日报' });
+    expect(submit).toBeDisabled();
+    const describedBy = submit.getAttribute('aria-describedby');
+    expect(describedBy).toContain('daily-clearance-changed');
+    expect(screen.getByText('附件密级高于你当前的权限，请移除后再提交。')).toHaveAttribute('id', 'daily-clearance-changed');
+  });
+
+  it('uses public as the safe report classification for a public-clearance author', async () => {
+    const user = userEvent.setup();
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-1', sessionId: 'session-1' } }));
+    render(<DailyReportForm
+      clearance="public"
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ beginDailyReportUploadSession })}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'public-proof.pdf', { type: 'application/pdf' }));
+
+    await waitFor(() => expect(beginDailyReportUploadSession).toHaveBeenCalledWith({
+      reportDate: '2026-08-23', status: 'submitted', classification: 'public',
+    }));
   });
 
   it('starts one lazy upload session immediately and updates the selected draft item in place', async () => {
@@ -228,7 +253,7 @@ describe('DailyReportForm', () => {
     expect(events).toEqual(['remove:false', 'abandon', 'close']);
   });
 
-  it('resumes an unknown refreshed session before cancellation so repository cleanup can run', async () => {
+  it('does not create a report shell when cancelling a blank form that never started a session', async () => {
     const user = userEvent.setup();
     const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-1', sessionId: 'session-recovered' } }));
     const abandonDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: undefined }));
@@ -246,8 +271,33 @@ describe('DailyReportForm', () => {
 
     await user.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(beginDailyReportUploadSession).toHaveBeenCalledOnce();
-    expect(abandonDailyReportUploadSession).toHaveBeenCalledWith('session-recovered');
+    expect(beginDailyReportUploadSession).not.toHaveBeenCalled();
+    expect(abandonDailyReportUploadSession).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it('resumes and abandons an existing edit session without creating a replacement shell', async () => {
+    const user = userEvent.setup();
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-1', sessionId: 'session-new' } }));
+    const findDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-1', sessionId: 'session-existing' } }));
+    const abandonDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: undefined }));
+    const onCancel = vi.fn();
+    render(<DailyReportForm
+      mode="edit"
+      initialDraft={completeDraft('uploaded')}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ beginDailyReportUploadSession, findDailyReportUploadSession, abandonDailyReportUploadSession })}
+      onCancel={onCancel}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(findDailyReportUploadSession).toHaveBeenCalledWith('2026-08-23');
+    expect(abandonDailyReportUploadSession).toHaveBeenCalledWith('session-existing');
+    expect(beginDailyReportUploadSession).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledOnce();
   });
 

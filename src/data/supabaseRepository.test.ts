@@ -136,6 +136,28 @@ describe('SupabaseOkrRepository', () => {
     expect(rpc).toHaveBeenCalledWith('begin_entry_attachment_upload', expect.objectContaining({ p_display_name: `Display ${fileName}` }));
   });
 
+  it('finds an active daily upload session without calling the shell-creating begin RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: { reportId: 'report-1', sessionId: 'session-1' } });
+    const repository = new SupabaseOkrRepository(client) as SupabaseOkrRepository & {
+      findDailyReportUploadSession(reportDate: string): Promise<unknown>;
+    };
+
+    await expect(repository.findDailyReportUploadSession('2026-08-23')).resolves.toEqual({
+      ok: true, data: { reportId: 'report-1', sessionId: 'session-1' },
+    });
+    expect(rpc).toHaveBeenCalledWith('find_daily_report_upload_session', { p_report_date: '2026-08-23' });
+  });
+
+  it('confirms a member report through the dedicated reviewer RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const repository = new SupabaseOkrRepository(client) as SupabaseOkrRepository & {
+      confirmDailyReport(reportId: string, expectedRevision: number): Promise<unknown>;
+    };
+
+    await expect(repository.confirmDailyReport('report-1', 3)).resolves.toEqual({ ok: true, data: undefined });
+    expect(rpc).toHaveBeenCalledWith('confirm_daily_report', { p_report_id: 'report-1', p_expected_revision: 3 });
+  });
+
   it.each([
     ['Daily report is locked', 'locked'],
     ['Attachment classification exceeds user clearance', 'clearance'],
@@ -178,6 +200,22 @@ describe('SupabaseOkrRepository', () => {
       p_evidence_links: [],
     });
     expect(uploadStorageObject).not.toHaveBeenCalled();
+  });
+
+  it('preserves the recoverable cleanup-required failure when an upload session has orphaned metadata', async () => {
+    const { client } = createClient({
+      rpcError: { code: '55000', message: 'Upload session has unassociated attachments requiring cleanup' },
+    });
+    const input = {
+      reportDate: '2026-08-23', status: 'submitted' as const, classification: 'internal' as const,
+      blocks: [{ dailyObjective: '目标', linkedKeyResultId: 'kr-1', workDescription: '工作', hours: 2, result: '完成', evidenceLinks: [], attachments: [] }],
+      evidenceLinks: [],
+    };
+
+    await expect(new SupabaseOkrRepository(client).submitDailyReportSession(input, 'session-1')).resolves.toEqual({
+      ok: false,
+      error: { code: 'cleanup_required', message: '请求未完成，请稍后重试' },
+    });
   });
 
   it('explicitly adopts retained revision attachments into the active edit session', async () => {

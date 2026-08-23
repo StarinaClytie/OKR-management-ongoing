@@ -91,6 +91,12 @@ describe('can — capability, ownership, and field-level access', () => {
     expect(can(projectLeader, 'daily_report.edit', memberReport).allowed).toBe(false);
   });
 
+  it('allows management and the project leader to review member reports but not administrators by role alone', () => {
+    expect(can(management, 'daily_report.review', memberReport).allowed).toBe(true);
+    expect(can(projectLeader, 'daily_report.review', memberReport).allowed).toBe(true);
+    expect(can(admin, 'daily_report.review', memberReport).allowed).toBe(false);
+  });
+
   it('allows only employees and project leaders to create self-owned daily reports', () => {
     const employeeOwnedReport = { ...memberReport, authorId: employee.id };
     const managementOwnedReport = { ...sharedReport, authorId: management.id };

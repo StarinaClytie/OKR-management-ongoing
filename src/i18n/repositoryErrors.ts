@@ -10,6 +10,7 @@ const errorKeys: Record<RepositoryErrorCode, MessageKey> = {
   date_conflict: 'projects.dateConflict',
   locked: 'daily.reportLocked',
   clearance: 'daily.attachmentClearance',
+  cleanup_required: 'daily.uploadCleanupRequired',
   storage: 'daily.uploadStorageFailed',
   network: 'daily.uploadNetworkFailed',
   unknown: 'common.requestFailed',

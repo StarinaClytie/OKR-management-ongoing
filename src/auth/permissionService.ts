@@ -486,7 +486,7 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
   }
 
   if (action === 'daily_report.review') {
-    return context.ownerId !== user.id && hasProjectRole(user.id, context.projectId, 'leader')
+    return context.ownerId !== user.id && (user.role === 'management' || hasProjectRole(user.id, context.projectId, 'leader'))
       ? allow('可审核项目成员日报')
       : deny();
   }

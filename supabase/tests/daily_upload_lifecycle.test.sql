@@ -1,14 +1,17 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(51);
+select plan(71);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at
 ) values
   ('00000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated', 'employee@upload-lifecycle.test', 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
-  ('00000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'leader@upload-lifecycle.test', 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now());
+  ('00000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'leader@upload-lifecycle.test', 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
+  ('00000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000003', 'authenticated', 'authenticated', 'administrator@upload-lifecycle.test', 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
+  ('00000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000004', 'authenticated', 'authenticated', 'public@upload-lifecycle.test', 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
+  ('00000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000005', 'authenticated', 'authenticated', 'management@upload-lifecycle.test', 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now());
 
 insert into public.organizations (id, name)
 values ('92000000-0000-0000-0000-000000000001', 'Upload Lifecycle Organization');
@@ -16,15 +19,21 @@ values ('92000000-0000-0000-0000-000000000001', 'Upload Lifecycle Organization')
 insert into public.profiles (id, organization_id, display_name, clearance, approval_status)
 values
   ('91000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', 'Employee', 'internal', 'approved'),
-  ('91000000-0000-0000-0000-000000000002', '92000000-0000-0000-0000-000000000001', 'Leader', 'internal', 'approved');
+  ('91000000-0000-0000-0000-000000000002', '92000000-0000-0000-0000-000000000001', 'Leader', 'internal', 'approved'),
+  ('91000000-0000-0000-0000-000000000003', '92000000-0000-0000-0000-000000000001', 'Administrator', 'internal', 'approved'),
+  ('91000000-0000-0000-0000-000000000004', '92000000-0000-0000-0000-000000000001', 'Public employee', 'public', 'approved'),
+  ('91000000-0000-0000-0000-000000000005', '92000000-0000-0000-0000-000000000001', 'Management reviewer', 'internal', 'approved');
 
 insert into public.user_roles (organization_id, profile_id, role)
 values
   ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'employee'),
-  ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000002', 'project_leader');
+  ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000002', 'project_leader'),
+  ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000003', 'administrator'),
+  ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000004', 'employee'),
+  ('92000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000005', 'management');
 
 insert into public.projects (id, organization_id, name, leader_id, classification, start_date, due_date)
-values ('93000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', 'Upload Lifecycle Project', '91000000-0000-0000-0000-000000000001', 'internal', current_date - 1, current_date + 1);
+values ('93000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', 'Upload Lifecycle Project', '91000000-0000-0000-0000-000000000002', 'internal', current_date - 1, current_date + 1);
 
 insert into public.objectives (id, organization_id, project_id, owner_id, title, classification, start_date, due_date)
 values ('94000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', '93000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'Upload Lifecycle Objective', 'internal', current_date - 1, current_date + 1);
@@ -57,6 +66,9 @@ create temporary table upload_lifecycle_ids (
   cleanup_attachment_id uuid,
   cleanup_path text,
   edit_session_id uuid,
+  forged_session_id uuid,
+  orphan_session_id uuid,
+  orphan_attachment_id uuid,
   locked_session_id uuid,
   locked_attachment_id uuid
 );
@@ -533,6 +545,107 @@ select ok(
   'the owner can update an unreviewed report dated today'
 );
 
+select throws_ok(
+  $$select public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'confirmed', 'internal')$$,
+  '42501', 'Authors cannot confirm daily reports',
+  'an author cannot forge confirmation while opening an upload session'
+);
+
+insert into upload_lifecycle_ids (forged_session_id)
+select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
+select throws_ok(
+  $$select * from public.save_daily_report(
+    (timezone('Asia/Shanghai', now()))::date, 'confirmed', 'internal',
+    jsonb_build_array(jsonb_build_object(
+      'dailyObjective', 'Forged confirmation',
+      'linkedKeyResultId', '95000000-0000-0000-0000-000000000001',
+      'workDescription', 'Forged work', 'hours', 1, 'result', 'Forged result', 'attachments', '[]'::jsonb
+    )),
+    (select forged_session_id from upload_lifecycle_ids where forged_session_id is not null),
+    '[]'::jsonb
+  )$$,
+  '42501', 'Authors cannot confirm daily reports',
+  'an author cannot forge confirmation while saving a report revision'
+);
+select lives_ok(
+  $$select public.abandon_daily_report_upload_session((select forged_session_id from upload_lifecycle_ids where forged_session_id is not null))$$,
+  'the rejected forged-confirmation session remains recoverable and can be abandoned'
+);
+
+insert into upload_lifecycle_ids (orphan_session_id)
+select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
+insert into upload_lifecycle_ids (orphan_attachment_id)
+select (public.begin_entry_attachment_upload(
+  '96000000-0000-0000-0000-000000000001',
+  (select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null),
+  1, 'orphan.pdf', 'application/pdf', 128, 'internal', 'Orphan candidate'
+)->>'id')::uuid;
+select throws_ok(
+  $$select * from public.save_daily_report(
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal',
+    jsonb_build_array(jsonb_build_object(
+      'dailyObjective', 'No orphan objective',
+      'linkedKeyResultId', '95000000-0000-0000-0000-000000000001',
+      'workDescription', 'No orphan work', 'hours', 1, 'result', 'No orphan result', 'attachments', '[]'::jsonb
+    )),
+    (select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null),
+    '[]'::jsonb
+  )$$,
+  '55000', 'Upload session has unassociated attachments requiring cleanup',
+  'submission refuses to complete while the session still owns a cleanup target'
+);
+select is(
+  (select attachment_id::text from public.list_daily_report_upload_session_cleanup(
+    (select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null)
+  ) limit 1),
+  (select orphan_attachment_id::text from upload_lifecycle_ids where orphan_attachment_id is not null),
+  'the refused session exposes its orphan as a recoverable cleanup target'
+);
+select lives_ok(
+  $$select public.delete_daily_report_upload_attachment((select orphan_attachment_id from upload_lifecycle_ids where orphan_attachment_id is not null))$$,
+  'the orphan metadata can be safely marked for deletion'
+);
+select lives_ok(
+  $$select public.abandon_daily_report_upload_session((select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null))$$,
+  'the cleaned orphan session can be abandoned'
+);
+select is(
+  (select status from public.daily_report_upload_sessions where id = (select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null)),
+  'abandoned',
+  'an orphan-bearing session never becomes completed'
+);
+select is(
+  public.find_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date),
+  null::jsonb,
+  'a side-effect-free session lookup returns null after cleanup without creating a shell or session'
+);
+
+select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000004', true);
+select lives_ok(
+  $$select public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'public')$$,
+  'a public-clearance employee can start a public daily report'
+);
+select is(
+  (select classification::text from public.daily_reports where author_id = auth.uid() and report_date = (timezone('Asia/Shanghai', now()))::date),
+  'public',
+  'the public-clearance employee report shell uses the safe public classification'
+);
+select is(
+  (select status::text from public.daily_reports where author_id = auth.uid() and report_date = (timezone('Asia/Shanghai', now()))::date),
+  'draft',
+  'starting an upload never exposes an incomplete shell as a submitted report'
+);
+select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000001', true);
+
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.report_attachments'::regclass
+      and conname = 'report_attachments_upload_session_subject_fkey'
+  ),
+  'attachment upload sessions are protected by a composite report-subject foreign key'
+);
+
 insert into upload_lifecycle_ids (locked_session_id)
 select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
 with started as (
@@ -557,18 +670,31 @@ select throws_ok(
   'finalization is blocked after review confirmation'
 );
 select throws_ok(
-  $$select public.abandon_daily_report_upload_session(
-    (select locked_session_id from upload_lifecycle_ids where locked_session_id is not null)
-  )$$,
-  '42501', 'Daily report is locked',
-  'abandoning an upload is blocked after review confirmation'
-);
-select throws_ok(
   $$select public.soft_delete_attachment(
     (select locked_attachment_id from upload_lifecycle_ids where locked_attachment_id is not null)
   )$$,
   '42501', 'Daily report is locked',
-  'soft deletion is blocked after review confirmation'
+  'ordinary content deletion is blocked after review confirmation'
+);
+select is(
+  (select attachment_id::text from public.list_daily_report_upload_session_cleanup(
+    (select locked_session_id from upload_lifecycle_ids where locked_session_id is not null)
+  ) limit 1),
+  (select locked_attachment_id::text from upload_lifecycle_ids where locked_attachment_id is not null),
+  'a locked report still exposes only its unassociated temporary cleanup target'
+);
+select lives_ok(
+  $$select public.delete_daily_report_upload_attachment((select locked_attachment_id from upload_lifecycle_ids where locked_attachment_id is not null))$$,
+  'a locked report still permits safe deletion of its unassociated temporary attachment'
+);
+select lives_ok(
+  $$select public.abandon_daily_report_upload_session((select locked_session_id from upload_lifecycle_ids where locked_session_id is not null))$$,
+  'a locked report still permits safe abandonment after temporary cleanup'
+);
+select is(
+  (select status from public.daily_report_upload_sessions where id = (select locked_session_id from upload_lifecycle_ids where locked_session_id is not null)),
+  'abandoned',
+  'locked-report cleanup retires the upload session without touching evidence history'
 );
 select throws_ok(
   $$select * from public.save_daily_report(
@@ -614,6 +740,36 @@ select throws_ok(
   $$select public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date - 1, 'submitted', 'internal')$$,
   '42501', 'Daily report is locked',
   'a prior-day report is locked'
+);
+
+set local role postgres;
+update public.daily_reports set status = 'submitted'
+where id = '96000000-0000-0000-0000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000003', true);
+select throws_ok(
+  $$select public.confirm_daily_report('96000000-0000-0000-0000-000000000001', 2)$$,
+  '42501', 'Only an authorized daily report reviewer can confirm this report',
+  'administrator status alone does not grant business-review authority'
+);
+select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000005', true);
+select lives_ok(
+  $$select public.confirm_daily_report('96000000-0000-0000-0000-000000000001', 2)$$,
+  'management can confirm an organization member report through the reviewer-only RPC'
+);
+set local role postgres;
+update public.daily_reports set status = 'submitted'
+where id = '96000000-0000-0000-0000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000002', true);
+select lives_ok(
+  $$select public.confirm_daily_report('96000000-0000-0000-0000-000000000001', 2)$$,
+  'the assigned project leader can confirm a submitted member report'
+);
+select is(
+  (select status::text from public.daily_reports where id = '96000000-0000-0000-0000-000000000001'),
+  'confirmed',
+  'review confirmation immediately locks the member report'
 );
 
 select * from finish();

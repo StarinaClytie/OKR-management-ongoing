@@ -24,7 +24,8 @@ interface DailyReportFormProps {
   clearance?: Classification;
   reportDate?: string;
   uploadSession?: DailyReportUploadSession;
-  uploadRepository?: Required<Pick<OkrRepository, 'beginDailyReportUploadSession' | 'uploadDailyReportAttachment' | 'abandonDailyReportUploadSession' | 'submitDailyReportSession'>>;
+  uploadRepository?: Required<Pick<OkrRepository, 'beginDailyReportUploadSession' | 'uploadDailyReportAttachment' | 'abandonDailyReportUploadSession' | 'submitDailyReportSession'>>
+    & Pick<OkrRepository, 'findDailyReportUploadSession'>;
 }
 
 function cloneDraft(draft: DailyReportDraft): DailyReportDraft {
@@ -83,7 +84,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const { t } = useLocale();
   const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft
     ? cloneDraft(initialDraft)
-    : { blocks: [newBlock('block-1')], classification: 'internal' });
+    : { blocks: [newBlock('block-1')], classification: 'public' });
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
   const [status, setStatus] = useState<LocalizedMessage | null>(null);
   const [activeMutations, setActiveMutations] = useState(0);
@@ -237,10 +238,15 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
         return;
       }
 
-      const session = uploadSessionRef.current ?? (uploadRepository && reportDate ? await ensureUploadSession() : undefined);
-      if (uploadRepository && reportDate && !session) {
-        setStatus({ key: repositoryErrorKey(uploadSessionErrorRef.current ?? 'unknown') });
-        return;
+      let session = uploadSessionRef.current;
+      if (!session && mode === 'edit' && reportDate && uploadRepository?.findDailyReportUploadSession) {
+        const recovered = await uploadRepository.findDailyReportUploadSession(reportDate);
+        if (!recovered.ok) {
+          setStatus({ key: repositoryErrorKey(recovered.error.code) });
+          return;
+        }
+        session = recovered.data ?? undefined;
+        uploadSessionRef.current = session;
       }
       if (session && uploadRepository) {
         const abandoned = await uploadRepository.abandonDailyReportUploadSession(session.sessionId);
@@ -302,6 +308,10 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const incompleteAttachments = draft.blocks.flatMap((block) => block.evidence).filter((item) => !dailyEvidenceIsUploaded(item));
   const uploadsComplete = dailyReportUploadsComplete(draft);
   const submitDisabled = !formIsValid || !uploadsComplete || !evidenceWithinClearance || activeMutations > 0 || isSubmitting;
+  const submitDescriptionIds = [
+    incompleteAttachments.length ? 'daily-upload-incomplete' : undefined,
+    !evidenceWithinClearance ? 'daily-clearance-changed' : undefined,
+  ].filter(Boolean).join(' ') || undefined;
 
   return (
     <form className="daily-entry-layout" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
@@ -422,9 +432,10 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
 
         <div className="daily-form-actions">
           <button type="button" className="button button--secondary" disabled={activeMutations > 0 || isSubmitting} onClick={() => void cancel()}>{t('common.cancel')}</button>
-          <button type="submit" className="button button--primary" disabled={submitDisabled} aria-describedby={incompleteAttachments.length ? 'daily-upload-incomplete' : undefined}>{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
+          <button type="submit" className="button button--primary" disabled={submitDisabled} aria-describedby={submitDescriptionIds}>{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
         </div>
         {incompleteAttachments.length > 0 && <p id="daily-upload-incomplete" className="daily-form-actions__hint">{t('daily.uploadIncomplete', { names: incompleteAttachments.map((item) => item.label).join('、') })}</p>}
+        {!evidenceWithinClearance && <p id="daily-clearance-changed" className="daily-form-actions__hint">{t('daily.clearanceChanged')}</p>}
         {status && <p className="page-notice" role="status">{t(status.key, status.values)}</p>}
       </div>
     </form>
