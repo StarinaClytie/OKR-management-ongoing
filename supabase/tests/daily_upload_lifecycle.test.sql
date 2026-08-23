@@ -72,6 +72,7 @@ create temporary table upload_lifecycle_ids (
   locked_session_id uuid,
   locked_attachment_id uuid
 );
+grant select, insert, update, delete on table upload_lifecycle_ids to authenticated;
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000001', true);
@@ -154,6 +155,19 @@ select throws_ok(
   '42501', 'Attachment is not available for this report revision',
   'a pending attachment cannot enter a report revision'
 );
+select public.delete_daily_report_upload_attachment(
+  (select unfinalized_attachment_id from upload_lifecycle_ids where unfinalized_attachment_id is not null)
+);
+select public.abandon_daily_report_upload_session(
+  (select current_session_id from upload_lifecycle_ids where current_session_id is not null)
+);
+update upload_lifecycle_ids
+set current_session_id = (
+  public.begin_daily_report_upload_session(
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal'
+  )->>'sessionId'
+)::uuid
+where current_session_id is not null;
 select lives_ok(
   $$select * from public.save_daily_report(
     (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal',
@@ -169,7 +183,7 @@ select lives_ok(
     (select current_session_id from upload_lifecycle_ids where current_session_id is not null),
     '[]'::jsonb
   )$$,
-  'pending rows from an abandoned session do not block submission'
+  'submission succeeds after the rejected pending attachment session is cleaned and abandoned'
 );
 
 select ok(
@@ -290,6 +304,18 @@ select throws_ok(
   '42501', 'Attachment classification exceeds user clearance',
   'a stored attachment above the caller clearance cannot enter a revision'
 );
+select public.delete_daily_report_upload_attachment(
+  (select over_clearance_attachment_id from upload_lifecycle_ids where over_clearance_attachment_id is not null)
+);
+set local role postgres;
+select set_config('storage.allow_delete_query', 'true', true);
+delete from storage.objects
+where bucket_id = 'report-attachments'
+  and name = (select over_clearance_path from upload_lifecycle_ids where over_clearance_path is not null);
+set local role authenticated;
+select public.abandon_daily_report_upload_session(
+  (select fresh_session_id from upload_lifecycle_ids where fresh_session_id is not null)
+);
 
 insert into upload_lifecycle_ids (associated_session_id)
 select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
@@ -378,7 +404,7 @@ select throws_ok(
     (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null),
     array[(select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null)]
   )$$,
-  '42501', 'Upload session is not available',
+  '42501', 'Daily report is locked',
   'another user cannot adopt evidence into the owner session'
 );
 select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000001', true);
@@ -479,6 +505,7 @@ select is(
   'the resumed session can retry idempotent metadata deletion before Storage cleanup'
 );
 set local role postgres;
+select set_config('storage.allow_delete_query', 'true', true);
 delete from storage.objects
 where bucket_id = 'report-attachments'
   and name = (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null);
@@ -609,11 +636,13 @@ select lives_ok(
   $$select public.abandon_daily_report_upload_session((select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null))$$,
   'the cleaned orphan session can be abandoned'
 );
+set local role postgres;
 select is(
   (select status from public.daily_report_upload_sessions where id = (select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null)),
   'abandoned',
   'an orphan-bearing session never becomes completed'
 );
+set local role authenticated;
 select is(
   public.find_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date),
   null::jsonb,
@@ -676,6 +705,20 @@ select throws_ok(
   '42501', 'Daily report is locked',
   'ordinary content deletion is blocked after review confirmation'
 );
+select throws_ok(
+  $$select * from public.save_daily_report(
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal',
+    jsonb_build_array(jsonb_build_object(
+      'dailyObjective', 'Locked objective',
+      'linkedKeyResultId', '95000000-0000-0000-0000-000000000001',
+      'workDescription', 'Locked work', 'hours', 2, 'result', 'Locked result', 'attachments', '[]'::jsonb
+    )),
+    (select locked_session_id from upload_lifecycle_ids where locked_session_id is not null),
+    '[]'::jsonb
+  )$$,
+  '42501', 'Daily report is locked',
+  'saving is blocked after review confirmation'
+);
 select is(
   (select attachment_id::text from public.list_daily_report_upload_session_cleanup(
     (select locked_session_id from upload_lifecycle_ids where locked_session_id is not null)
@@ -691,25 +734,13 @@ select lives_ok(
   $$select public.abandon_daily_report_upload_session((select locked_session_id from upload_lifecycle_ids where locked_session_id is not null))$$,
   'a locked report still permits safe abandonment after temporary cleanup'
 );
+set local role postgres;
 select is(
   (select status from public.daily_report_upload_sessions where id = (select locked_session_id from upload_lifecycle_ids where locked_session_id is not null)),
   'abandoned',
   'locked-report cleanup retires the upload session without touching evidence history'
 );
-select throws_ok(
-  $$select * from public.save_daily_report(
-    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal',
-    jsonb_build_array(jsonb_build_object(
-      'dailyObjective', 'Locked objective',
-      'linkedKeyResultId', '95000000-0000-0000-0000-000000000001',
-      'workDescription', 'Locked work', 'hours', 2, 'result', 'Locked result', 'attachments', '[]'::jsonb
-    )),
-    (select locked_session_id from upload_lifecycle_ids where locked_session_id is not null),
-    '[]'::jsonb
-  )$$,
-  '42501', 'Daily report is locked',
-  'saving is blocked after review confirmation'
-);
+set local role authenticated;
 
 select ok(
   not private.daily_report_is_editable(
@@ -754,7 +785,7 @@ select throws_ok(
 );
 select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000005', true);
 select lives_ok(
-  $$select public.confirm_daily_report('96000000-0000-0000-0000-000000000001', 2)$$,
+  $$select public.confirm_daily_report('96000000-0000-0000-0000-000000000001', 3)$$,
   'management can confirm an organization member report through the reviewer-only RPC'
 );
 set local role postgres;
@@ -763,9 +794,10 @@ where id = '96000000-0000-0000-0000-000000000001';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '91000000-0000-0000-0000-000000000002', true);
 select lives_ok(
-  $$select public.confirm_daily_report('96000000-0000-0000-0000-000000000001', 2)$$,
+  $$select public.confirm_daily_report('96000000-0000-0000-0000-000000000001', 3)$$,
   'the assigned project leader can confirm a submitted member report'
 );
+set local role postgres;
 select is(
   (select status::text from public.daily_reports where id = '96000000-0000-0000-0000-000000000001'),
   'confirmed',

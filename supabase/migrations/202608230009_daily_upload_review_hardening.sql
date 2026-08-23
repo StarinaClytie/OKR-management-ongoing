@@ -89,6 +89,7 @@ declare
   target_report public.daily_reports%rowtype;
   target_session public.daily_report_upload_sessions%rowtype;
   requested_attachment_ids uuid[] := '{}'::uuid[];
+  business_date date := (timezone('Asia/Shanghai', now()))::date;
 begin
   if p_status is null or p_status not in ('draft'::public.report_status, 'submitted'::public.report_status) then
     raise exception 'Authors cannot confirm daily reports' using errcode = '42501';
@@ -110,7 +111,7 @@ begin
     and report.author_id = auth.uid()
     and report.report_date = p_report_date
   for update;
-  if not found then
+  if not found or not private.daily_report_is_editable(target_report.id, auth.uid(), business_date) then
     raise exception 'Daily report is locked' using errcode = '42501';
   end if;
 
@@ -160,6 +161,31 @@ begin
     p_upload_session_id,
     p_evidence_links
   ) saved;
+end;
+$$;
+
+-- Keep the persisted-removal authorization as a read-only gate. The deployed
+-- implementation selected a whole row into an otherwise-unused record.
+create or replace function public.authorize_attachment_revision_removal(p_attachment_id uuid)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  business_date date := (timezone('Asia/Shanghai', now()))::date;
+begin
+  perform 1
+  from public.report_attachments attachment
+  where attachment.id = p_attachment_id
+    and attachment.organization_id = private.current_organization_id()
+    and attachment.uploader_id = auth.uid()
+    and attachment.state = 'uploaded'
+    and private.daily_report_is_editable(attachment.report_id, auth.uid(), business_date);
+  if not found then
+    raise exception 'Daily report is locked' using errcode = '42501';
+  end if;
 end;
 $$;
 

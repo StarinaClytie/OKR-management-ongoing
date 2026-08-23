@@ -108,6 +108,12 @@ insert into public.daily_okr_blocks (organization_id, report_id, revision_id, po
   ('20000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 1, 'Confidential report body', '41000000-0000-0000-0000-000000000003', 7.5, '', '[]'::jsonb);
 update public.daily_reports set current_revision = 1 where id = '50000000-0000-0000-0000-000000000001';
 
+create temporary table rls_daily_sessions (
+  purpose text primary key,
+  session_id uuid not null
+);
+grant select, insert, update, delete on table rls_daily_sessions to authenticated;
+
 set local role authenticated;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
@@ -136,9 +142,10 @@ select throws_ok(
   '42501', 'Objective is not available for KR assignment', 'project leader cannot enumerate candidates for another leader objective'
 );
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
-select is_empty(
-  $$update public.daily_report_revisions set daily_objective = 'leader edit' where id = '60000000-0000-0000-0000-000000000001' returning id$$,
-  'project leader cannot edit member report body'
+select throws_ok(
+  $$update public.daily_report_revisions set daily_objective = 'leader edit' where id = '60000000-0000-0000-0000-000000000001'$$,
+  '42501', 'permission denied for table daily_report_revisions',
+  'project leader has no table privilege to edit member report body'
 );
 select throws_ok(
   $$update public.key_results set progress = 60 where id = '41000000-0000-0000-0000-000000000001'$$,
@@ -170,62 +177,60 @@ select is((select count(*) from public.daily_report_revisions), 0::bigint, 'unre
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
 select lives_ok(
-  $$select public.create_daily_report(
-    current_date + 1,
-    'draft', 'confidential',
-    '[{"dailyObjective":"Created through RPC","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":2,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
-    '[]'::jsonb
-  )$$,
-  'author creates report and initial immutable revision atomically'
+  $$insert into rls_daily_sessions (purpose, session_id)
+    select 'first', (public.begin_daily_report_upload_session(
+      (timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential'
+    )->>'sessionId')::uuid$$,
+  'author begins a session for the existing editable report'
 );
-select is((select current_revision from public.daily_reports where report_date = current_date + 1), 1, 'create RPC sets revision exactly once');
+select is((select current_revision from public.daily_reports where id = '50000000-0000-0000-0000-000000000001'), 1, 'opening an upload session does not create a report revision');
 select is(
-  public.update_daily_report(
-    (select id from public.daily_reports where report_date = current_date + 1),
-    1, 'submitted', 'confidential',
-    '[{"dailyObjective":"Updated through RPC","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":3,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
+  (select revision from public.save_daily_report(
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential',
+    '[{"dailyObjective":"Updated through RPC","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","workDescription":"Execute owned KR","hours":3,"result":"Updated result","evidenceLinks":[],"attachments":[]}]'::jsonb,
+    (select session_id from rls_daily_sessions where purpose = 'first'),
     '[]'::jsonb
-  ),
+  )),
   2,
-  'update RPC increments revision exactly once'
+  'session-aware save increments the immutable revision exactly once'
 );
 select throws_ok(
   $$select public.update_daily_report(
-    (select id from public.daily_reports where report_date = current_date + 1),
+    '50000000-0000-0000-0000-000000000001',
     1, 'submitted', 'confidential',
     '[{"dailyObjective":"Stale update","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":3,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
     '[]'::jsonb
   )$$,
-  '40001', 'Daily report revision conflict', 'stale expected revision is rejected'
+  '42501', 'permission denied for function update_daily_report', 'the revoked legacy update RPC cannot bypass session-aware saves'
+);
+select lives_ok(
+  $$insert into rls_daily_sessions (purpose, session_id)
+    select 'second', (public.begin_daily_report_upload_session(
+      (timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential'
+    )->>'sessionId')::uuid$$,
+  'author begins a fresh session after the first session completes'
 );
 select lives_ok(
   $$select * from public.save_daily_report(
-    current_date + 2, 'submitted', 'confidential',
-    '[{"dailyObjective":"First save","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","workDescription":"Execute owned KR","hours":2,"result":"First result","evidenceLinks":[]}]'::jsonb,
-    '[]'::jsonb
-  )$$,
-  'first submission creates the daily report through the atomic save RPC'
-);
-select lives_ok(
-  $$select * from public.save_daily_report(
-    current_date + 2, 'submitted', 'confidential',
-    '[{"dailyObjective":"Second save","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","workDescription":"Continue owned KR","hours":5,"result":"Second result","evidenceLinks":[]}]'::jsonb,
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential',
+    '[{"dailyObjective":"Second save","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","workDescription":"Continue owned KR","hours":5,"result":"Second result","evidenceLinks":[],"attachments":[]}]'::jsonb,
+    (select session_id from rls_daily_sessions where purpose = 'second'),
     '[]'::jsonb
   )$$,
   'second same-day submission updates instead of violating the unique key'
 );
 select is(
-  (select count(*) from public.daily_reports where author_id = '10000000-0000-0000-0000-000000000004' and report_date = current_date + 2),
+  (select count(*) from public.daily_reports where author_id = '10000000-0000-0000-0000-000000000004' and report_date = (timezone('Asia/Shanghai', now()))::date),
   1::bigint,
   'same-day submissions keep exactly one report row'
 );
 select is(
-  (select current_revision from public.daily_reports where author_id = '10000000-0000-0000-0000-000000000004' and report_date = current_date + 2),
-  2,
+  (select current_revision from public.daily_reports where author_id = '10000000-0000-0000-0000-000000000004' and report_date = (timezone('Asia/Shanghai', now()))::date),
+  3,
   'same-day submissions append immutable revisions'
 );
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);
-select is((select count(*) from public.list_report_revisions('50000000-0000-0000-0000-000000000001')), 1::bigint, 'authorized author lists immutable revision history');
+select is((select count(*) from public.list_report_revisions('50000000-0000-0000-0000-000000000001')), 3::bigint, 'authorized author lists immutable revision history');
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 select throws_ok(
   $$select public.update_daily_report(
@@ -234,7 +239,7 @@ select throws_ok(
     '[{"dailyObjective":"Leader update","linkedKeyResultId":"41000000-0000-0000-0000-000000000001","hours":3,"result":"","keyResults":[{"title":"KR zero"}]}]'::jsonb,
     '[]'::jsonb
   )$$,
-  '42501', 'Daily report is not editable by the current user', 'project leader cannot use RPC to edit member report'
+  '42501', 'permission denied for function update_daily_report', 'project leader cannot invoke the revoked legacy report editor'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', true);

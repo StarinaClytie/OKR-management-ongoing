@@ -25,19 +25,36 @@ values ('85000000-0000-0000-0000-000000000001', '82000000-0000-0000-0000-0000000
 insert into public.kr_assignments (organization_id, kr_id, profile_id, assignment_role)
 values ('82000000-0000-0000-0000-000000000001', '85000000-0000-0000-0000-000000000001', '81000000-0000-0000-0000-000000000001', 'owner');
 
+create temporary table attachment_revision_sessions (
+  purpose text primary key,
+  report_id uuid not null,
+  session_id uuid not null
+);
+grant select, insert, update, delete on table attachment_revision_sessions to authenticated;
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000001', true);
 
 select lives_ok(
-  $$select public.begin_daily_report_with_attachments(current_date - 3, 'submitted', 'confidential')$$,
+  $$insert into attachment_revision_sessions (purpose, report_id, session_id)
+    select 'first', (started.value->>'reportId')::uuid, (started.value->>'sessionId')::uuid
+    from (select public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential') as value) started$$,
   'author creates the report shell before uploading evidence'
 );
 select lives_ok(
-  $$select public.begin_entry_attachment_upload((select id from public.daily_reports where report_date = current_date - 3), 1, 'retain.pdf', 'application/pdf', 128, 'internal', 'Retain old label')$$,
+  $$select public.begin_entry_attachment_upload(
+    (select report_id from attachment_revision_sessions where purpose = 'first'),
+    (select session_id from attachment_revision_sessions where purpose = 'first'),
+    1, 'retain.pdf', 'application/pdf', 128, 'internal', 'Retain old label'
+  )$$,
   'author uploads evidence that will be retained'
 );
 select lives_ok(
-  $$select public.begin_entry_attachment_upload((select id from public.daily_reports where report_date = current_date - 3), 1, 'remove.pdf', 'application/pdf', 128, 'internal', 'Remove old label')$$,
+  $$select public.begin_entry_attachment_upload(
+    (select report_id from attachment_revision_sessions where purpose = 'first'),
+    (select session_id from attachment_revision_sessions where purpose = 'first'),
+    1, 'remove.pdf', 'application/pdf', 128, 'internal', 'Remove old label'
+  )$$,
   'author uploads evidence that will later be removed'
 );
 insert into storage.objects (bucket_id, name, owner_id, metadata)
@@ -48,14 +65,34 @@ from public.report_attachments where state = 'pending';
 
 select lives_ok(
   $$select * from public.save_daily_report(
-    current_date - 3, 'submitted', 'confidential',
-    '[{"dailyObjective":"Revision one","linkedKeyResultId":"85000000-0000-0000-0000-000000000001","workDescription":"First work","hours":2,"result":"First result","evidenceLinks":[],"attachments":[]}]'::jsonb,
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential',
+    jsonb_build_array(jsonb_build_object(
+      'dailyObjective', 'Revision one',
+      'linkedKeyResultId', '85000000-0000-0000-0000-000000000001',
+      'workDescription', 'First work',
+      'hours', 2,
+      'result', 'First result',
+      'evidenceLinks', '[]'::jsonb,
+      'attachments', jsonb_build_array(
+        jsonb_build_object(
+          'attachmentId', (select id from public.report_attachments where original_name = 'retain.pdf'),
+          'displayName', 'Retain old label',
+          'classification', 'internal'
+        ),
+        jsonb_build_object(
+          'attachmentId', (select id from public.report_attachments where original_name = 'remove.pdf'),
+          'displayName', 'Remove old label',
+          'classification', 'internal'
+        )
+      )
+    )),
+    (select session_id from attachment_revision_sessions where purpose = 'first'),
     '[]'::jsonb
   )$$,
   'first submission creates revision-scoped associations for new uploads'
 );
 select is((select count(*) from public.report_attachment_revisions), 2::bigint, 'revision one retains both attachment associations');
-select is((select current_revision from public.daily_reports where report_date = current_date - 3), 1, 'the first reload resolves revision one as current');
+select is((select current_revision from public.daily_reports where report_date = (timezone('Asia/Shanghai', now()))::date), 1, 'the first reload resolves revision one as current');
 select is(
   (select count(*) from public.report_attachment_revisions rar join public.daily_report_revisions rr on rr.id = rar.revision_id join public.daily_reports dr on dr.id = rr.report_id where rr.revision_number = dr.current_revision),
   2::bigint,
@@ -72,9 +109,21 @@ select is(
   2::bigint,
   'cancel or reload before resubmit still returns both current-revision attachments'
 );
+
+insert into attachment_revision_sessions (purpose, report_id, session_id)
+select 'second', (started.value->>'reportId')::uuid, (started.value->>'sessionId')::uuid
+from (select public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal') as value) started;
+select public.adopt_daily_report_revision_attachments(
+  (select report_id from attachment_revision_sessions where purpose = 'second'),
+  (select session_id from attachment_revision_sessions where purpose = 'second'),
+  array[
+    (select id from public.report_attachments where original_name = 'retain.pdf'),
+    (select id from public.report_attachments where original_name = 'remove.pdf')
+  ]
+);
 select lives_ok(
   $$select * from public.save_daily_report(
-    current_date - 3, 'submitted', 'internal',
+    (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal',
     jsonb_build_array(jsonb_build_object(
       'dailyObjective', 'Revision two',
       'linkedKeyResultId', '85000000-0000-0000-0000-000000000001',
@@ -88,6 +137,7 @@ select lives_ok(
         'classification', 'confidential'
       ))
     )),
+    (select session_id from attachment_revision_sessions where purpose = 'second'),
     '[]'::jsonb
   )$$,
   'second submission carries retained evidence metadata into its new revision'
@@ -114,8 +164,8 @@ select throws_ok(
   'a lower-clearance reader cannot download an internal attachment from a confidential historical revision omitted by the current internal revision'
 );
 set local role postgres;
-select is((select current_revision from public.daily_reports where report_date = current_date - 3), 2, 'editing the prior-day report advances its current revision in place');
-select is((select count(*) from public.daily_okr_blocks where report_id = (select id from public.daily_reports where report_date = current_date - 3)), 2::bigint, 'both immutable block revisions remain stored for the same prior-day report');
+select is((select current_revision from public.daily_reports where report_date = (timezone('Asia/Shanghai', now()))::date), 2, 'editing today''s report advances its current revision in place');
+select is((select count(*) from public.daily_okr_blocks where report_id = (select id from public.daily_reports where report_date = (timezone('Asia/Shanghai', now()))::date)), 2::bigint, 'both immutable block revisions remain stored for the same report');
 select is((select count(*) from public.report_attachment_revisions), 3::bigint, 'revision two adds only the retained association without duplicating revision one');
 select is(
   (select display_name from public.report_attachment_revisions rar join public.daily_report_revisions rr on rr.id = rar.revision_id where rr.revision_number = 2),
