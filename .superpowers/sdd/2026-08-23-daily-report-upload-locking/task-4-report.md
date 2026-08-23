@@ -5,6 +5,7 @@ Implementation commits:
 - `b54666d` — `feat: upload daily evidence before submission`
 - `7adde4b` — `fix: integrate daily upload sessions end to end` (review fix round 1/5)
 - `9912b87` — `fix: preserve daily attachment cleanup recovery` (review fix round 2/5)
+- `31147de` — `fix: resume daily upload cleanup sessions` (review fix round 3/5)
 
 ## Delivered
 
@@ -50,13 +51,20 @@ Round 1 TDD evidence:
 - Strengthened the server boundary beyond the client ordering: abandonment checks `storage.objects` and keeps the session active while any unassociated deleted attachment object still exists. Only after the Storage catalog confirms deletion can adopted historical evidence detach and the session become abandoned. Historical revision evidence remains excluded by the `revision_id`/`daily_okr_block_id` predicates.
 - The continuous-edit page test failed RED because adoption was called only once. The pgTAP additions were written before the migration adjustment, but their RED/GREEN execution is environment-blocked. The repository retry test locks the already-required client ordering while pgTAP covers the missing server guarantee.
 
+## Review Fix Round 3/5
+
+- Added migration `202608230008_daily_upload_cleanup_session_recovery.sql`, which overrides `begin_daily_report_upload_session` without rewriting the previously committed migration. Repeated begin now resumes the newest active session that owns any same-author, same-report unassociated cleanup target (`pending`, `uploaded`, `failed`, or `deleted`). This preserves the checked deletion authority after a refresh when metadata is already `deleted` but the Storage request failed.
+- The recovery scan and row locks retain the Task 1 finalized-upload behavior while matching the organization, report, uploader, and active session boundary. Destructive cleanup remains separately constrained by `revision_id is null` and `daily_okr_block_id is null`; uploaded immutable revision evidence can keep an edit session recoverable but cannot enter cleanup discovery or deletion.
+- Extended pgTAP with an isolated failed-Storage scenario: after metadata becomes `deleted`, retained historical evidence is detached from the temporary edit session while its immutable revision association remains, refresh begin must return the original session, and idempotent metadata deletion must still return the same Storage path before cleanup and abandonment complete.
+- Added a repository contract regression covering the refresh begin → recovered-session cleanup discovery → idempotent metadata deletion → Storage removal → abandonment sequence. Also updated the pending-session lifecycle expectation to resume its cleanup target rather than silently retire it on refresh.
+
 ## Verification
 
-Fresh verification after review fix round 2:
+Fresh verification after review fix round 3:
 
 ```text
 npm test -- --run src/data/supabaseRepository.test.ts src/pages/DailyReportsPage.test.tsx src/pages/daily-report/DailyReportForm.test.tsx src/pages/daily-report/DailyReportEvidence.test.tsx src/pages/daily-report/AttachmentList.test.tsx
-  5 files passed; 95 tests passed
+  5 files passed; 96 tests passed
 
 npm run typecheck
   passed
@@ -65,13 +73,13 @@ npm run build
   passed (Vite emitted its existing >500 kB chunk-size advisory)
 
 npm test -- --run
-  58 files passed; 452 tests passed
+  58 files passed; 453 tests passed
 
 git diff --check
   passed
 ```
 
-The lifecycle pgTAP plan now contains 49 assertions. These commands were each
+The lifecycle pgTAP plan now contains 51 assertions. These commands were each
 attempted after the final code change:
 
 ```text
