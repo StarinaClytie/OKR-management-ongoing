@@ -5,10 +5,10 @@ import { HoursWidget } from './HoursWidget';
 
 function buildData(): DashboardData {
   return {
-    currentUser: { id: 'mgr', name: 'Management', role: 'management', title: '', department: '', projectIds: [] },
+    currentUser: { id: 'mgr', name: 'Management', role: 'management', clearance: 'internal', title: '', department: '', projectIds: [] },
     users: [
-      { id: 'u1', name: '张三', role: 'employee', title: '', department: '', projectIds: [] },
-      { id: 'u2', name: '王芳', role: 'employee', title: '', department: '', projectIds: [] },
+      { id: 'u1', name: '张三', role: 'employee', clearance: 'internal', title: '', department: '', projectIds: [] },
+      { id: 'u2', name: '王芳', role: 'employee', clearance: 'internal', title: '', department: '', projectIds: [] },
     ],
     projects: [
       { id: 'p1', name: '光谱仪', description: '', leaderId: 'leader', memberIds: [], classification: 'internal', startDate: '', dueDate: '', status: 'on_track' },

@@ -48,11 +48,11 @@ describe('applyHourFilters', () => {
 describe('buildHourEntries scoping', () => {
   function dataFor(role: 'management' | 'project_leader' | 'employee'): DashboardData {
     return {
-      currentUser: { id: role === 'project_leader' ? 'leader' : 'self', name: role, role, title: '', department: '', projectIds: [] },
+      currentUser: { id: role === 'project_leader' ? 'leader' : 'self', name: role, role, clearance: 'internal', title: '', department: '', projectIds: [] },
       users: [
-        { id: 'leader', name: 'Leader', role: 'project_leader', title: '', department: '', projectIds: [] },
-        { id: 'self', name: 'Self', role, title: '', department: '', projectIds: [] },
-        { id: 'other', name: 'Other', role: 'employee', title: '', department: '', projectIds: [] },
+        { id: 'leader', name: 'Leader', role: 'project_leader', clearance: 'internal', title: '', department: '', projectIds: [] },
+        { id: 'self', name: 'Self', role, clearance: 'internal', title: '', department: '', projectIds: [] },
+        { id: 'other', name: 'Other', role: 'employee', clearance: 'internal', title: '', department: '', projectIds: [] },
       ],
       projects: [
         { id: 'p1', name: 'P1', description: '', leaderId: 'leader', memberIds: [], classification: 'internal', startDate: '', dueDate: '', status: 'on_track' },

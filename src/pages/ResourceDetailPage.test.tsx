@@ -13,9 +13,9 @@ vi.mock('../lib/supabase', () => ({
   resourceNotificationService: { notify: notifyMock },
 }));
 
-const owner: User = { id: 'user-employee', name: '周琳', role: 'project_leader', title: '项目负责人', department: '产品部', projectIds: ['project-orion'] };
-const peer: User = { id: 'user-project-peer', name: '赵峰', role: 'project_leader', title: '项目负责人', department: '数据部', projectIds: ['project-orion'] };
-const management: User = { id: 'user-management', name: '王敏', role: 'management', title: '运营总监', department: '管理层', projectIds: ['project-nova'] };
+const owner: User = { id: 'user-employee', name: '周琳', role: 'project_leader', clearance: 'internal', title: '项目负责人', department: '产品部', projectIds: ['project-orion'] };
+const peer: User = { id: 'user-project-peer', name: '赵峰', role: 'project_leader', clearance: 'internal', title: '项目负责人', department: '数据部', projectIds: ['project-orion'] };
+const management: User = { id: 'user-management', name: '王敏', role: 'management', clearance: 'internal', title: '运营总监', department: '管理层', projectIds: ['project-nova'] };
 
 const detail: ResourceDetail = {
   id: 'resource-1',

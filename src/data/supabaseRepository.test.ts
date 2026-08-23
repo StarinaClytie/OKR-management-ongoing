@@ -39,10 +39,13 @@ function createClient(options?: {
   return { client, rpc, storageFrom, createSignedUrl };
 }
 
-function createDashboardClient(rowsByTable: Record<string, Record<string, unknown>[]>) {
+function createDashboardClient(
+  rowsByTable: Record<string, Record<string, unknown>[]>,
+  profileSource: { organizationUsers?: Record<string, unknown>[]; clearances?: Record<string, unknown>[] } = {},
+) {
   const { client, rpc } = createClient();
   const from = vi.fn((table: string) => {
-    const response = { data: rowsByTable[table] ?? [], error: null };
+    const response = { data: table === 'profiles' && profileSource.clearances ? profileSource.clearances : rowsByTable[table] ?? [], error: null };
     const builder = {
       select: vi.fn(() => builder),
       eq: vi.fn(() => builder),
@@ -53,7 +56,7 @@ function createDashboardClient(rowsByTable: Record<string, Record<string, unknow
   });
   client.from = from;
   rpc.mockImplementation(async (name?: string) => {
-    if (name === 'list_organization_users') return { data: rowsByTable.profiles ?? [], error: null };
+    if (name === 'list_organization_users') return { data: profileSource.organizationUsers ?? rowsByTable.profiles ?? [], error: null };
     return { data: null, error: null };
   });
   return { client, from, rpc };
@@ -67,12 +70,13 @@ describe('SupabaseOkrRepository', () => {
       preferred_locale: 'en',
       job_title: '工程师',
       department: '产品部',
+      clearance: 'restricted',
       organizations: { name: 'Acme' },
       user_roles: [{ role: 'employee' }],
       project_members: [{ project_id: 'project-1' }],
     } });
     const result = await new SupabaseOkrRepository(client).getCurrentProfile();
-    expect(result).toEqual({ ok: true, data: { kind: 'active', user: expect.objectContaining({ id: 'profile-1', role: 'employee', title: '工程师', department: '产品部', organization: 'Acme', projectIds: ['project-1'], preferredLocale: 'en' }) } });
+    expect(result).toEqual({ ok: true, data: { kind: 'active', user: expect.objectContaining({ id: 'profile-1', role: 'employee', clearance: 'restricted', title: '工程师', department: '产品部', organization: 'Acme', projectIds: ['project-1'], preferredLocale: 'en' }) } });
   });
 
   it('rejects an unknown role instead of widening it into the domain', async () => {
@@ -322,7 +326,7 @@ describe('SupabaseOkrRepository', () => {
 
   it('maps only rows returned under RLS into dashboard domain data without mock fallback', async () => {
     const { client, from } = createDashboardClient({
-      profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      profiles: [{ id: 'profile-1', display_name: '员工一', clearance: 'internal', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
       projects: [{ id: 'project-1', name: '项目一', description: '描述', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
       objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '目标', description: '目标描述', progress: 40, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
       key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
@@ -344,15 +348,32 @@ describe('SupabaseOkrRepository', () => {
       progressSnapshots: [expect.objectContaining({ id: 'snapshot-1', keyResultId: 'kr-1', actual: 0, planned: 25, weekOf: '2026-08-14' })],
     }) });
     expect(from.mock.calls.map(([table]) => table)).toEqual([
-      'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_report_revisions', 'daily_okr_blocks', 'report_attachments', 'report_attachment_revisions',
+      'profiles', 'projects', 'objectives', 'key_results', 'progress_baselines', 'milestones', 'risks', 'progress_snapshots', 'kr_assignments', 'kr_progress_updates', 'daily_reports', 'daily_report_revisions', 'daily_okr_blocks', 'report_attachments', 'report_attachment_revisions',
     ]);
     if (!result.ok) throw new Error('Expected dashboard data');
     expectTypeOf(result.data.risks[0]).toMatchTypeOf<{ keyResultId?: string; objectiveId?: string; resolved: boolean } | undefined>();
   });
 
+  it('joins administrator-assigned clearance from profiles when directory rows omit it', async () => {
+    const { client } = createDashboardClient({
+      profiles: [], projects: [], objectives: [], key_results: [], progress_baselines: [], milestones: [], risks: [], progress_snapshots: [], kr_assignments: [], kr_progress_updates: [], daily_reports: [], daily_report_revisions: [], daily_okr_blocks: [], report_attachments: [], report_attachment_revisions: [],
+    }, {
+      organizationUsers: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [] }],
+      clearances: [{ id: 'profile-1', clearance: 'restricted' }],
+    });
+
+    await expect(new SupabaseOkrRepository(client).getDashboardData()).resolves.toEqual({
+      ok: true,
+      data: expect.objectContaining({
+        currentUser: expect.objectContaining({ id: 'profile-1', role: 'employee', clearance: 'restricted' }),
+        users: [expect.objectContaining({ id: 'profile-1', clearance: 'restricted' })],
+      }),
+    });
+  });
+
   it('retains future baseline-only plan points without inventing actual progress', async () => {
     const { client } = createDashboardClient({
-      profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      profiles: [{ id: 'profile-1', display_name: '员工一', clearance: 'internal', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
       projects: [{ id: 'project-1', name: '项目一', description: '描述', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
       objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '目标', description: '目标描述', progress: 40, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
       key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 40, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
@@ -470,7 +491,7 @@ describe('SupabaseOkrRepository', () => {
     expect(rpc).toHaveBeenCalledWith('begin_entry_attachment_upload', expect.objectContaining({ p_display_name: '验收结果图' }));
 
     const dashboardClient = createDashboardClient({
-      profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      profiles: [{ id: 'profile-1', display_name: '员工一', clearance: 'internal', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
       projects: [{ id: 'project-1', name: '项目一', description: '', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
       objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'leader-1', title: '目标', description: '', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
       key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
@@ -491,7 +512,7 @@ describe('SupabaseOkrRepository', () => {
 
   it('loads only the current report revision and its revision-scoped attachment metadata', async () => {
     const dashboardClient = createDashboardClient({
-      profiles: [{ id: 'profile-1', display_name: '员工一', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      profiles: [{ id: 'profile-1', display_name: '员工一', clearance: 'internal', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
       projects: [{ id: 'project-1', name: '项目一', description: '', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
       objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'leader-1', title: '目标', description: '', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
       key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],

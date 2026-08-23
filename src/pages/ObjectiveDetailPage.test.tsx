@@ -9,7 +9,7 @@ import { mockRepository } from '../mocks/repository';
 import { ObjectiveDetailPage } from './ObjectiveDetailPage';
 
 const projectLeader: User = {
-  id: 'user-project-leader', name: '李然', role: 'project_leader', title: '项目负责人', department: '产品部', projectIds: ['project-orion'],
+  id: 'user-project-leader', name: '李然', role: 'project_leader', clearance: 'internal', title: '项目负责人', department: '产品部', projectIds: ['project-orion'],
 };
 
 const unassignedEmployee: OrganizationUser = {

@@ -12,6 +12,7 @@ const admin: User = {
   id: 'admin-1',
   name: '陈安',
   role: 'administrator',
+  clearance: 'internal',
   title: '系统管理员',
   department: '信息技术部',
   projectIds: [],

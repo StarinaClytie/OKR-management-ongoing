@@ -6,9 +6,9 @@ import { deriveOkrStatus, resolveOkrStatus } from './okrStatus';
 import { filterObjectiveSummaries, summarizeObjective, type ObjectiveSummary } from './objectivePortfolio';
 import type { KeyResult, KrAssignment, Objective, User } from './types';
 
-const management: User = { id: 'mgr', name: '管理层', role: 'management', title: '', department: '', projectIds: [] };
-const leader: User = { id: 'leader', name: '负责人', role: 'project_leader', title: '', department: '', projectIds: [] };
-const employee: User = { id: 'emp', name: '员工', role: 'employee', title: '', department: '', projectIds: [] };
+const management: User = { id: 'mgr', name: '管理层', role: 'management', clearance: 'internal', title: '', department: '', projectIds: [] };
+const leader: User = { id: 'leader', name: '负责人', role: 'project_leader', clearance: 'internal', title: '', department: '', projectIds: [] };
+const employee: User = { id: 'emp', name: '员工', role: 'employee', clearance: 'internal', title: '', department: '', projectIds: [] };
 
 const objective = (overrides: Partial<Objective> = {}): Objective => ({
   id: 'o1', projectId: 'p1', title: 'O1', description: '', ownerId: 'leader', progress: 50, status: 'on_track',

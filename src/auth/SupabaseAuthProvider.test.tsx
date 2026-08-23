@@ -11,6 +11,7 @@ const employee: User = {
   id: 'user-one',
   name: '员工一',
   role: 'employee',
+  clearance: 'internal',
   title: '工程师',
   department: '产品',
   projectIds: [],

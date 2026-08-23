@@ -7,7 +7,7 @@ import type { OkrRepository, Resource } from '../data/types';
 import type { User } from '../domain/types';
 import { ResourcesPage } from './ResourcesPage';
 
-const employee: User = { id: 'user-employee', name: '周琳', role: 'employee', title: '产品经理', department: '产品部', projectIds: ['project-orion'] };
+const employee: User = { id: 'user-employee', name: '周琳', role: 'employee', clearance: 'internal', title: '产品经理', department: '产品部', projectIds: ['project-orion'] };
 
 function makeResource(overrides: Partial<Resource> = {}): Resource {
   return {

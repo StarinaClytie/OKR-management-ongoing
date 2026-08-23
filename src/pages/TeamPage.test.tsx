@@ -8,7 +8,7 @@ import type { User } from '../domain/types';
 import { TeamPage } from './TeamPage';
 
 function makeUser(overrides: Partial<User> = {}): User {
-  return { id: 'u1', name: '用户', role: 'employee', title: '工程师', department: '产品部', projectIds: [], ...overrides };
+  return { id: 'u1', name: '用户', role: 'employee', title: '工程师', department: '产品部', projectIds: [], ...overrides, clearance: overrides.clearance ?? 'internal' };
 }
 
 function emptyDashboard(currentUser: User): DashboardData {

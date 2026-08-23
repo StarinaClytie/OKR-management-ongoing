@@ -1,5 +1,5 @@
 import type { DashboardData } from '../data/types';
-import type { DailyReport, ProjectStatus, Role, User } from '../domain/types';
+import type { Classification, DailyReport, ProjectStatus, Role, User } from '../domain/types';
 import type { DailyEvidenceDraft } from '../domain/dailyEntry';
 import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
@@ -41,12 +41,15 @@ function mapProfile(row: Record<string, unknown>): User | null {
   const roleRow = Array.isArray(row.user_roles) ? row.user_roles[0] as Record<string, unknown> | undefined : undefined;
   const role = roleRow?.role;
   const roles: readonly Role[] = ['administrator', 'management', 'project_leader', 'employee', 'hr'];
+  const clearances: readonly Classification[] = ['public', 'internal', 'confidential', 'restricted'];
+  const clearance = row.clearance;
   const organization = row.organizations as Record<string, unknown> | undefined;
-  if (typeof row.id !== 'string' || typeof row.display_name !== 'string' || !roles.includes(role as Role)) return null;
+  if (typeof row.id !== 'string' || typeof row.display_name !== 'string' || !roles.includes(role as Role) || !clearances.includes(clearance as Classification)) return null;
   return {
     id: row.id,
     name: row.display_name,
     role: role as Role,
+    clearance: clearance as Classification,
     title: typeof row.job_title === 'string' ? row.job_title : '',
     department: typeof row.department === 'string' ? row.department : '',
     projectIds: Array.isArray(row.project_members) ? row.project_members.map((item) => String((item as Record<string, unknown>).project_id)) : [],
@@ -160,7 +163,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (resolved === 'inactive' || resolved === 'rejected') return { ok: true, data: { kind: 'inactive' } };
     const query = this.client.from('profiles') as ProfileQuery;
     const { data, error } = await query
-      .select('id,display_name,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)')
+      .select('id,display_name,clearance,preferred_locale,organizations!profiles_organization_id_fkey(name),user_roles!user_roles_profile_id_fkey(role),project_members!project_members_profile_id_fkey(project_id)')
       .eq('id', session.data.session.user.id)
       .maybeSingle();
     if (error) return failure(error);
@@ -180,6 +183,7 @@ export class SupabaseOkrRepository implements OkrRepository {
 
     const results = await Promise.all([
       this.callRpc<Record<string, unknown>[]>('list_organization_users', {}),
+      this.selectRows('profiles', 'id,clearance'),
       this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,status,project_members!project_members_project_id_fkey(profile_id)'),
       this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date,number,quarter,priority,okr_status,archived_at'),
       this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date,metric_type,current_value,target_value,unit,notes,confidence_index,priority,okr_status'),
@@ -197,9 +201,19 @@ export class SupabaseOkrRepository implements OkrRepository {
     ]);
     const failed = results.find((result) => !result.ok);
     if (failed && !failed.ok) return failed;
-    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyRevisionResult, dailyBlockResult, attachmentResult, attachmentRevisionResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
+    const [profileResult, clearanceResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyRevisionResult, dailyBlockResult, attachmentResult, attachmentRevisionResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
 
-    const users = profileResult.data.map(mapProfile).filter((user): user is User => user !== null);
+    const clearancesByProfileId = new Map(
+      clearanceResult.data
+        .filter((row) => typeof row.id === 'string')
+        .map((row) => [row.id as string, row.clearance]),
+    );
+    const users = profileResult.data
+      .map((row) => mapProfile({
+        ...row,
+        clearance: typeof row.id === 'string' ? clearancesByProfileId.get(row.id) : undefined,
+      }))
+      .filter((user): user is User => user !== null);
     const currentUser = users.find((user) => user.id === session.data.session!.user.id);
     if (!currentUser) return failure({ code: '42501', message: 'Current profile is unavailable' });
 

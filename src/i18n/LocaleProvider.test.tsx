@@ -9,7 +9,7 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { LocaleProvider, useLocale } from './LocaleProvider';
 
 const profile: User = {
-  id: 'profile-1', name: 'Taylor', role: 'employee', title: 'Engineer', department: 'Product', projectIds: [], preferredLocale: 'zh-CN',
+  id: 'profile-1', name: 'Taylor', role: 'employee', clearance: 'internal', title: 'Engineer', department: 'Product', projectIds: [], preferredLocale: 'zh-CN',
 };
 
 function renderAuthenticated(repository: OkrRepository, currentUser = profile, onRender?: (locale: string) => void) {

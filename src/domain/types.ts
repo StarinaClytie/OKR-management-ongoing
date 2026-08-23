@@ -34,6 +34,8 @@ export interface User {
   id: string;
   name: string;
   role: Role;
+  /** Classification level assigned by an administrator; it is independent of role. */
+  clearance: Classification;
   title: string;
   department: string;
   projectIds: string[];

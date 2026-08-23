@@ -9,8 +9,8 @@ import type { DashboardData } from '../data/types';
 import { mockRepository } from '../mocks/repository';
 import { ProjectsPage } from './ProjectsPage';
 
-const management: User = { id: 'user-management', name: '王敏', role: 'management', title: '运营总监', department: '管理层', projectIds: ['project-nova'] };
-const employee: User = { id: 'user-employee', name: '周琳', role: 'employee', title: '产品经理', department: '产品部', projectIds: ['project-orion'] };
+const management: User = { id: 'user-management', name: '王敏', role: 'management', clearance: 'internal', title: '运营总监', department: '管理层', projectIds: ['project-nova'] };
+const employee: User = { id: 'user-employee', name: '周琳', role: 'employee', clearance: 'internal', title: '产品经理', department: '产品部', projectIds: ['project-orion'] };
 
 const activeProject = {
   id: 'project-orion', name: '星图增长计划', description: '提升核心用户激活。', leaderId: 'user-project-leader',

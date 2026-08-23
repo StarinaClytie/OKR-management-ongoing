@@ -9,7 +9,7 @@ import { LocaleProvider } from '../i18n/LocaleProvider';
 import type { AdminUserService, DeleteUserResult } from '../services/adminUserService';
 import { UsersPage } from './UsersPage';
 
-const admin: User = { id: 'admin-1', name: '管理员', role: 'administrator', title: '', department: '', projectIds: [] };
+const admin: User = { id: 'admin-1', name: '管理员', role: 'administrator', clearance: 'internal', title: '', department: '', projectIds: [] };
 
 const activeUsers: OrganizationUser[] = [
   { id: 'u1', displayName: '员工一', email: 'one@example.com', department: '产品部', jobTitle: '工程师', role: 'employee', isActive: true, approvalStatus: 'approved', createdAt: '2026-08-01T00:00:00Z', projectIds: ['p1'] },
