@@ -110,6 +110,23 @@ begin
     and session.status = 'active'
   for update;
 
+  -- Finalization locks an attachment row. Lock pending rows before the
+  -- recoverability scan so it either commits first (and is resumed as
+  -- uploaded) or is rejected after this transaction retires the session.
+  perform 1
+  from public.report_attachments attachment
+  join public.daily_report_upload_sessions session
+    on session.id = attachment.upload_session_id
+  where attachment.organization_id = target_org
+    and attachment.report_id = target_report.id
+    and attachment.uploader_id = auth.uid()
+    and attachment.state = 'pending'
+    and session.organization_id = target_org
+    and session.report_id = target_report.id
+    and session.author_id = auth.uid()
+    and session.status = 'active'
+  for update of attachment;
+
   select session.id into resumable_session_id
   from public.daily_report_upload_sessions session
   where session.organization_id = target_org
