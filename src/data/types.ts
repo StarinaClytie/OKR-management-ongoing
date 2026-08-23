@@ -61,6 +61,7 @@ export type RepositoryResult<T> =
 
 export interface SessionLike {
   user: { id: string; email?: string; email_confirmed_at?: string | null };
+  access_token?: string;
 }
 
 export interface AuthSubscriptionLike {
@@ -113,6 +114,23 @@ export interface SupabaseClientLike {
 
 export interface AttachmentUploadTarget { id: string; path: string; bucket: 'report-attachments' }
 export interface ResourceUploadTarget { id: string; path: string; bucket: 'resource-documents' }
+
+export interface DailyReportUploadSession { reportId: string; sessionId: string }
+
+export type DailyReportAttachmentUploadUpdate = {
+  state: 'pending' | 'uploading' | 'verifying' | 'uploaded' | 'failed';
+  progress: number;
+  attachmentId?: string;
+  error?: string;
+};
+
+export interface DailyReportAttachmentUploadInput extends ClassifiedAttachmentInput {
+  session: DailyReportUploadSession;
+  entryPosition: number;
+  label: string;
+  onChange(update: DailyReportAttachmentUploadUpdate): void;
+  signal?: AbortSignal;
+}
 
 export interface DailyOkrBlockInput {
   dailyObjective: string;
@@ -440,6 +458,10 @@ export interface OkrRepository {
   setUserActive(userId: string, active: boolean): Promise<RepositoryResult<void>>;
   listDailyReports(): Promise<RepositoryResult<DailyReport[]>>;
   saveDailyReport(input: DailyReportInput, attachments?: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
+  beginDailyReportUploadSession?(input: Pick<DailyReportInput, 'reportDate' | 'status' | 'classification'>): Promise<RepositoryResult<DailyReportUploadSession>>;
+  uploadDailyReportAttachment?(input: DailyReportAttachmentUploadInput): Promise<RepositoryResult<{ attachmentId: string }>>;
+  abandonDailyReportUploadSession?(sessionId: string): Promise<RepositoryResult<void>>;
+  submitDailyReportSession?(input: DailyReportInput, sessionId: string): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>>;

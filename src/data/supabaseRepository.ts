@@ -1,7 +1,7 @@
 import type { DashboardData } from '../data/types';
 import type { Classification, DailyReport, ProjectStatus, Role, User } from '../domain/types';
 import type { DailyEvidenceDraft } from '../domain/dailyEntry';
-import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
@@ -15,7 +15,7 @@ interface TableQuery {
   select(columns: string): Promise<QueryResponse<Record<string, unknown>[]>>;
 }
 
-function failure<T>(error: { code?: string; message: string } | null): RepositoryResult<T> {
+function failure<T>(error: { code?: string; message: string } | null): Extract<RepositoryResult<T>, { ok: false }> {
   const source = error?.code ?? '';
   const code: RepositoryErrorCode = source === '42501' || source === 'PGRST301'
     ? 'unauthorized'
@@ -438,22 +438,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     return result.ok ? { ok: true, data: { id: result.data, revision: 1 } } : result;
   }
 
-  async saveDailyReport(input: DailyReportInput, attachments: ClassifiedAttachmentInput[] = []): Promise<RepositoryResult<{ id: string; revision: number }>> {
-    const attachmentValidation = this.validateAttachmentInputs(attachments);
-    if (!attachmentValidation.ok) return attachmentValidation;
-    let uploadedAttachments: AttachmentUploadTarget[] = [];
-    if (attachments.length > 0) {
-      const shell = await this.callRpc<string>('begin_daily_report_with_attachments', {
-        p_report_date: input.reportDate,
-        p_status: input.status,
-        p_classification: input.classification,
-      });
-      if (!shell.ok) return shell;
-      const uploaded = await this.uploadAll(shell.data, attachments);
-      if (!uploaded.ok) return uploaded;
-      uploadedAttachments = uploaded.data;
-    }
-
+  async saveDailyReport(input: DailyReportInput, _attachments: ClassifiedAttachmentInput[] = []): Promise<RepositoryResult<{ id: string; revision: number }>> {
     const result = await this.callRpc<Array<{ report_id: string; revision: number }>>('save_daily_report', {
       p_report_date: input.reportDate,
       p_status: input.status,
@@ -461,10 +446,102 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_blocks: input.blocks,
       p_evidence_links: input.evidenceLinks,
     });
-    if (!result.ok) {
-      await this.cleanupUploadAttempt(uploadedAttachments);
+    if (!result.ok) return result;
+    const saved = result.data[0];
+    return saved
+      ? { ok: true, data: { id: saved.report_id, revision: saved.revision } }
+      : { ok: false, error: { code: 'unknown', message: '请求未完成，请稍后重试' } };
+  }
+
+  async beginDailyReportUploadSession(input: Pick<DailyReportInput, 'reportDate' | 'status' | 'classification'>): Promise<RepositoryResult<DailyReportUploadSession>> {
+    return this.callRpc<DailyReportUploadSession>('begin_daily_report_upload_session', {
+      p_report_date: input.reportDate,
+      p_status: input.status,
+      p_classification: input.classification,
+    });
+  }
+
+  async uploadDailyReportAttachment(input: DailyReportAttachmentUploadInput): Promise<RepositoryResult<{ attachmentId: string }>> {
+    const invalid = validateAttachment(input.file);
+    if (invalid) {
+      const result: RepositoryResult<{ attachmentId: string }> = { ok: false, error: { code: 'validation', message: invalid.message } };
+      input.onChange({ state: 'failed', progress: 0, error: result.error.message });
       return result;
     }
+
+    input.onChange({ state: 'pending', progress: 0 });
+    const pending = await this.callRpc<AttachmentUploadTarget>('begin_entry_attachment_upload', {
+      p_report_id: input.session.reportId,
+      p_upload_session_id: input.session.sessionId,
+      p_entry_position: input.entryPosition,
+      p_original_name: sanitizeFilename(input.file.name),
+      p_mime_type: input.file.type,
+      p_byte_size: input.file.size,
+      p_classification: input.classification,
+      p_display_name: input.label.trim() || input.file.name,
+    });
+    if (!pending.ok) {
+      input.onChange({ state: 'failed', progress: 0, error: pending.error.message });
+      return pending;
+    }
+
+    const attachmentId = pending.data.id;
+    input.onChange({ state: 'uploading', progress: 0, attachmentId });
+    const session = await this.client.auth.getSession();
+    if (session.error || !session.data.session?.access_token) {
+      await this.cleanupUploadAttempt([pending.data]);
+      const result: { ok: false; error: { code: RepositoryErrorCode; message: string } } = session.error
+        ? failure<{ attachmentId: string }>(session.error)
+        : { ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } };
+      input.onChange({ state: 'failed', progress: 0, attachmentId, error: result.error.message });
+      return result;
+    }
+
+    try {
+      // Load the transport only at call time. Its public endpoint configuration
+      // lives in lib/supabase, which also constructs this repository.
+      const { uploadStorageObject } = await import('../services/supabaseStorageUpload');
+      await uploadStorageObject({
+        bucket: pending.data.bucket,
+        path: pending.data.path,
+        file: input.file,
+        accessToken: session.data.session.access_token,
+        signal: input.signal,
+        onProgress: (progress) => input.onChange({ state: 'uploading', progress, attachmentId }),
+      });
+    } catch (error) {
+      await this.cleanupUploadAttempt([pending.data]);
+      const result = failure<{ attachmentId: string }>({ message: error instanceof Error ? error.message : 'Storage upload failed' });
+      input.onChange({ state: 'failed', progress: 0, attachmentId, error: result.error.message });
+      return result;
+    }
+
+    input.onChange({ state: 'verifying', progress: 100, attachmentId });
+    const finalized = await this.finalizeAttachmentUpload(attachmentId);
+    if (!finalized.ok) {
+      await this.cleanupUploadAttempt([pending.data]);
+      input.onChange({ state: 'failed', progress: 100, attachmentId, error: finalized.error.message });
+      return finalized as RepositoryResult<{ attachmentId: string }>;
+    }
+    input.onChange({ state: 'uploaded', progress: 100, attachmentId });
+    return { ok: true, data: { attachmentId } };
+  }
+
+  async abandonDailyReportUploadSession(sessionId: string): Promise<RepositoryResult<void>> {
+    const abandoned = await this.callRpc<null>('abandon_daily_report_upload_session', { p_upload_session_id: sessionId });
+    return abandoned.ok ? { ok: true, data: undefined } : abandoned;
+  }
+
+  async submitDailyReportSession(input: DailyReportInput, sessionId: string): Promise<RepositoryResult<{ id: string; revision: number }>> {
+    const result = await this.callRpc<Array<{ report_id: string; revision: number }>>('save_daily_report', {
+      p_report_date: input.reportDate,
+      p_status: input.status,
+      p_classification: input.classification,
+      p_blocks: input.blocks,
+      p_upload_session_id: sessionId,
+      p_evidence_links: input.evidenceLinks,
+    });
+    if (!result.ok) return result;
     const saved = result.data[0];
     return saved
       ? { ok: true, data: { id: saved.report_id, revision: saved.revision } }

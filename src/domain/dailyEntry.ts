@@ -47,9 +47,17 @@ export interface DailyEvidenceDraft {
   classification: Classification;
   file?: File;
   attachmentId?: string;
-  uploadState?: 'selected' | 'pending' | 'uploading' | 'uploaded' | 'failed' | 'deleting';
+  uploadState?: 'selected' | 'pending' | 'uploading' | 'verifying' | 'uploaded' | 'failed' | 'deleting';
   uploadProgress?: number;
   error?: string;
+}
+
+export function dailyEvidenceIsUploaded(item: DailyEvidenceDraft): boolean {
+  return item.kind !== 'file' || (item.uploadState === 'uploaded' && Boolean(item.attachmentId));
+}
+
+export function dailyReportUploadsComplete(draft: DailyReportDraft): boolean {
+  return draft.blocks.every((block) => block.evidence.every(dailyEvidenceIsUploaded));
 }
 
 export interface DailyReportDraft {

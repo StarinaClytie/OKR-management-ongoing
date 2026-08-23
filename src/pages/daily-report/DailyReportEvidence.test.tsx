@@ -30,6 +30,33 @@ describe('DailyReportEvidence', () => {
     expect(applyEvidenceUpdate(update, [])).toEqual([expect.objectContaining({ file, label: 'proof.pdf', kind: 'file', classification: 'internal', uploadState: 'selected' })]);
   });
 
+  it('invokes immediate upload for each valid selected file without waiting for submit', async () => {
+    const user = userEvent.setup();
+    const onUploadRequested = vi.fn();
+    render(<DailyReportEvidence evidence={[]} onEvidenceChange={vi.fn()} onUploadRequested={onUploadRequested} clearance="internal" />);
+    const file = new File(['proof'], 'proof.pdf', { type: 'application/pdf' });
+
+    await user.upload(screen.getByLabelText('选择成果附件'), file);
+
+    expect(onUploadRequested).toHaveBeenCalledOnce();
+    expect(onUploadRequested).toHaveBeenCalledWith(expect.objectContaining({ file, uploadState: 'selected' }));
+  });
+
+  it('shows only classifications allowed by the current user clearance', () => {
+    render(<DailyReportEvidence evidence={[{ id: 'one', label: 'proof.pdf', kind: 'file', classification: 'internal' }]} onEvidenceChange={vi.fn()} clearance="internal" />);
+    expect(screen.getByRole('option', { name: '公开' })).toBeVisible();
+    expect(screen.getByRole('option', { name: '内部' })).toBeVisible();
+    expect(screen.queryByRole('option', { name: '机密' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '绝密' })).not.toBeInTheDocument();
+  });
+
+  it('renders persisted over-clearance classification read-only until authorized removal', () => {
+    render(<DailyReportEvidence evidence={[{ id: 'one', attachmentId: 'attachment-1', label: 'proof.pdf', kind: 'file', classification: 'confidential', uploadState: 'uploaded' }]} onEvidenceChange={vi.fn()} onRemoveAttachment={vi.fn()} clearance="internal" />);
+    expect(screen.queryByRole('combobox', { name: '成果 1 密级' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('机密')).not.toHaveLength(0);
+    expect(screen.getByRole('button', { name: '移除 proof.pdf' })).toBeVisible();
+  });
+
   it('authorizes persisted evidence download and removal before updating the draft', async () => {
     const user = userEvent.setup();
     const item = { id: 'one', attachmentId: 'attachment-1', label: 'proof.pdf', kind: 'file' as const, classification: 'internal' as const, uploadState: 'uploaded' as const };
@@ -55,6 +82,21 @@ describe('DailyReportEvidence', () => {
 
     await user.click(screen.getByRole('button', { name: '移除 proof.pdf' }));
     expect(onEvidenceChange).not.toHaveBeenCalled();
+  });
+
+  it('awaits item-scoped cleanup before removing immediate-upload evidence', async () => {
+    const user = userEvent.setup();
+    const item = { id: 'one', attachmentId: 'attachment-1', label: 'proof.pdf', kind: 'file' as const, classification: 'internal' as const, uploadState: 'uploading' as const, uploadProgress: 50 };
+    let resolveCleanup!: (removed: boolean) => void;
+    const onRemoveEvidence = vi.fn(() => new Promise<boolean>((resolve) => { resolveCleanup = resolve; }));
+    const onEvidenceChange = vi.fn();
+    render(<DailyReportEvidence evidence={[item]} onEvidenceChange={onEvidenceChange} onRemoveEvidence={onRemoveEvidence} />);
+
+    await user.click(screen.getByRole('button', { name: '移除 proof.pdf' }));
+    expect(onRemoveEvidence).toHaveBeenCalledWith(item);
+    expect(onEvidenceChange).not.toHaveBeenCalled();
+    resolveCleanup(true);
+    await waitFor(() => expect(onEvidenceChange).toHaveBeenCalledOnce());
   });
 
   it('applies concurrent authorized removals to the latest evidence state', async () => {

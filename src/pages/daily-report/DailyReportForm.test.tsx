@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { DailyReportDraft } from '../../domain/dailyEntry';
 import type { KeyResult, Objective } from '../../domain/types';
+import type { DailyReportAttachmentUploadInput, OkrRepository } from '../../data/types';
 import { DailyReportForm } from './DailyReportForm';
 
 const objectives: Objective[] = [
@@ -19,7 +20,249 @@ function renderForm(onSubmit?: (draft: DailyReportDraft) => { ok: true }) {
   return { onCancel, handleSubmit };
 }
 
+function completeDraft(uploadState?: NonNullable<DailyReportDraft['blocks'][number]['evidence'][number]['uploadState']>): DailyReportDraft {
+  return {
+    classification: 'internal',
+    blocks: [{
+      id: 'block-1', dailyObjective: '目标', linkedKeyResultId: 'kr-1', workDescription: '执行', hours: 2, result: '完成',
+      evidence: uploadState ? [{ id: 'file-1', label: 'proof.pdf', kind: 'file', classification: 'internal', file: new File(['proof'], 'proof.pdf', { type: 'application/pdf' }), attachmentId: uploadState === 'uploaded' ? 'attachment-1' : undefined, uploadState, uploadProgress: uploadState === 'uploaded' ? 100 : 0 }] : [],
+    }],
+  };
+}
+
+type UploadRepository = Required<Pick<OkrRepository, 'beginDailyReportUploadSession' | 'uploadDailyReportAttachment' | 'abandonDailyReportUploadSession' | 'submitDailyReportSession'>>;
+
+function uploadRepository(overrides: Partial<UploadRepository> = {}): UploadRepository {
+  return {
+    beginDailyReportUploadSession: vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-1', sessionId: 'session-1' } })),
+    uploadDailyReportAttachment: vi.fn(async () => ({ ok: true as const, data: { attachmentId: 'attachment-1' } })),
+    abandonDailyReportUploadSession: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    submitDailyReportSession: vi.fn(async () => ({ ok: true as const, data: { id: 'report-1', revision: 1 } })),
+    ...overrides,
+  };
+}
+
 describe('DailyReportForm', () => {
+  it.each(['selected', 'pending', 'uploading', 'verifying', 'failed', 'deleting'] as const)('disables submission while attachment state is %s', (uploadState) => {
+    render(<DailyReportForm initialDraft={completeDraft(uploadState)} ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
+  });
+
+  it('enables submission only when validation passes and all file evidence is uploaded', () => {
+    render(<DailyReportForm initialDraft={completeDraft('uploaded')} ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeEnabled();
+  });
+
+  it('keeps submission disabled until a persisted over-clearance attachment is authorized for removal', () => {
+    const draft = completeDraft('uploaded');
+    draft.blocks[0]!.evidence[0]!.classification = 'confidential';
+    render(<DailyReportForm initialDraft={draft} clearance="internal" ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
+  });
+
+  it('starts one lazy upload session immediately and updates the selected draft item in place', async () => {
+    const user = userEvent.setup();
+    const beginDailyReportUploadSession = vi.fn().mockResolvedValue({ ok: true, data: { reportId: 'report-1', sessionId: 'session-1' } });
+    const uploadDailyReportAttachment = vi.fn(async ({ onChange }: DailyReportAttachmentUploadInput) => {
+      onChange({ state: 'pending', progress: 0 });
+      onChange({ state: 'uploading', progress: 50, attachmentId: 'attachment-1' });
+      onChange({ state: 'uploaded', progress: 100, attachmentId: 'attachment-1' });
+      return { ok: true as const, data: { attachmentId: 'attachment-1' } };
+    });
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      clearance="internal"
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ beginDailyReportUploadSession, uploadDailyReportAttachment })}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'proof.pdf', { type: 'application/pdf' }));
+
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'proof.pdf 上传进度' })).toHaveValue(100));
+    expect(beginDailyReportUploadSession).toHaveBeenCalledOnce();
+    expect(uploadDailyReportAttachment).toHaveBeenCalledOnce();
+    expect(screen.getAllByDisplayValue('proof.pdf')).toHaveLength(1);
+  });
+
+  it('retries the same failed draft item without duplicating it', async () => {
+    const user = userEvent.setup();
+    const uploadDailyReportAttachment = vi.fn()
+      .mockImplementationOnce(async ({ onChange }: DailyReportAttachmentUploadInput) => { onChange({ state: 'failed', progress: 0, error: 'network' }); return { ok: false as const, error: { code: 'network' as const, message: 'network' } }; })
+      .mockImplementationOnce(async ({ onChange }: DailyReportAttachmentUploadInput) => { onChange({ state: 'uploaded', progress: 100, attachmentId: 'attachment-2' }); return { ok: true as const, data: { attachmentId: 'attachment-2' } }; });
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ uploadDailyReportAttachment })}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'proof.pdf', { type: 'application/pdf' }));
+    await user.click(await screen.findByRole('button', { name: '重试' }));
+
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'proof.pdf 上传进度' })).toHaveValue(100));
+    expect(uploadDailyReportAttachment).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByDisplayValue('proof.pdf')).toHaveLength(1);
+  });
+
+  it('awaits session abandonment before invoking cancellation', async () => {
+    const user = userEvent.setup();
+    let resolveAbandon!: () => void;
+    const abandonPromise = new Promise<{ ok: true; data: undefined }>((resolve) => { resolveAbandon = () => resolve({ ok: true, data: undefined }); });
+    const abandonDailyReportUploadSession = vi.fn(async (_sessionId: string) => abandonPromise);
+    const onCancel = vi.fn();
+    render(<DailyReportForm
+      initialDraft={completeDraft('uploaded')}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      uploadSession={{ reportId: 'report-1', sessionId: 'session-1' }}
+      uploadRepository={uploadRepository({ abandonDailyReportUploadSession })}
+      onCancel={onCancel}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(abandonDailyReportUploadSession).toHaveBeenCalledWith('session-1');
+    expect(onCancel).not.toHaveBeenCalled();
+    resolveAbandon();
+    await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
+  });
+
+  it('authorizes removal of a finalized session attachment before dropping its draft item', async () => {
+    const user = userEvent.setup();
+    const onRemoveAttachment = vi.fn(async () => true);
+    render(<DailyReportForm
+      initialDraft={completeDraft('uploaded')}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      onRemoveAttachment={onRemoveAttachment}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.click(screen.getByRole('button', { name: '移除 proof.pdf' }));
+
+    expect(onRemoveAttachment).toHaveBeenCalledWith('attachment-1');
+    expect(screen.queryByDisplayValue('proof.pdf')).not.toBeInTheDocument();
+  });
+
+  it('cancels a queued upload when removal happens before lazy session creation finishes', async () => {
+    const user = userEvent.setup();
+    let resolveSession!: (result: { ok: true; data: { reportId: string; sessionId: string } }) => void;
+    const sessionPromise = new Promise<{ ok: true; data: { reportId: string; sessionId: string } }>((resolve) => { resolveSession = resolve; });
+    const beginDailyReportUploadSession = vi.fn(async () => sessionPromise);
+    const uploadDailyReportAttachment = vi.fn(async () => ({ ok: true as const, data: { attachmentId: 'orphan' } }));
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ beginDailyReportUploadSession, uploadDailyReportAttachment })}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'queued.pdf', { type: 'application/pdf' }));
+    await user.click(screen.getByRole('button', { name: '移除 queued.pdf' }));
+    resolveSession({ ok: true, data: { reportId: 'report-1', sessionId: 'session-1' } });
+
+    await waitFor(() => expect(screen.queryByDisplayValue('queued.pdf')).not.toBeInTheDocument());
+    expect(uploadDailyReportAttachment).not.toHaveBeenCalled();
+  });
+
+  it('requests destructive cleanup when removing a newly finalized session attachment', async () => {
+    const user = userEvent.setup();
+    const onRemoveAttachment = vi.fn(async () => true);
+    const uploadDailyReportAttachment = vi.fn(async ({ onChange }: DailyReportAttachmentUploadInput) => {
+      onChange({ state: 'uploaded', progress: 100, attachmentId: 'session-attachment' });
+      return { ok: true as const, data: { attachmentId: 'session-attachment' } };
+    });
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ uploadDailyReportAttachment })}
+      onRemoveAttachment={onRemoveAttachment}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'new.pdf', { type: 'application/pdf' }));
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'new.pdf 上传进度' })).toHaveValue(100));
+    await user.click(screen.getByRole('button', { name: '移除 new.pdf' }));
+
+    expect(onRemoveAttachment).toHaveBeenCalledWith('session-attachment', { preserveRevisionHistory: false });
+  });
+
+  it('retains current-session cleanup semantics when a removal attempt fails', async () => {
+    const user = userEvent.setup();
+    const onRemoveAttachment = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const uploadDailyReportAttachment = vi.fn(async ({ onChange }: DailyReportAttachmentUploadInput) => {
+      onChange({ state: 'uploaded', progress: 100, attachmentId: 'session-attachment' });
+      return { ok: true as const, data: { attachmentId: 'session-attachment' } };
+    });
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ uploadDailyReportAttachment })}
+      onRemoveAttachment={onRemoveAttachment}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'new.pdf', { type: 'application/pdf' }));
+    await waitFor(() => expect(screen.getByRole('progressbar', { name: 'new.pdf 上传进度' })).toHaveValue(100));
+    await user.click(screen.getByRole('button', { name: '移除 new.pdf' }));
+    expect(screen.getByDisplayValue('new.pdf')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '移除 new.pdf' }));
+
+    expect(onRemoveAttachment).toHaveBeenNthCalledWith(1, 'session-attachment', { preserveRevisionHistory: false });
+    expect(onRemoveAttachment).toHaveBeenNthCalledWith(2, 'session-attachment', { preserveRevisionHistory: false });
+  });
+
+  it('creates a lazy session at submit when a valid report has no attachments', async () => {
+    const user = userEvent.setup();
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-1', sessionId: 'session-submit' } }));
+    const onSubmit = vi.fn(async () => ({ ok: true as const }));
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ beginDailyReportUploadSession })}
+      onCancel={vi.fn()}
+      onSubmit={onSubmit}
+    />);
+
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    expect(beginDailyReportUploadSession).toHaveBeenCalledOnce();
+    expect(onSubmit).toHaveBeenCalledWith(expect.anything(), { reportId: 'report-1', sessionId: 'session-submit' });
+  });
+
+  it('cleans finalized evidence before removing its Daily OKR block', async () => {
+    const user = userEvent.setup();
+    const initialDraft = completeDraft('uploaded');
+    initialDraft.blocks.push({ id: 'block-2', dailyObjective: '第二目标', linkedKeyResultId: 'kr-1', workDescription: '第二执行', hours: 1, result: '完成', evidence: [] });
+    const onRemoveAttachment = vi.fn(async () => true);
+    render(<DailyReportForm initialDraft={initialDraft} ownedKeyResults={ownedKeyResults} objectives={objectives} onRemoveAttachment={onRemoveAttachment} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
+
+    await user.click(screen.getAllByRole('button', { name: '删除该组' })[0]!);
+
+    expect(onRemoveAttachment).toHaveBeenCalledWith('attachment-1');
+    expect(screen.queryByDisplayValue('proof.pdf')).not.toBeInTheDocument();
+  });
   it('renders a first Daily OKR block with the owned-KR selector and a total-hours line', () => {
     renderForm();
     expect(screen.getByRole('heading', { name: 'Daily OKR #1' })).toBeVisible();
@@ -74,8 +317,7 @@ describe('DailyReportForm', () => {
 
   it('authors file-only evidence after Result / Data and before recorded hours', async () => {
     const user = userEvent.setup();
-    let submitted: DailyReportDraft | undefined;
-    const { handleSubmit } = renderForm((draft) => { submitted = draft; return { ok: true }; });
+    const { handleSubmit } = renderForm();
     const result = screen.getByLabelText(/结果/);
     const picker = screen.getByLabelText(/选择成果附件/);
     const hours = screen.getByLabelText(/记录工时/);
@@ -98,13 +340,11 @@ describe('DailyReportForm', () => {
     await user.type(screen.getByLabelText(/工作描述/), '完成样本 A 测量与数据整理');
     await user.type(result, '完成 5000 组光谱数据训练');
     await user.type(hours, '3.5');
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-
-    expect(handleSubmit).toHaveBeenCalledOnce();
-    expect(submitted!.blocks[0]!.evidence).toEqual([expect.objectContaining({ file, kind: 'file' })]);
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
+    expect(handleSubmit).not.toHaveBeenCalled();
   });
 
-  it('blocks submit and add-another while showing and focusing a localized invalid-file error', async () => {
+  it('blocks submit and add-another while showing an invalid-file upload state', async () => {
     const user = userEvent.setup();
     const { handleSubmit } = renderForm();
 
@@ -116,58 +356,27 @@ describe('DailyReportForm', () => {
     await user.upload(screen.getByLabelText('选择成果附件'), new File(['bad'], 'proof.pdf', { type: 'text/plain' }));
 
     expect(screen.queryByRole('button', { name: '添加另一组 Daily OKR' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-
-    expect(screen.getByText('文件扩展名与内容类型不一致')).toBeVisible();
-    expect(screen.getByDisplayValue('proof.pdf')).toHaveFocus();
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
+    expect(screen.getByText('附件不符合上传要求')).toBeVisible();
     expect(handleSubmit).not.toHaveBeenCalled();
   });
 
-  it('renders exact field errors and focuses each next missing required control', async () => {
-    const user = userEvent.setup();
+  it('keeps submission disabled until all required controls are complete', async () => {
     const { handleSubmit } = renderForm();
-    const quarterlyKr = screen.getByLabelText(/关联季度 KR/);
-    const dailyObjective = screen.getByLabelText(/当日 O/);
-    const workDescription = screen.getByLabelText(/工作描述/);
-    const result = screen.getByLabelText(/结果/);
-
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-    expect(screen.getByText('请选择关联的季度 KR')).toBeVisible();
-    expect(screen.getByText('请填写当日 O')).toBeVisible();
-    expect(screen.getByText('请填写工作描述')).toBeVisible();
-    expect(screen.getByText('请填写结果或数据')).toBeVisible();
-    expect(document.activeElement).toBe(quarterlyKr);
-
-    await user.selectOptions(quarterlyKr, 'kr-1');
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-    expect(document.activeElement).toBe(dailyObjective);
-
-    await user.type(dailyObjective, '完成实验采集第一阶段');
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-    expect(document.activeElement).toBe(workDescription);
-
-    await user.type(workDescription, '完成样本 A 测量与数据整理');
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-    expect(document.activeElement).toBe(result);
-
-    await user.type(result, '完成 5000 组光谱数据训练');
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-    expect(handleSubmit).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
+    expect(handleSubmit).not.toHaveBeenCalled();
   });
 
-  it('focuses work description before a later invalid hours field', async () => {
+  it('keeps submission disabled when work description and hours are invalid', async () => {
     const user = userEvent.setup();
     renderForm();
-    const workDescription = screen.getByLabelText(/工作描述/);
     const hours = screen.getByLabelText(/记录工时/);
 
     await user.selectOptions(screen.getByLabelText(/关联季度 KR/), 'kr-1');
     await user.type(screen.getByLabelText(/当日 O/), '完成实验采集第一阶段');
     await user.clear(hours);
     await user.type(hours, '-1');
-    await user.click(screen.getByRole('button', { name: '提交日报' }));
-
-    expect(document.activeElement).toBe(workDescription);
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
   });
 
   it('saves a complete edit draft containing legacy link evidence', async () => {

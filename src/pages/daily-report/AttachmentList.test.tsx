@@ -3,6 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { AttachmentList } from './AttachmentList';
 
+it.each([1, 50, 100])('renders real progress value %s in the matching attachment progressbar', (progress) => {
+  render(<AttachmentList items={[{ id: 'progress-item', label: 'proof.pdf', kind: 'file', classification: 'internal', uploadState: progress === 100 ? 'uploaded' : 'uploading', uploadProgress: progress }]} />);
+  expect(screen.getByRole('progressbar', { name: 'proof.pdf 上传进度' })).toHaveValue(progress);
+});
+
 it('shows progress, retry, replace, remove, and signed-download actions', async () => {
   const user = userEvent.setup(); const onRetry = vi.fn(); const onRemove = vi.fn(); const onDownload = vi.fn(); const onReplace = vi.fn();
   const { rerender } = render(<AttachmentList items={[{ id: 'a', label: 'evidence.pdf', kind: 'file', classification: 'confidential', uploadState: 'failed', uploadProgress: 40, error: '网络中断' }]} onRetry={onRetry} onRemove={onRemove} onDownload={onDownload} onReplace={onReplace} />);
