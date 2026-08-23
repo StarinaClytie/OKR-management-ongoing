@@ -1,18 +1,33 @@
 import { Menu } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { AccountMenu } from './AccountMenu';
 import { RoleSwitcher } from './RoleSwitcher';
 import { Sidebar } from './Sidebar';
 import { useMediaQuery } from './useMediaQuery';
-import { useAuth } from '../auth/AuthContext';
-import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { useLocale } from '../i18n/LocaleProvider';
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'time-tech-okr.sidebar-collapsed';
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function storeSidebarCollapsed(collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // Storage may be unavailable; the in-memory preference still applies.
+  }
+}
 
 export function AppShell() {
   const { t } = useLocale();
-  const { mode } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(readSidebarCollapsed);
   const isMobile = useMediaQuery('(max-width: 767px)');
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
@@ -22,6 +37,11 @@ export function AppShell() {
   function closeMobileDrawer() {
     restoreMenuFocus.current = true;
     setMobileOpen(false);
+  }
+
+  function changeDesktopCollapsed(next: boolean) {
+    setDesktopCollapsed(next);
+    storeSidebarCollapsed(next);
   }
 
   useEffect(() => {
@@ -76,7 +96,14 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      {!isMobile ? <Sidebar variant="desktop" onNavigate={() => setMobileOpen(false)} /> : null}
+      {!isMobile ? (
+        <Sidebar
+          variant="desktop"
+          collapsed={desktopCollapsed}
+          onCollapsedChange={changeDesktopCollapsed}
+          onNavigate={() => setMobileOpen(false)}
+        />
+      ) : null}
       {isMobile ? (
         <Sidebar
           variant="mobile"
@@ -102,9 +129,7 @@ export function AppShell() {
             </button>
           ) : null}
           <div className="app-topbar__actions">
-            <LanguageSwitcher />
             <RoleSwitcher />
-            {mode === 'supabase' ? <AccountMenu /> : null}
           </div>
         </header>
         <main className="app-content">

@@ -53,9 +53,11 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const [editObjective, setEditObjective] = useState(false);
   const [updatingKrId, setUpdatingKrId] = useState<string | null>(null);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
-  const [eligibleUsers, setEligibleUsers] = useState<OrganizationUser[]>([]);
+  const [objectiveLeaderCandidates, setObjectiveLeaderCandidates] = useState<OrganizationUser[]>([]);
+  const [krOwnerCandidates, setKrOwnerCandidates] = useState<OrganizationUser[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | undefined>(undefined);
+  const [krOwnerLoadError, setKrOwnerLoadError] = useState<string | undefined>(undefined);
 
   const refresh = useCallback(async () => {
     if (!currentUser) return;
@@ -93,7 +95,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const objectiveUpdates = dashboardData.krProgressUpdates.filter((update) => objectiveKrs.some((keyResult) => keyResult.id === update.krId));
   const projectReports = dashboardData.dailyReports.filter((report) => report.objectiveId === objectiveData.id);
 
-  const loadEligibleUsers = async (): Promise<OrganizationUser[]> => {
+  const loadObjectiveLeaderCandidates = async (): Promise<OrganizationUser[]> => {
     const result = await dataRepository.listOrganizationUsers();
     return result.ok ? result.data.filter((user) => user.isActive && user.approvalStatus === 'approved') : [];
   };
@@ -103,6 +105,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
     setEditObjective(false);
     setArchiveConfirm(false);
     setFormError(undefined);
+    setKrOwnerLoadError(undefined);
     setSubmitting(false);
   };
 
@@ -196,14 +199,20 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
 
   const openEditObjective = async () => {
     setFormError(undefined);
-    setEligibleUsers(await loadEligibleUsers());
+    setObjectiveLeaderCandidates(await loadObjectiveLeaderCandidates());
     setEditObjective(true);
   };
 
   const openCreateKeyResult = async () => {
     setFormError(undefined);
-    const candidates = await loadEligibleUsers();
-    setEligibleUsers(candidates);
+    setKrOwnerLoadError(undefined);
+    const result = await dataRepository.listEligibleKrOwners(objectiveData.id);
+    if (result.ok) {
+      setKrOwnerCandidates(result.data);
+    } else {
+      setKrOwnerCandidates([]);
+      setKrOwnerLoadError(t('kr.eligibleOwnersLoadFailed'));
+    }
     setKrOpen(true);
   };
 
@@ -333,9 +342,9 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
         <KeyResultFormModal
           title={t('kr.createTitle')}
           initial={{ ...emptyKrForm, deadline: objectiveData.dueDate }}
-          ownerCandidates={eligibleUsers}
+          ownerCandidates={krOwnerCandidates}
           submitting={submitting}
-          error={formError}
+          error={krOwnerLoadError ?? formError}
           onSubmit={(values) => void handleSaveKeyResult(values)}
           onClose={closeModals}
         />
@@ -355,7 +364,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
             priority: objectiveData.priority ?? 'medium',
             description: objectiveData.description,
           }}
-          eligibleUsers={eligibleUsers}
+          eligibleUsers={objectiveLeaderCandidates}
           submitting={submitting}
           error={formError}
           onSubmit={(values) => void handleEditObjective(values)}

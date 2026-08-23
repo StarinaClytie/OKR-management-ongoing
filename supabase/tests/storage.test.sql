@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(16);
+select plan(18);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select '00000000-0000-0000-0000-000000000001', id, 'authenticated', 'authenticated', email, 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()
@@ -37,6 +37,17 @@ insert into public.daily_reports (id, organization_id, author_id, project_id, ob
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
+
+select lives_ok(
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', 1, 'raw-proof.pdf', 'application/pdf', 128, 'confidential', '验收结果图')$$,
+  'owner begins an entry attachment upload with an editable display name'
+);
+select is(
+  (select display_name from public.report_attachments where original_name = 'raw-proof.pdf'),
+  '验收结果图',
+  'entry attachment metadata persists the display name separately from the original filename'
+);
+delete from public.report_attachments where original_name = 'raw-proof.pdf';
 
 select lives_ok(
   $$select public.begin_attachment_upload('75000000-0000-0000-0000-000000000001', 'evidence.pdf', 'application/pdf', 10485760, 'confidential')$$,

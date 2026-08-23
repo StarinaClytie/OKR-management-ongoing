@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(58);
+select plan(60);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select
@@ -27,7 +27,8 @@ from (values
   ('10000000-0000-0000-0000-000000000007'::uuid, 'unrelated@rls.test'),
   ('10000000-0000-0000-0000-000000000008'::uuid, 'collaborator@rls.test'),
   ('10000000-0000-0000-0000-000000000009'::uuid, 'hr@rls.test'),
-  ('10000000-0000-0000-0000-000000000010'::uuid, 'other-org@rls.test')
+  ('10000000-0000-0000-0000-000000000010'::uuid, 'other-org@rls.test'),
+  ('10000000-0000-0000-0000-000000000011'::uuid, 'other-leader@rls.test')
 ) as users(id, email);
 
 insert into public.organizations (id, name) values
@@ -45,7 +46,8 @@ from (values
   ('10000000-0000-0000-0000-000000000006'::uuid, 'Subordinate', 'confidential'::public.classification),
   ('10000000-0000-0000-0000-000000000007'::uuid, 'Unrelated', 'confidential'::public.classification),
   ('10000000-0000-0000-0000-000000000008'::uuid, 'Collaborator', 'confidential'::public.classification),
-  ('10000000-0000-0000-0000-000000000009'::uuid, 'HR', 'confidential'::public.classification)
+  ('10000000-0000-0000-0000-000000000009'::uuid, 'HR', 'confidential'::public.classification),
+  ('10000000-0000-0000-0000-000000000011'::uuid, 'Other Project Leader', 'confidential'::public.classification)
 ) as profiles(id, name, clearance);
 
 insert into public.profiles (id, organization_id, display_name) values
@@ -64,6 +66,7 @@ insert into public.user_roles (organization_id, profile_id, role) values
   ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000007', 'employee'),
   ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000008', 'employee'),
   ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000009', 'hr'),
+  ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000011', 'project_leader'),
   ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000010', 'management');
 
 insert into public.reporting_lines (organization_id, manager_id, subordinate_id) values
@@ -122,6 +125,17 @@ select is((select count(*) from public.daily_report_revisions), 1::bigint, 'mana
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 select is((select count(*) from public.daily_report_revisions), 1::bigint, 'project leader reads member report detail');
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000007', true);
+select throws_ok(
+  $$select public.list_eligible_kr_owners('40000000-0000-0000-0000-000000000002')$$,
+  '42501', 'Objective is not available for KR assignment', 'unrelated employee cannot enumerate KR owner candidates'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000011', true);
+select throws_ok(
+  $$select public.list_eligible_kr_owners('40000000-0000-0000-0000-000000000002')$$,
+  '42501', 'Objective is not available for KR assignment', 'project leader cannot enumerate candidates for another leader objective'
+);
+select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
 select is_empty(
   $$update public.daily_report_revisions set daily_objective = 'leader edit' where id = '60000000-0000-0000-0000-000000000001' returning id$$,
   'project leader cannot edit member report body'

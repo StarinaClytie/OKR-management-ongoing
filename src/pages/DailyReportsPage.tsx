@@ -78,7 +78,11 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const currentUserId = currentUser.id;
   const data = dashboard.data;
   const currentLocalReports = localReports.ownerId === currentUser.id ? localReports.reports : [];
-  const readableReports = [...currentLocalReports, ...data.dailyReports].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
+  const localReportIds = new Set(currentLocalReports.map((report) => report.id));
+  const readableReports = [
+    ...currentLocalReports,
+    ...data.dailyReports.filter((report) => !localReportIds.has(report.id)),
+  ].filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
 
   if (currentUser.role === 'hr') {
     const hoursRows = data.workloads.filter((workload) => can(currentUser, 'worklog.read_hours', workload).allowed);
@@ -113,20 +117,21 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     : undefined;
 
   async function handleSubmit(draft: DailyReportDraft) {
+    const reportDate = editingReport?.date ?? currentBusinessDate();
     const conversion = toLocalDailyReport(draft, {
       authorId: currentUserId,
-      date: currentBusinessDate(),
+      date: reportDate,
       submissionNonce: nextLocalSubmissionNonce.current,
       keyResults: data.keyResults,
       objectives: data.objectives,
-    });
+    }, { allowLegacyLinkEvidence: Boolean(editingReport) });
     if (!conversion.ok) {
       return { ok: false as const, error: { key: conversion.error.code === 'KEY_RESULT_NOT_AVAILABLE' ? 'daily.krMismatch' : 'daily.fixRequired' } satisfies LocalizedMessage };
     }
 
-    const existingToday = editingReport ?? currentLocalReports.find((report) => report.date === conversion.report.date);
-    let savedId = existingToday?.id ?? conversion.report.id;
-    let savedRevision = (existingToday?.currentRevision ?? 0) + 1;
+    const existingReport = editingReport ?? currentLocalReports.find((report) => report.date === conversion.report.date);
+    let savedId = existingReport?.id ?? conversion.report.id;
+    let savedRevision = (existingReport?.currentRevision ?? 0) + 1;
 
     if (dataRepository.mode === 'supabase') {
       const input: DailyReportInput = {
@@ -140,12 +145,18 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
           hours: block.hours,
           result: block.result,
           evidenceLinks: block.evidence.filter((item) => item.kind === 'link'),
+          attachments: block.evidence.flatMap((item) => item.kind === 'file' && item.attachmentId ? [{
+            attachmentId: item.attachmentId,
+            displayName: item.label,
+            classification: item.classification,
+          }] : []),
         })),
         evidenceLinks: (conversion.report.evidenceItems ?? []).filter((item) => item.kind === 'link'),
       };
-      const files = draft.blocks.flatMap((block, index) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification, entryPosition: index + 1 }] : []));
+      const files = draft.blocks.flatMap((block, index) => block.evidence.flatMap((item) => item.kind === 'file' && item.file ? [{ file: item.file, classification: item.classification, entryPosition: index + 1, label: item.label }] : []));
       const persisted = await dataRepository.saveDailyReport(input, files);
       if (!persisted.ok) return { ok: false as const, error: { key: persisted.error.code === 'conflict' ? 'daily.conflict' : 'common.requestFailed' } satisfies LocalizedMessage };
+      if (editingReport && persisted.data.id !== editingReport.id) return { ok: false as const, error: { key: 'daily.conflict' } satisfies LocalizedMessage };
       savedId = persisted.data.id;
       savedRevision = persisted.data.revision;
     }
@@ -158,6 +169,30 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     restoreAuthoringFocus.current = true;
     setIsAuthoring(false);
     return { ok: true as const };
+  }
+
+  async function downloadPersistedAttachment(attachmentId: string) {
+    const result = await dataRepository.createAttachmentDownload(attachmentId);
+    if (!result.ok) {
+      setNotice('common.requestFailed');
+      return;
+    }
+    const anchor = document.createElement('a');
+    anchor.href = result.data.url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
+  async function removePersistedAttachment(attachmentId: string) {
+    // Persisted evidence belongs to an immutable revision. This call performs
+    // server-side authorization only; omission from the next save detaches it
+    // without soft-deleting the historical file or its prior associations.
+    const result = await dataRepository.removeAttachment(attachmentId, { preserveRevisionHistory: true });
+    if (!result.ok) setNotice('common.requestFailed');
+    return result.ok;
   }
 
   const reportContent = (report: DailyReport) => {
@@ -209,6 +244,8 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
             objectives={linkableObjectives}
             onCancel={() => { restoreAuthoringFocus.current = true; setEditingReport(undefined); setIsAuthoring(false); }}
             onSubmit={handleSubmit}
+            onDownloadAttachment={downloadPersistedAttachment}
+            onRemoveAttachment={removePersistedAttachment}
           />
           {editingReport && revisions.length > 0 && <RevisionHistory revisions={revisions} />}
         </section>

@@ -5,7 +5,12 @@ import { useAuth } from '../auth/AuthContext';
 import { roleLabels } from '../auth/roleLabels';
 import { useLocale } from '../i18n/LocaleProvider';
 
-export function AccountMenu() {
+export interface AccountMenuProps {
+  compact?: boolean;
+  onNavigate?: () => void;
+}
+
+export function AccountMenu({ compact = false, onNavigate }: AccountMenuProps) {
   const { t } = useLocale();
   const { currentUser, email, signOut } = useAuth();
   const [open, setOpen] = useState(false);
@@ -47,35 +52,51 @@ export function AccountMenu() {
     setOpen(false);
   }
 
+  function navigate() {
+    close();
+    onNavigate?.();
+  }
+
   return (
     <div className="account-menu" ref={containerRef}>
       <button
         ref={triggerRef}
-        className="account-menu__trigger"
+        className={`account-menu__trigger${compact ? ' account-menu__trigger--compact' : ''}`}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t('account.openMenu')}
+        title={compact ? t('account.openMenu') : undefined}
         onClick={() => setOpen((value) => !value)}
       >
         <span className="account-menu__avatar" aria-hidden="true">{initial}</span>
-        <span className="account-menu__identity">
-          <span className="account-menu__name">{currentUser.name}</span>
-          <span className="account-menu__role">{roleLabel}</span>
-        </span>
-        <ChevronDown size={16} aria-hidden="true" />
+        {!compact ? (
+          <>
+            <span className="account-menu__identity">
+              <span className="account-menu__name">{currentUser.name}</span>
+              <span className="account-menu__role">{roleLabel}</span>
+            </span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </>
+        ) : null}
       </button>
 
       {open ? (
         <div className="account-menu__dropdown" role="menu" aria-label={t('account.menu')}>
-          {(email || organization) ? (
+          {(compact || email || organization) ? (
             <div className="account-menu__summary">
+              {compact ? (
+                <span className="account-menu__compact-identity">
+                  <strong>{currentUser.name}</strong>
+                  <span>{roleLabel}</span>
+                </span>
+              ) : null}
               {email ? <span className="account-menu__email">{email}</span> : null}
               {organization ? <span className="account-menu__organization">{organization}</span> : null}
             </div>
           ) : null}
-          <Link role="menuitem" className="account-menu__item" to="/profile" onClick={close}>{t('account.profile')}</Link>
-          <Link role="menuitem" className="account-menu__item" to="/settings" onClick={close}>{t('account.settings')}</Link>
+          <Link role="menuitem" className="account-menu__item" to="/profile" onClick={navigate}>{t('account.profile')}</Link>
+          <Link role="menuitem" className="account-menu__item" to="/settings" onClick={navigate}>{t('account.settings')}</Link>
           <div className="account-menu__separator" role="separator" />
           <button role="menuitem" className="account-menu__item account-menu__item--danger" type="button" onClick={() => { close(); void signOut(); }}>
             {t('account.signOut')}

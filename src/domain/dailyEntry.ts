@@ -1,4 +1,5 @@
 import type { Classification, DailyReport, KeyResult, Objective } from './types';
+import { validateAttachment } from '../services/attachmentService';
 
 /** A single 今日 KR inside a Daily OKR block. */
 export interface DailyKrDraft {
@@ -71,6 +72,10 @@ export interface DailyReportValidationIssue {
   message: string;
 }
 
+export interface DailyReportValidationOptions {
+  allowLegacyLinkEvidence?: boolean;
+}
+
 export type DailyReportConversionResult =
   | { ok: true; report: DailyReport }
   | { ok: false; error: { code: DailyReportConversionErrorCode; message: string } };
@@ -86,31 +91,33 @@ function isFiniteNonNegative(value: number | undefined): value is number {
   return value !== undefined && Number.isFinite(value) && value >= 0;
 }
 
-function isEvidenceKind(value: DailyEvidenceDraft['kind']): boolean {
-  return value === 'file' || value === 'link';
-}
-
 function isClassification(value: Classification): boolean {
   return Object.hasOwn(classificationRank, value);
 }
 
-export function validateDailyReportDraft(draft: DailyReportDraft): DailyReportValidationIssue[] {
+export function validateDailyReportDraft(draft: DailyReportDraft, options: DailyReportValidationOptions = {}): DailyReportValidationIssue[] {
   const issues: DailyReportValidationIssue[] = [];
   if (draft.blocks.length === 0) issues.push({ field: 'blocks', message: '请至少添加一组 Daily OKR' });
 
   draft.blocks.forEach((block, index) => {
     const field = `blocks.${index}`;
-    if (!block.dailyObjective.trim()) issues.push({ field: `${field}.dailyObjective`, message: '请填写当日 O' });
     if (!block.linkedKeyResultId) issues.push({ field: `${field}.linkedKeyResultId`, message: '请选择关联的季度 KR' });
-    if (!isFiniteNonNegative(block.hours)) issues.push({ field: `${field}.hours`, message: '工时需填写有限且不小于 0 的数值' });
+    if (!block.dailyObjective.trim()) issues.push({ field: `${field}.dailyObjective`, message: '请填写当日 O' });
     if (!block.workDescription.trim()) issues.push({ field: `${field}.workDescription`, message: '请填写工作描述' });
     if (!block.result.trim()) issues.push({ field: `${field}.result`, message: '请填写结果或数据' });
     block.evidence.forEach((item, evidenceIndex) => {
       const evidenceField = `${field}.evidence.${evidenceIndex}`;
       if (!item.label.trim()) issues.push({ field: `${evidenceField}.label`, message: '请填写成果名称或链接说明' });
-      if (!isEvidenceKind(item.kind)) issues.push({ field: `${evidenceField}.kind`, message: '请选择成果类型' });
+      if (!options.allowLegacyLinkEvidence && item.kind !== 'file') issues.push({ field: `${evidenceField}.kind`, message: '仅支持上传文件作为成果附件' });
       if (!isClassification(item.classification)) issues.push({ field: `${evidenceField}.classification`, message: '请选择有效的成果密级' });
+      if (item.kind === 'file' && item.file) {
+        const fileIssue = validateAttachment(item.file);
+        if (fileIssue) issues.push({ field: `${evidenceField}.file`, message: fileIssue.message });
+      } else if (item.kind === 'file' && !item.attachmentId) {
+        issues.push({ field: `${evidenceField}.file`, message: '请选择有效的成果附件' });
+      }
     });
+    if (!isFiniteNonNegative(block.hours)) issues.push({ field: `${field}.hours`, message: '工时需填写有限且不小于 0 的数值' });
   });
 
   if (!isClassification(draft.classification)) issues.push({ field: 'classification', message: '请选择有效的日报密级' });
@@ -126,8 +133,9 @@ function mostRestrictiveClassification(current: Classification, item: DailyEvide
 export function toLocalDailyReport(
   draft: DailyReportDraft,
   context: DailyReportConversionContext,
+  validationOptions?: DailyReportValidationOptions,
 ): DailyReportConversionResult {
-  const validationIssues = validateDailyReportDraft(draft);
+  const validationIssues = validateDailyReportDraft(draft, validationOptions);
   if (validationIssues.length > 0) {
     return { ok: false, error: { code: 'INVALID_DRAFT', message: validationIssues[0]!.message } };
   }

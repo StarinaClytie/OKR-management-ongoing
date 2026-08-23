@@ -18,7 +18,7 @@ const admin: User = {
   organization: 'Acme',
 };
 
-function renderMenu(auth: Partial<AuthContextValue> = {}) {
+function renderMenu(auth: Partial<AuthContextValue> = {}, compact = false) {
   const signOut = vi.fn(async () => undefined);
   const value: AuthContextValue = {
     status: 'ready',
@@ -34,7 +34,7 @@ function renderMenu(auth: Partial<AuthContextValue> = {}) {
     <AuthContext.Provider value={value}>
       <LocaleProvider repository={{ mode: 'supabase' } as OkrRepository}>
         <MemoryRouter>
-          <AccountMenu />
+          <AccountMenu compact={compact} />
         </MemoryRouter>
       </LocaleProvider>
     </AuthContext.Provider>,
@@ -94,5 +94,22 @@ describe('AccountMenu', () => {
 
     await user.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows only the avatar in compact presentation while retaining the accessible menu behavior', async () => {
+    const user = userEvent.setup();
+    renderMenu({}, true);
+
+    const trigger = screen.getByRole('button', { name: '打开账户菜单' });
+    expect(trigger).toHaveClass('account-menu__trigger--compact');
+    expect(trigger.querySelector('.account-menu__avatar')).toHaveTextContent('陈');
+    expect(screen.queryByText('陈安')).not.toBeInTheDocument();
+    expect(screen.queryByText('管理员')).not.toBeInTheDocument();
+    expect(trigger.querySelector('svg')).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    expect(screen.getByRole('menu', { name: '账户菜单' })).toBeVisible();
+    expect(screen.getByRole('menu', { name: '账户菜单' })).toHaveTextContent('陈安');
+    expect(screen.getByRole('menu', { name: '账户菜单' })).toHaveTextContent('管理员');
   });
 });

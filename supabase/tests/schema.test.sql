@@ -1,6 +1,6 @@
 begin;
 
-select plan(92);
+select plan(93);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -94,6 +94,7 @@ select has_table('public', 'daily_objectives', 'daily_objectives table exists');
 select has_table('public', 'daily_key_results', 'daily_key_results table exists');
 select has_table('public', 'report_evidence_links', 'report_evidence_links table exists');
 select has_table('public', 'report_attachments', 'report_attachments table exists');
+select has_column('public', 'report_attachments', 'display_name', 'report attachments persist an editable display name');
 
 select fk_ok('public', 'profiles', array['id'], 'auth', 'users', array['id'], 'profile identity references auth users');
 select fk_ok('public', 'user_roles', array['organization_id', 'profile_id'], 'public', 'profiles', array['organization_id', 'id'], 'role assignment stays in its organization');

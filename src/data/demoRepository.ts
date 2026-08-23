@@ -140,6 +140,26 @@ export class DemoOkrRepository implements OkrRepository {
     };
   }
 
+  async listEligibleKrOwners(_objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>> {
+    return {
+      ok: true,
+      data: mockData.users
+        .filter((user) => user.role === 'project_leader' || user.role === 'employee')
+        .map((user) => ({
+          id: user.id,
+          displayName: user.name,
+          email: '',
+          department: user.department,
+          jobTitle: user.title,
+          role: user.role,
+          isActive: true,
+          approvalStatus: 'approved' as const,
+          createdAt: '',
+          projectIds: user.projectIds,
+        })),
+    };
+  }
+
   // ---- Projects (execution-view) CRUD ----
 
   async createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>> {
@@ -342,6 +362,6 @@ export class DemoOkrRepository implements OkrRepository {
   async beginAttachmentUpload(_input: Record<string, unknown>): Promise<RepositoryResult<import('./types').AttachmentUploadTarget>> { return unsupported<import('./types').AttachmentUploadTarget>(); }
   async finalizeAttachmentUpload(_id: string, _checksum?: string): Promise<RepositoryResult<unknown>> { return unsupported<unknown>(); }
   async replaceAttachment(_id: string, _input: Record<string, unknown>): Promise<RepositoryResult<unknown>> { return unsupported<unknown>(); }
-  async removeAttachment(_id: string): Promise<RepositoryResult<void>> { return unsupported<void>(); }
+  async removeAttachment(_id: string, _options?: { preserveRevisionHistory?: boolean }): Promise<RepositoryResult<void>> { return unsupported<void>(); }
   async createAttachmentDownload(_id: string): Promise<RepositoryResult<{ url: string }>> { return unsupported<{ url: string }>(); }
 }

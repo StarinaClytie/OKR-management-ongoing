@@ -67,6 +67,55 @@ describe('daily OKR block validation', () => {
       expect.objectContaining({ field: 'blocks', message: '请至少添加一组 Daily OKR' }),
     ]));
   });
+
+  it('rejects link evidence in newly authored Daily OKR blocks', () => {
+    const issues = validateDailyReportDraft(draft({
+      blocks: [block({ evidence: [{
+        id: 'legacy-link', label: '设计文档', kind: 'link', classification: 'internal',
+      }] })],
+    }));
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'blocks.0.evidence.0.kind', message: '仅支持上传文件作为成果附件' }),
+    ]));
+  });
+
+  it('keeps legacy link evidence valid when explicitly preserving an existing draft', () => {
+    const issues = validateDailyReportDraft(draft({
+      blocks: [block({ evidence: [{
+        id: 'legacy-link', label: '设计文档', kind: 'link', classification: 'internal',
+      }] })],
+    }), { allowLegacyLinkEvidence: true });
+
+    expect(issues).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'blocks.0.evidence.0.kind' }),
+    ]));
+  });
+
+  it('reports the exact later attachment whose file is invalid', () => {
+    const issues = validateDailyReportDraft(draft({
+      blocks: [block({ evidence: [
+        { id: 'valid', label: '有效附件', kind: 'file', classification: 'internal', file: new File(['ok'], 'proof.pdf', { type: 'application/pdf' }) },
+        { id: 'invalid', label: '无效附件', kind: 'file', classification: 'internal', file: new File(['bad'], 'proof.pdf', { type: 'text/plain' }) },
+      ] })],
+    }));
+
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'blocks.0.evidence.1.file', message: '文件扩展名与内容类型不一致' }),
+    ]));
+  });
+
+  it('orders issues in the same order as the Daily OKR controls', () => {
+    const issues = validateDailyReportDraft(draft({
+      blocks: [block({ hours: -1, workDescription: ' ', result: ' ' })],
+    }));
+
+    expect(issues.map((issue) => issue.field)).toEqual([
+      'blocks.0.workDescription',
+      'blocks.0.result',
+      'blocks.0.hours',
+    ]);
+  });
 });
 
 describe('daily OKR block conversion', () => {

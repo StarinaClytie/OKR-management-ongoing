@@ -60,6 +60,22 @@ function renderPage(user: User, dataRepository: OkrRepository) {
 }
 
 describe('ResourcesPage list', () => {
+  it('groups search and resource controls into separate rows inside a labelled filter region', async () => {
+    renderPage(employee, makeRepository());
+
+    await screen.findByText('Lens Set');
+
+    const filterCard = screen.getByRole('region', { name: '资源与耗材' });
+    const searchRow = within(filterCard).getByTestId('resources-search-row');
+    const controlsRow = within(filterCard).getByTestId('resources-filter-row');
+
+    expect(searchRow).toContainElement(screen.getByRole('searchbox', { name: '搜索资源名称' }));
+    expect(controlsRow).toContainElement(screen.getByLabelText('分类'));
+    expect(controlsRow).toContainElement(screen.getByLabelText('状态'));
+    expect(controlsRow).toContainElement(screen.getByLabelText('负责人'));
+    expect(controlsRow).toContainElement(screen.getByRole('button', { name: '显示已归档' }));
+  });
+
   it('renders resources and hides archived ones by default', async () => {
     renderPage(employee, makeRepository());
 

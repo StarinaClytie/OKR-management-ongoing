@@ -121,6 +121,11 @@ export interface DailyOkrBlockInput {
   hours: number;
   result: string;
   evidenceLinks: unknown[];
+  attachments?: Array<{
+    attachmentId: string;
+    displayName: string;
+    classification: Classification;
+  }>;
 }
 
 export interface DailyReportInput {
@@ -131,7 +136,7 @@ export interface DailyReportInput {
   evidenceLinks: unknown[];
 }
 
-export interface ClassifiedAttachmentInput { file: File; classification: Classification; entryPosition?: number }
+export interface ClassifiedAttachmentInput { file: File; classification: Classification; entryPosition?: number; label?: string }
 
 export interface KrProgressInput {
   keyResultId: string;
@@ -404,6 +409,7 @@ export interface OkrRepository {
   getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>>;
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>>;
+  listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>>;
   createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>>;
   updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>>;
   setProjectLeader(projectId: string, leaderId: string): Promise<RepositoryResult<void>>;
@@ -455,6 +461,6 @@ export interface OkrRepository {
   beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>>;
   finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>>;
   replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>>;
-  removeAttachment(id: string): Promise<RepositoryResult<void>>;
+  removeAttachment(id: string, options?: { preserveRevisionHistory?: boolean }): Promise<RepositoryResult<void>>;
   createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>>;
 }

@@ -1,5 +1,6 @@
 import type { DashboardData } from '../data/types';
 import type { DailyReport, ProjectStatus, Role, User } from '../domain/types';
+import type { DailyEvidenceDraft } from '../domain/dailyEntry';
 import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportInput, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 
@@ -78,6 +79,24 @@ function mapOrganizationUser(row: Record<string, unknown>): OrganizationUser | n
 }
 
 function numberValue(value: unknown): number { return typeof value === 'number' ? value : Number(value) || 0; }
+
+function mapReportAttachment(row: Record<string, unknown>, revisionMetadata?: Record<string, unknown>): DailyEvidenceDraft | null {
+  if (typeof row.id !== 'string' || typeof row.report_id !== 'string' || row.state !== 'uploaded') return null;
+  const originalName = typeof row.original_name === 'string' ? row.original_name : '';
+  const displayName = typeof revisionMetadata?.display_name === 'string' && revisionMetadata.display_name.trim()
+    ? revisionMetadata.display_name
+    : typeof row.display_name === 'string' && row.display_name.trim() ? row.display_name : originalName;
+  if (!displayName) return null;
+  return {
+    id: `attachment-${row.id}`,
+    attachmentId: row.id,
+    label: displayName,
+    kind: 'file',
+    classification: (revisionMetadata?.classification ?? row.classification) as import('../domain/types').Classification,
+    uploadState: 'uploaded',
+    uploadProgress: 100,
+  };
+}
 
 function mapResource(row: Record<string, unknown>): Resource | null {
   if (typeof row.id !== 'string' || typeof row.name !== 'string' || typeof row.owner_id !== 'string') return null;
@@ -171,11 +190,14 @@ export class SupabaseOkrRepository implements OkrRepository {
       this.selectRows('kr_assignments', 'id,kr_id,profile_id,assignment_role'),
       this.selectRows('kr_progress_updates', 'id,kr_id,author_id,previous_progress,new_progress,summary,blocker,reason,next_action,evidence,created_at'),
       this.selectRows('daily_reports', 'id,author_id,project_id,objective_id,report_date,status,classification,total_hours,current_revision,updated_at'),
+      this.selectRows('daily_report_revisions', 'id,report_id,revision_number'),
       this.selectRows('daily_okr_blocks', 'id,report_id,revision_id,position,daily_objective,linked_key_result_id,work_description,hours,result,key_results,evidence_links'),
+      this.selectRows('report_attachments', 'id,report_id,revision_id,daily_okr_block_id,original_name,display_name,classification,state'),
+      this.selectRows('report_attachment_revisions', 'report_id,revision_id,daily_okr_block_id,attachment_id,display_name,classification'),
     ]);
     const failed = results.find((result) => !result.ok);
     if (failed && !failed.ok) return failed;
-    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyBlockResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
+    const [profileResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyRevisionResult, dailyBlockResult, attachmentResult, attachmentRevisionResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
 
     const users = profileResult.data.map(mapProfile).filter((user): user is User => user !== null);
     const currentUser = users.find((user) => user.id === session.data.session!.user.id);
@@ -282,34 +304,80 @@ export class SupabaseOkrRepository implements OkrRepository {
       createdAt: typeof row.created_at === 'string' ? row.created_at : '',
     }));
 
+    const currentRevisionIdByReportId = new Map<string, string>();
+    for (const report of dailyReportResult.data) {
+      const revision = dailyRevisionResult.data.find((candidate) => candidate.report_id === report.id && numberValue(candidate.revision_number) === numberValue(report.current_revision));
+      if (typeof revision?.id === 'string') currentRevisionIdByReportId.set(String(report.id), revision.id);
+    }
     const blocksByReportId = new Map<string, Array<Record<string, unknown>>>();
     for (const row of dailyBlockResult.data) {
       const reportId = String(row.report_id);
+      if (row.revision_id !== currentRevisionIdByReportId.get(reportId)) continue;
       const list = blocksByReportId.get(reportId) ?? [];
       list.push(row);
       blocksByReportId.set(reportId, list);
     }
+    const attachmentRowById = new Map(attachmentResult.data.map((row) => [String(row.id), row]));
+    const attachmentsByBlockId = new Map<string, DailyEvidenceDraft[]>();
+    const legacyAttachmentsByReportId = new Map<string, DailyEvidenceDraft[]>();
+    const associatedAttachmentIds = new Set<string>();
+    for (const metadata of attachmentRevisionResult.data) {
+      const reportId = String(metadata.report_id);
+      if (metadata.revision_id !== currentRevisionIdByReportId.get(reportId)) continue;
+      const attachmentId = String(metadata.attachment_id);
+      const row = attachmentRowById.get(attachmentId);
+      if (!row) continue;
+      const attachment = mapReportAttachment(row, metadata);
+      if (!attachment) continue;
+      associatedAttachmentIds.add(attachmentId);
+      const blockId = typeof metadata.daily_okr_block_id === 'string' ? metadata.daily_okr_block_id : undefined;
+      const collection = blockId ? attachmentsByBlockId : legacyAttachmentsByReportId;
+      const key = blockId ?? reportId;
+      collection.set(key, [...(collection.get(key) ?? []), attachment]);
+    }
+    // Backward compatibility for attachments saved before revision-scoped
+    // metadata existed. Only rows belonging to the current revision qualify.
+    for (const row of attachmentResult.data) {
+      const reportId = String(row.report_id);
+      if (associatedAttachmentIds.has(String(row.id)) || row.revision_id !== currentRevisionIdByReportId.get(reportId)) continue;
+      const attachment = mapReportAttachment(row);
+      if (!attachment) continue;
+      const blockId = typeof row.daily_okr_block_id === 'string' ? row.daily_okr_block_id : undefined;
+      const collection = blockId ? attachmentsByBlockId : legacyAttachmentsByReportId;
+      const key = blockId ?? reportId;
+      collection.set(key, [...(collection.get(key) ?? []), attachment]);
+    }
     const dailyReports: DailyReport[] = dailyReportResult.data.map((row) => {
       const blocks = (blocksByReportId.get(String(row.id)) ?? [])
         .sort((left, right) => numberValue(left.position) - numberValue(right.position))
-        .map((block) => ({
-          id: String(block.id),
-          dailyObjective: String(block.daily_objective ?? ''),
-          keyResultId: typeof block.linked_key_result_id === 'string' ? block.linked_key_result_id : '',
-          workDescription: String(block.work_description ?? ''),
-          hours: numberValue(block.hours),
-          result: String(block.result ?? ''),
-          keyResults: (Array.isArray(block.key_results) ? block.key_results : []).map((item: unknown, index: number) => ({
-            id: `daily-kr-${index + 1}`,
-            title: String((item as Record<string, unknown>).title ?? ''),
-          })),
-          evidenceItems: (Array.isArray(block.evidence_links) ? block.evidence_links : []).map((item: unknown, index: number) => ({
+        .map((block) => {
+          const blockId = String(block.id);
+          const links: DailyEvidenceDraft[] = (Array.isArray(block.evidence_links) ? block.evidence_links : []).map((item: unknown, index: number) => ({
             id: `evidence-link-${index + 1}`,
             label: String((item as Record<string, unknown>).label ?? (item as Record<string, unknown>).url ?? ''),
             kind: 'link' as const,
             classification: ((item as Record<string, unknown>).classification ?? row.classification) as import('../domain/types').Classification,
-          })),
-        }));
+          }));
+          return {
+            id: blockId,
+            dailyObjective: String(block.daily_objective ?? ''),
+            keyResultId: typeof block.linked_key_result_id === 'string' ? block.linked_key_result_id : '',
+            workDescription: String(block.work_description ?? ''),
+            hours: numberValue(block.hours),
+            result: String(block.result ?? ''),
+            keyResults: (Array.isArray(block.key_results) ? block.key_results : []).map((item: unknown, index: number) => ({
+              id: `daily-kr-${index + 1}`,
+              title: String((item as Record<string, unknown>).title ?? ''),
+            })),
+            evidenceItems: [...links, ...(attachmentsByBlockId.get(blockId) ?? [])],
+          };
+        });
+      const legacyAttachments = legacyAttachmentsByReportId.get(String(row.id)) ?? [];
+      if (blocks[0] && legacyAttachments.length > 0) {
+        blocks[0].evidenceItems = [...(blocks[0].evidenceItems ?? []), ...legacyAttachments];
+      }
+      const evidenceItems = blocks.length > 0 ? blocks.flatMap((block) => block.evidenceItems ?? []) : legacyAttachments;
+      const attachmentIds = evidenceItems.flatMap((item) => item.attachmentId ? [item.attachmentId] : []);
       return {
         id: String(row.id),
         authorId: String(row.author_id),
@@ -322,9 +390,13 @@ export class SupabaseOkrRepository implements OkrRepository {
         blocks,
         classification: row.classification as import('../domain/types').Classification,
         hours: numberValue(row.total_hours),
-        evidence: [],
-        evidenceClassification: 'public' as import('../domain/types').Classification,
-        attachmentIds: [],
+        evidence: evidenceItems.map((item) => item.label),
+        evidenceItems,
+        evidenceClassification: evidenceItems.reduce<import('../domain/types').Classification>((highest, item) => {
+          const rank = { public: 0, internal: 1, confidential: 2, restricted: 3 };
+          return rank[item.classification] > rank[highest] ? item.classification : highest;
+        }, 'public'),
+        attachmentIds,
         status: row.status as import('../domain/types').ReportStatus,
         currentRevision: numberValue(row.current_revision),
         updatedAt: typeof row.updated_at === 'string' ? row.updated_at : undefined,
@@ -353,6 +425,9 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
 
   async saveDailyReport(input: DailyReportInput, attachments: ClassifiedAttachmentInput[] = []): Promise<RepositoryResult<{ id: string; revision: number }>> {
+    const attachmentValidation = this.validateAttachmentInputs(attachments);
+    if (!attachmentValidation.ok) return attachmentValidation;
+    let uploadedAttachments: AttachmentUploadTarget[] = [];
     if (attachments.length > 0) {
       const shell = await this.callRpc<string>('begin_daily_report_with_attachments', {
         p_report_date: input.reportDate,
@@ -362,6 +437,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       if (!shell.ok) return shell;
       const uploaded = await this.uploadAll(shell.data, attachments);
       if (!uploaded.ok) return uploaded;
+      uploadedAttachments = uploaded.data;
     }
 
     const result = await this.callRpc<Array<{ report_id: string; revision: number }>>('save_daily_report', {
@@ -371,7 +447,10 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_blocks: input.blocks,
       p_evidence_links: input.evidenceLinks,
     });
-    if (!result.ok) return result;
+    if (!result.ok) {
+      await this.cleanupUploadAttempt(uploadedAttachments);
+      return result;
+    }
     const saved = result.data[0];
     return saved
       ? { ok: true, data: { id: saved.report_id, revision: saved.revision } }
@@ -390,34 +469,69 @@ export class SupabaseOkrRepository implements OkrRepository {
     return result.ok ? { ok: true, data: { revision: result.data } } : result;
   }
 
-  private async uploadAll(reportId: string, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<void>> {
+  private validateAttachmentInputs(attachments: ClassifiedAttachmentInput[]): RepositoryResult<void> {
     for (const attachment of attachments) {
       const invalid = validateAttachment(attachment.file);
       if (invalid) return { ok: false, error: { code: 'validation', message: invalid.message } };
-      const pending = attachment.entryPosition === undefined
-        ? await this.beginAttachmentUpload({ p_report_id: reportId, p_original_name: sanitizeFilename(attachment.file.name), p_mime_type: attachment.file.type, p_byte_size: attachment.file.size, p_classification: attachment.classification })
-        : await this.callRpc<AttachmentUploadTarget>('begin_entry_attachment_upload', { p_report_id: reportId, p_entry_position: attachment.entryPosition, p_original_name: sanitizeFilename(attachment.file.name), p_mime_type: attachment.file.type, p_byte_size: attachment.file.size, p_classification: attachment.classification });
-      if (!pending.ok) return pending;
-      const uploaded = await this.client.storage.from(pending.data.bucket).upload(pending.data.path, attachment.file, { contentType: attachment.file.type, upsert: false });
-      if (uploaded.error) { await this.removeAttachment(pending.data.id); return failure(uploaded.error); }
-      const finalized = await this.finalizeAttachmentUpload(pending.data.id);
-      if (!finalized.ok) return finalized as RepositoryResult<void>;
     }
     return { ok: true, data: undefined };
   }
 
+  private async cleanupUploadAttempt(started: AttachmentUploadTarget[]): Promise<void> {
+    const cleanupOrder = [...started].reverse();
+    for (const target of cleanupOrder) await this.removeAttachment(target.id);
+    if (cleanupOrder.length > 0) {
+      await this.client.storage.from('report-attachments').remove(cleanupOrder.map((target) => target.path));
+    }
+  }
+
+  private async uploadAll(reportId: string, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<AttachmentUploadTarget[]>> {
+    const validation = this.validateAttachmentInputs(attachments);
+    if (!validation.ok) return validation;
+    const started: AttachmentUploadTarget[] = [];
+    for (const attachment of attachments) {
+      const pending = attachment.entryPosition === undefined
+        ? await this.beginAttachmentUpload({ p_report_id: reportId, p_original_name: sanitizeFilename(attachment.file.name), p_mime_type: attachment.file.type, p_byte_size: attachment.file.size, p_classification: attachment.classification })
+        : await this.callRpc<AttachmentUploadTarget>('begin_entry_attachment_upload', { p_report_id: reportId, p_entry_position: attachment.entryPosition, p_original_name: sanitizeFilename(attachment.file.name), p_mime_type: attachment.file.type, p_byte_size: attachment.file.size, p_classification: attachment.classification, p_display_name: attachment.label?.trim() || attachment.file.name });
+      if (!pending.ok) {
+        await this.cleanupUploadAttempt(started);
+        return pending;
+      }
+      started.push(pending.data);
+      const uploaded = await this.client.storage.from(pending.data.bucket).upload(pending.data.path, attachment.file, { contentType: attachment.file.type, upsert: false });
+      if (uploaded.error) {
+        await this.cleanupUploadAttempt(started);
+        return failure(uploaded.error);
+      }
+      const finalized = await this.finalizeAttachmentUpload(pending.data.id);
+      if (!finalized.ok) {
+        await this.cleanupUploadAttempt(started);
+        return finalized as RepositoryResult<AttachmentUploadTarget[]>;
+      }
+    }
+    return { ok: true, data: started };
+  }
+
   async createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>> {
+    const attachmentValidation = this.validateAttachmentInputs(attachments);
+    if (!attachmentValidation.ok) return attachmentValidation;
     const shell = await this.callRpc<string>('begin_daily_report_with_attachments', { p_report_date: input.reportDate, p_status: input.status, p_classification: input.classification });
     if (!shell.ok) return shell;
     const uploaded = await this.uploadAll(shell.data, attachments);
     if (!uploaded.ok) return uploaded;
     const revision = await this.updateDailyReport(shell.data, 0, input);
+    if (!revision.ok) await this.cleanupUploadAttempt(uploaded.data);
     return revision.ok ? { ok: true, data: { id: shell.data, revision: revision.data.revision } } : revision;
   }
 
   async updateDailyReportWithAttachments(reportId: string, expectedRevision: number, input: DailyReportInput, attachments: ClassifiedAttachmentInput[]) {
+    const attachmentValidation = this.validateAttachmentInputs(attachments);
+    if (!attachmentValidation.ok) return attachmentValidation;
     const uploaded = await this.uploadAll(reportId, attachments);
-    return uploaded.ok ? this.updateDailyReport(reportId, expectedRevision, input) : uploaded;
+    if (!uploaded.ok) return uploaded;
+    const updated = await this.updateDailyReport(reportId, expectedRevision, input);
+    if (!updated.ok) await this.cleanupUploadAttempt(uploaded.data);
+    return updated;
   }
 
   async listReportRevisions(reportId: string): Promise<RepositoryResult<unknown[]>> {
@@ -542,6 +656,12 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
   async listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>> {
     const result = await this.callRpc<Record<string, unknown>[]>('list_organization_users', {});
+    if (!result.ok) return result;
+    const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
+    return { ok: true, data: users };
+  }
+  async listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>> {
+    const result = await this.callRpc<Record<string, unknown>[]>('list_eligible_kr_owners', { p_objective_id: objectiveId });
     if (!result.ok) return result;
     const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
     return { ok: true, data: users };
@@ -763,8 +883,12 @@ export class SupabaseOkrRepository implements OkrRepository {
   async replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>> {
     return this.callRpc('replace_attachment', { p_attachment_id: id, ...input });
   }
-  async removeAttachment(id: string): Promise<RepositoryResult<void>> {
-    return this.callRpc('soft_delete_attachment', { p_attachment_id: id });
+  async removeAttachment(id: string, options?: { preserveRevisionHistory?: boolean }): Promise<RepositoryResult<void>> {
+    const functionName = options?.preserveRevisionHistory
+      ? 'authorize_attachment_revision_removal'
+      : 'soft_delete_attachment';
+    const result = await this.callRpc<null>(functionName, { p_attachment_id: id });
+    return result.ok ? { ok: true, data: undefined } : result;
   }
   async createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>> {
     const authorized = await this.callRpc<{ bucket: string; path: string; expiresIn: number }>('create_attachment_download', { p_attachment_id: id });

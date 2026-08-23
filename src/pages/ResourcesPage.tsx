@@ -138,39 +138,43 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
         <MetricCard label={t('resources.summary.missingDamaged')} value={totals.missingDamaged} />
       </div>
 
-      <div className="filter-row">
-        <input
-          type="search"
-          aria-label={t('resources.searchPlaceholder')}
-          placeholder={t('resources.searchPlaceholder')}
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <label>
-          {t('resources.filterCategory')}
-          <select aria-label={t('resources.filterCategory')} value={category} onChange={(event) => setCategory(event.target.value as ResourceCategory | '')}>
-            <option value="">{t('resources.allCategories')}</option>
-            {resourceCategories.map((item) => <option key={item} value={item}>{t(resourceCategoryKeys[item])}</option>)}
-          </select>
-        </label>
-        <label>
-          {t('resources.filterStatus')}
-          <select aria-label={t('resources.filterStatus')} value={status} onChange={(event) => setStatus(event.target.value as ResourceStatus | '')}>
-            <option value="">{t('resources.allStatuses')}</option>
-            {resourceStatuses.map((item) => <option key={item} value={item}>{t(resourceStatusKeys[item])}</option>)}
-          </select>
-        </label>
-        <label>
-          {t('resources.filterOwner')}
-          <select aria-label={t('resources.filterOwner')} value={owner} onChange={(event) => setOwner(event.target.value)}>
-            <option value="">{t('resources.allOwners')}</option>
-            {owners.map(([ownerId, ownerName]) => <option key={ownerId} value={ownerId}>{ownerName}</option>)}
-          </select>
-        </label>
-        <button className="button button--secondary" type="button" onClick={() => setShowArchived((value) => !value)}>
-          {showArchived ? t('resources.hideArchived') : t('resources.showArchived')}
-        </button>
-      </div>
+      <section className="resources-filter-card" aria-label={t('resources.title')}>
+        <div className="resources-filter-card__search-row" data-testid="resources-search-row">
+          <input
+            type="search"
+            aria-label={t('resources.searchPlaceholder')}
+            placeholder={t('resources.searchPlaceholder')}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+        <div className="resources-filter-card__filter-row" data-testid="resources-filter-row">
+          <label>
+            {t('resources.filterCategory')}
+            <select aria-label={t('resources.filterCategory')} value={category} onChange={(event) => setCategory(event.target.value as ResourceCategory | '')}>
+              <option value="">{t('resources.allCategories')}</option>
+              {resourceCategories.map((item) => <option key={item} value={item}>{t(resourceCategoryKeys[item])}</option>)}
+            </select>
+          </label>
+          <label>
+            {t('resources.filterStatus')}
+            <select aria-label={t('resources.filterStatus')} value={status} onChange={(event) => setStatus(event.target.value as ResourceStatus | '')}>
+              <option value="">{t('resources.allStatuses')}</option>
+              {resourceStatuses.map((item) => <option key={item} value={item}>{t(resourceStatusKeys[item])}</option>)}
+            </select>
+          </label>
+          <label>
+            {t('resources.filterOwner')}
+            <select aria-label={t('resources.filterOwner')} value={owner} onChange={(event) => setOwner(event.target.value)}>
+              <option value="">{t('resources.allOwners')}</option>
+              {owners.map(([ownerId, ownerName]) => <option key={ownerId} value={ownerId}>{ownerName}</option>)}
+            </select>
+          </label>
+          <button className="button button--secondary" type="button" onClick={() => setShowArchived((value) => !value)}>
+            {showArchived ? t('resources.hideArchived') : t('resources.showArchived')}
+          </button>
+        </div>
+      </section>
 
       {loading ? (
         <p role="status">{t('common.loading')}</p>
