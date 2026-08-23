@@ -33,13 +33,17 @@ insert into public.project_members (organization_id, project_id, profile_id) val
 insert into public.objectives (id, organization_id, project_id, owner_id, title, classification, start_date, due_date) values
   ('74000000-0000-0000-0000-000000000001', '72000000-0000-0000-0000-000000000001', '73000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000001', 'Storage Objective', 'confidential', current_date, current_date + 1);
 insert into public.daily_reports (id, organization_id, author_id, project_id, objective_id, report_date, status, classification) values
-  ('75000000-0000-0000-0000-000000000001', '72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000001', '73000000-0000-0000-0000-000000000001', '74000000-0000-0000-0000-000000000001', current_date, 'submitted', 'confidential');
+  ('75000000-0000-0000-0000-000000000001', '72000000-0000-0000-0000-000000000001', '71000000-0000-0000-0000-000000000001', '73000000-0000-0000-0000-000000000001', '74000000-0000-0000-0000-000000000001', (timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 
+create temporary table storage_upload_session (id uuid not null);
+insert into storage_upload_session (id)
+select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'confidential')->>'sessionId')::uuid;
+
 select lives_ok(
-  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', 1, 'raw-proof.pdf', 'application/pdf', 128, 'confidential', '验收结果图')$$,
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'raw-proof.pdf', 'application/pdf', 128, 'confidential', '验收结果图')$$,
   'owner begins an entry attachment upload with an editable display name'
 );
 select is(
@@ -47,13 +51,13 @@ select is(
   '验收结果图',
   'entry attachment metadata persists the display name separately from the original filename'
 );
-delete from public.report_attachments where original_name = 'raw-proof.pdf';
+select public.soft_delete_attachment((select id from public.report_attachments where original_name = 'raw-proof.pdf'));
 
 select lives_ok(
-  $$select public.begin_attachment_upload('75000000-0000-0000-0000-000000000001', 'evidence.pdf', 'application/pdf', 10485760, 'confidential')$$,
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'evidence.pdf', 'application/pdf', 10485760, 'confidential', 'Evidence')$$,
   'owner begins an allowed 10 MB upload'
 );
-select matches((select storage_path from public.report_attachments limit 1), '^organization/72000000-0000-0000-0000-000000000001/reports/75000000-0000-0000-0000-000000000001/[0-9a-f-]+/evidence\.pdf$', 'server derives the storage path');
+select matches((select storage_path from public.report_attachments where original_name = 'evidence.pdf'), '^organization/72000000-0000-0000-0000-000000000001/reports/75000000-0000-0000-0000-000000000001/[0-9a-f-]+/evidence\.pdf$', 'server derives the storage path');
 select throws_ok(
   $$select public.begin_attachment_upload('75000000-0000-0000-0000-000000000001', 'payload.exe', 'application/x-msdownload', 12, 'internal')$$,
   '22023', 'Unsupported attachment type', 'forbidden MIME type is rejected'
@@ -82,9 +86,9 @@ select lives_ok(
   $$select public.finalize_attachment_upload((select id from public.report_attachments where state = 'pending'), 'sha256:first')$$,
   'owner finalizes an uploaded object'
 );
-select is((select state::text from public.report_attachments limit 1), 'uploaded', 'finalize marks metadata uploaded');
+select is((select state::text from public.report_attachments where original_name = 'evidence.pdf'), 'uploaded', 'finalize marks metadata uploaded');
 select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 1::bigint, 'owner can enumerate only the uploaded object');
-select is((public.create_attachment_download((select id from public.report_attachments limit 1))->>'path'), (select storage_path from public.report_attachments limit 1), 'authorized owner receives a verified download path');
+select is((public.create_attachment_download((select id from public.report_attachments where original_name = 'evidence.pdf'))->>'path'), (select storage_path from public.report_attachments where original_name = 'evidence.pdf'), 'authorized owner receives a verified download path');
 
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000002', true);
 select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 0::bigint, 'project member without a scoped block cannot enumerate the object');
@@ -97,23 +101,22 @@ select is((select count(*) from storage.objects where bucket_id = 'report-attach
 
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 select lives_ok(
-  $$select public.replace_attachment((select id from public.report_attachments where state = 'uploaded'), 'replacement.pdf', 'application/pdf', 128, 'confidential')$$,
-  'owner begins replacement without exposing a caller path'
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'mismatch.pdf', 'application/pdf', 128, 'confidential', 'Mismatch')$$,
+  'owner begins a second session-authorized upload without exposing a caller path'
 );
 insert into storage.objects (bucket_id, name, owner_id, metadata)
-select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size)
-from public.report_attachments where state = 'pending';
-select public.finalize_attachment_upload((select id from public.report_attachments where state = 'pending'), 'sha256:replacement');
-select results_eq(
-  $$select state::text, count(*) from public.report_attachments group by state order by state::text$$,
-  $$values ('replaced'::text, 1::bigint), ('uploaded'::text, 1::bigint)$$,
-  'replacement swaps metadata only after new object finalizes'
+select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size - 1)
+from public.report_attachments where original_name = 'mismatch.pdf';
+select throws_ok(
+  $$select public.finalize_attachment_upload((select id from public.report_attachments where original_name = 'mismatch.pdf'), 'sha256:mismatch')$$,
+  '22023', 'Uploaded object metadata does not match attachment',
+  'finalization still rejects an object whose MIME type or byte size differs from its server-issued metadata'
 );
 select lives_ok(
   $$select public.soft_delete_attachment((select id from public.report_attachments where state = 'uploaded'))$$,
   'owner soft-deletes uploaded metadata before object cleanup'
 );
-select is((select count(*) from public.report_attachments where state = 'deleted'), 1::bigint, 'soft deletion hides the current attachment');
+select is((select state::text from public.report_attachments where original_name = 'evidence.pdf'), 'deleted', 'soft deletion hides the current attachment');
 
 select * from finish();
 rollback;
