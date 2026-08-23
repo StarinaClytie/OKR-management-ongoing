@@ -70,6 +70,7 @@ declare
   target_org uuid;
   target_report public.daily_reports%rowtype;
   target_session_id uuid;
+  resumable_session_id uuid;
   business_date date := (timezone('Asia/Shanghai', now()))::date;
 begin
   target_org := private.current_organization_id();
@@ -98,9 +99,9 @@ begin
     raise exception 'Daily report is locked' using errcode = '42501';
   end if;
 
-  -- A new edit session supersedes every active session for this report. Lock
-  -- the rows first so concurrent starts serialize: the later caller retires
-  -- the earlier caller's incomplete work before becoming the sole active one.
+  -- Lock every active session before deciding whether a refresh can resume a
+  -- recoverable one. A session with finalized uploads remains authoritative:
+  -- returning it keeps its attachment identities submittable after reload.
   perform 1
   from public.daily_report_upload_sessions session
   where session.organization_id = target_org
@@ -108,6 +109,24 @@ begin
     and session.author_id = auth.uid()
     and session.status = 'active'
   for update;
+
+  select session.id into resumable_session_id
+  from public.daily_report_upload_sessions session
+  where session.organization_id = target_org
+    and session.report_id = target_report.id
+    and session.author_id = auth.uid()
+    and session.status = 'active'
+    and exists (
+      select 1
+      from public.report_attachments attachment
+      where attachment.upload_session_id = session.id
+        and attachment.organization_id = target_org
+        and attachment.report_id = target_report.id
+        and attachment.uploader_id = auth.uid()
+        and attachment.state = 'uploaded'
+    )
+  order by session.created_at desc, session.id desc
+  limit 1;
 
   update public.report_attachments attachment
   set state = 'deleted'
@@ -122,14 +141,20 @@ begin
         and session.report_id = target_report.id
         and session.author_id = auth.uid()
         and session.status = 'active'
-    );
+    )
+    and (resumable_session_id is null or attachment.upload_session_id <> resumable_session_id);
 
   update public.daily_report_upload_sessions
   set status = 'abandoned', abandoned_at = timezone('utc', now())
   where organization_id = target_org
     and report_id = target_report.id
     and author_id = auth.uid()
-    and status = 'active';
+    and status = 'active'
+    and (resumable_session_id is null or id <> resumable_session_id);
+
+  if resumable_session_id is not null then
+    return jsonb_build_object('reportId', target_report.id, 'sessionId', resumable_session_id);
+  end if;
 
   insert into public.daily_report_upload_sessions (organization_id, report_id, author_id)
   values (target_org, target_report.id, auth.uid())

@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(29);
+select plan(30);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -50,6 +50,7 @@ create temporary table upload_lifecycle_ids (
   over_clearance_attachment_id uuid,
   over_clearance_path text,
   associated_session_id uuid,
+  resumed_session_id uuid,
   associated_attachment_id uuid,
   associated_path text,
   locked_session_id uuid,
@@ -281,6 +282,13 @@ select public.finalize_attachment_upload(
   (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null),
   'sha256:associated'
 );
+insert into upload_lifecycle_ids (resumed_session_id)
+select (public.begin_daily_report_upload_session((timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal')->>'sessionId')::uuid;
+select is(
+  (select resumed_session_id::text from upload_lifecycle_ids where resumed_session_id is not null),
+  (select associated_session_id::text from upload_lifecycle_ids where associated_session_id is not null),
+  'repeated begin resumes the active session that owns finalized uploads'
+);
 select lives_ok(
   $$select * from public.save_daily_report(
     (timezone('Asia/Shanghai', now()))::date, 'submitted', 'internal',
@@ -293,7 +301,7 @@ select lives_ok(
         'displayName', 'Associated upload', 'classification', 'internal'
       ))
     )),
-    (select associated_session_id from upload_lifecycle_ids where associated_session_id is not null),
+    (select resumed_session_id from upload_lifecycle_ids where resumed_session_id is not null),
     '[]'::jsonb
   )$$,
   'a finalized current-session attachment is associated by explicit block metadata'
