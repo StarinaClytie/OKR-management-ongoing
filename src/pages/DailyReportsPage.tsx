@@ -227,6 +227,23 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     return result.ok;
   }
 
+  async function openDailyReportEditor(report: DailyReport, button: HTMLButtonElement) {
+    const editable = can(currentUser, 'daily_report.edit', report).allowed
+      && canEditDailyReport(currentUserId, report, currentBusinessDate());
+    if (!editable) {
+      setNotice('daily.reportLocked');
+      return;
+    }
+    setNotice(null);
+    setEditingReport(report);
+    setIsAuthoring(true);
+    authoringButtonRef.current = button;
+    if (dataRepository.mode === 'supabase') {
+      const history = await dataRepository.listReportRevisions(report.id);
+      setRevisions(history.ok ? history.data as RevisionSummary[] : []);
+    }
+  }
+
   const reportContent = (report: DailyReport) => {
     const blocks = report.blocks ?? [];
     if (blocks.length > 0) {
@@ -254,7 +271,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
     { key: 'content', label: t('daily.content'), render: (report: DailyReport) => reportContent(report) },
     { key: 'hours', label: t('daily.hours'), render: (report: DailyReport) => t('common.hours', { count: report.hours }) },
     { key: 'status', label: t('table.status'), render: (report: DailyReport) => <StatusBadge status={report.status} /> },
-    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed && canEditDailyReport(currentUserId, report, businessDate) ? <button type="button" className="button button--secondary" onClick={async (event) => { setNotice(null); setEditingReport(report); setIsAuthoring(true); authoringButtonRef.current = event.currentTarget; if (dataRepository.mode === 'supabase') { const history = await dataRepository.listReportRevisions(report.id); setRevisions(history.ok ? history.data as RevisionSummary[] : []); } }}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
+    ...(showOwnActions ? [{ key: 'own-actions', label: t('okr.actions'), render: (report: DailyReport) => can(currentUser, 'daily_report.edit', report).allowed && canEditDailyReport(currentUserId, report, businessDate) ? <button type="button" className="button button--secondary" onClick={(event) => void openDailyReportEditor(report, event.currentTarget)}>{t('daily.editMine')}</button> : <span>{t('daily.locked')}</span> }] : []),
   ];
 
   return (

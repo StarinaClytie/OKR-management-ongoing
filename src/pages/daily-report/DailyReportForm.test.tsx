@@ -53,6 +53,16 @@ describe('DailyReportForm', () => {
     expect(screen.getByRole('button', { name: '提交日报' })).toBeEnabled();
   });
 
+  it('keeps submission disabled and explains the incomplete attachment when an uploaded state has no attachment id', () => {
+    const draft = completeDraft('uploaded');
+    draft.blocks[0]!.evidence[0]!.attachmentId = undefined;
+
+    render(<DailyReportForm initialDraft={draft} ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
+
+    expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
+    expect(screen.getByText('还有 1 个附件未完成上传。')).toBeVisible();
+  });
+
   it('keeps submission disabled until a persisted over-clearance attachment is authorized for removal', () => {
     const draft = completeDraft('uploaded');
     draft.blocks[0]!.evidence[0]!.classification = 'confidential';
@@ -86,6 +96,29 @@ describe('DailyReportForm', () => {
     expect(beginDailyReportUploadSession).toHaveBeenCalledOnce();
     expect(uploadDailyReportAttachment).toHaveBeenCalledOnce();
     expect(screen.getAllByDisplayValue('proof.pdf')).toHaveLength(1);
+  });
+
+  it.each([
+    ['locked', '日报已锁定'],
+    ['network', '网络错误，请检查连接后重试。'],
+  ] as const)('keeps the %s error actionable when upload session creation fails', async (code, expectedMessage) => {
+    const user = userEvent.setup();
+    const beginDailyReportUploadSession = vi.fn(async () => ({ ok: false as const, error: { code, message: '请求未完成，请稍后重试' } }));
+    const uploadDailyReportAttachment = vi.fn();
+    render(<DailyReportForm
+      initialDraft={completeDraft()}
+      ownedKeyResults={ownedKeyResults}
+      objectives={objectives}
+      reportDate="2026-08-23"
+      uploadRepository={uploadRepository({ beginDailyReportUploadSession, uploadDailyReportAttachment })}
+      onCancel={vi.fn()}
+      onSubmit={vi.fn().mockReturnValue({ ok: true })}
+    />);
+
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'session.pdf', { type: 'application/pdf' }));
+
+    expect(await screen.findByText(expectedMessage)).toBeVisible();
+    expect(uploadDailyReportAttachment).not.toHaveBeenCalled();
   });
 
   it('retries the same failed draft item without duplicating it', async () => {

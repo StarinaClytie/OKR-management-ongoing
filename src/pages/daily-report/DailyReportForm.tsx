@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
-import { dailyReportUploadsComplete, validateDailyReportDraft, type DailyEvidenceDraft, type DailyOkrBlockDraft, type DailyReportDraft } from '../../domain/dailyEntry';
+import { dailyEvidenceIsUploaded, dailyReportUploadsComplete, validateDailyReportDraft, type DailyEvidenceDraft, type DailyOkrBlockDraft, type DailyReportDraft } from '../../domain/dailyEntry';
 import type { Classification, KeyResult, Objective } from '../../domain/types';
 import { DailyReportEvidence } from './DailyReportEvidence';
 import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';
 import type { LocalizedMessage, MessageKey } from '../../i18n/messages';
-import type { DailyReportUploadSession, OkrRepository } from '../../data/types';
+import type { DailyReportUploadSession, OkrRepository, RepositoryErrorCode } from '../../data/types';
 import { allowedClassifications } from '../../domain/dailyReportPolicy';
+import { repositoryErrorKey } from '../../i18n/repositoryErrors';
 
 export type DailyReportSubmitResult =
   | { ok: true }
@@ -91,6 +92,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   const uploadSessionRef = useRef<DailyReportUploadSession | undefined>(uploadSession);
   const uploadSessionPromiseRef = useRef<Promise<DailyReportUploadSession | undefined> | undefined>(undefined);
+  const uploadSessionErrorRef = useRef<RepositoryErrorCode | undefined>(undefined);
   const uploadControllersRef = useRef(new Map<string, AbortController>());
   const uploadPromisesRef = useRef(new Map<string, Promise<void>>());
   const removingEvidenceIdsRef = useRef(new Set<string>());
@@ -120,7 +122,11 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
     if (!uploadRepository || !reportDate) return undefined;
     if (!uploadSessionPromiseRef.current) {
       uploadSessionPromiseRef.current = uploadRepository.beginDailyReportUploadSession({ reportDate, status: 'submitted', classification: draft.classification }).then((result) => {
-        if (!result.ok) return undefined;
+        if (!result.ok) {
+          uploadSessionErrorRef.current = result.error.code;
+          return undefined;
+        }
+        uploadSessionErrorRef.current = undefined;
         uploadSessionRef.current = result.data;
         return result.data;
       }).finally(() => { uploadSessionPromiseRef.current = undefined; });
@@ -134,7 +140,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
       setActiveMutations((count) => count + 1);
       const session = await ensureUploadSession();
       if (!session) {
-        patchEvidence(blockId, item.id, { uploadState: 'failed', uploadProgress: 0, error: 'Upload session unavailable' });
+        patchEvidence(blockId, item.id, { uploadState: 'failed', uploadProgress: 0, error: uploadSessionErrorRef.current ?? 'unknown' });
         return;
       }
       if (removingEvidenceIdsRef.current.has(item.id)) return;
@@ -156,7 +162,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
         }),
       });
       if (result.ok) finalizedAttachmentIdsRef.current.set(item.id, result.data.attachmentId);
-      else patchEvidence(blockId, item.id, { uploadState: 'failed', attachmentId: undefined, error: result.error.message });
+      else patchEvidence(blockId, item.id, { uploadState: 'failed', attachmentId: undefined, error: result.error.code });
       uploadControllersRef.current.delete(item.id);
     })().finally(() => {
       setActiveMutations((count) => Math.max(0, count - 1));
@@ -183,7 +189,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const lastBlockComplete = validateDailyReportDraft({ blocks: [draft.blocks[draft.blocks.length - 1]!], classification: draft.classification }, validationOptions).length === 0;
 
   const submit = async () => {
-    if (isSubmitting || activeMutations > 0 || !dailyReportUploadsComplete(draft) || !evidenceWithinClearance) return;
+    if (isSubmitting || activeMutations > 0 || !uploadsComplete || !evidenceWithinClearance) return;
     setShowSubmitErrors(true);
     const issues = validateDailyReportDraft(draft, validationOptions);
     if (issues.length > 0) {
@@ -198,7 +204,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
     const session = uploadRepository && reportDate ? await ensureUploadSession() : uploadSessionRef.current;
     if (uploadRepository && reportDate && !session) {
       setIsSubmitting(false);
-      setStatus({ key: 'common.requestFailed' });
+      setStatus({ key: repositoryErrorKey(uploadSessionErrorRef.current ?? 'unknown') });
       return;
     }
     const result = session ? await onSubmit(draft, session) : await onSubmit(draft);
@@ -232,7 +238,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
 
       const session = uploadSessionRef.current ?? (uploadRepository && reportDate ? await ensureUploadSession() : undefined);
       if (uploadRepository && reportDate && !session) {
-        setStatus({ key: 'common.requestFailed' });
+        setStatus({ key: repositoryErrorKey(uploadSessionErrorRef.current ?? 'unknown') });
         return;
       }
       if (session && uploadRepository) {
@@ -292,7 +298,9 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const formIsValid = validateDailyReportDraft(draft, validationOptions).length === 0;
   const allowedEvidenceClassifications = allowedClassifications(clearance);
   const evidenceWithinClearance = draft.blocks.every((block) => block.evidence.every((item) => allowedEvidenceClassifications.includes(item.classification)));
-  const submitDisabled = !formIsValid || !dailyReportUploadsComplete(draft) || !evidenceWithinClearance || activeMutations > 0 || isSubmitting;
+  const incompleteAttachments = draft.blocks.flatMap((block) => block.evidence).filter((item) => !dailyEvidenceIsUploaded(item));
+  const uploadsComplete = dailyReportUploadsComplete(draft);
+  const submitDisabled = !formIsValid || !uploadsComplete || !evidenceWithinClearance || activeMutations > 0 || isSubmitting;
 
   return (
     <form className="daily-entry-layout" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
@@ -413,8 +421,9 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
 
         <div className="daily-form-actions">
           <button type="button" className="button button--secondary" disabled={activeMutations > 0 || isSubmitting} onClick={() => void cancel()}>{t('common.cancel')}</button>
-          <button type="submit" className="button button--primary" disabled={submitDisabled}>{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
+          <button type="submit" className="button button--primary" disabled={submitDisabled} aria-describedby={incompleteAttachments.length ? 'daily-upload-incomplete' : undefined}>{mode === 'edit' ? t('daily.saveChanges') : t('daily.submit')}</button>
         </div>
+        {incompleteAttachments.length > 0 && <p id="daily-upload-incomplete" className="daily-form-actions__hint">{t('daily.uploadIncomplete', { count: incompleteAttachments.length })}</p>}
         {status && <p className="page-notice" role="status">{t(status.key, status.values)}</p>}
       </div>
     </form>

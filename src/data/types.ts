@@ -53,7 +53,7 @@ export interface DashboardData {
 }
 
 export type AppMode = 'demo' | 'supabase';
-export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'network' | 'unknown';
+export type RepositoryErrorCode = 'unauthorized' | 'not_found' | 'validation' | 'conflict' | 'duplicate' | 'date_conflict' | 'locked' | 'clearance' | 'storage' | 'network' | 'unknown';
 
 export type RepositoryResult<T> =
   | { ok: true; data: T }

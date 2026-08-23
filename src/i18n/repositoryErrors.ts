@@ -8,6 +8,9 @@ const errorKeys: Record<RepositoryErrorCode, MessageKey> = {
   conflict: 'common.requestConflict',
   duplicate: 'common.requestDuplicate',
   date_conflict: 'projects.dateConflict',
+  locked: 'daily.reportLocked',
+  clearance: 'daily.attachmentClearance',
+  storage: 'daily.uploadStorageFailed',
   network: 'common.requestFailed',
   unknown: 'common.requestFailed',
 };

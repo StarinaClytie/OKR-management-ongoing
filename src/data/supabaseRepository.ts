@@ -17,8 +17,13 @@ interface TableQuery {
 
 function failure<T>(error: { code?: string; message: string } | null): Extract<RepositoryResult<T>, { ok: false }> {
   const source = error?.code ?? '';
+  const message = error?.message.toLowerCase() ?? '';
   const code: RepositoryErrorCode = source === '42501' || source === 'PGRST301'
-    ? 'unauthorized'
+    ? message.includes('locked')
+      ? 'locked'
+      : message.includes('clearance') || message.includes('classification')
+        ? 'clearance'
+        : 'unauthorized'
     : source === '40001'
       ? 'conflict'
       : source === '23505'
@@ -31,6 +36,12 @@ function failure<T>(error: { code?: string; message: string } | null): Extract<R
               ? 'network'
               : 'unknown';
   return { ok: false, error: { code, message: code === 'unauthorized' ? '无权访问请求的资源' : '请求未完成，请稍后重试' } };
+}
+
+function storageTransferFailure<T>(error: unknown): Extract<RepositoryResult<T>, { ok: false }> {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  const code: RepositoryErrorCode = /network|fetch|offline|connection|timeout/.test(message) ? 'network' : 'storage';
+  return { ok: false, error: { code, message: '请求未完成，请稍后重试' } };
 }
 
 function notFound<T>(): RepositoryResult<T> {
@@ -523,7 +534,7 @@ export class SupabaseOkrRepository implements OkrRepository {
     } catch (error) {
       const cleanup = await this.cleanupUploadAttempt([pending.data]);
       const result = cleanup.ok
-        ? failure<{ attachmentId: string }>({ message: error instanceof Error ? error.message : 'Storage upload failed' })
+        ? storageTransferFailure<{ attachmentId: string }>(error)
         : cleanup;
       input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, error: result.error.message });
       return result;

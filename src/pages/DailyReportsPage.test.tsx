@@ -186,11 +186,47 @@ describe('DailyReportsPage', () => {
     await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'page.pdf', { type: 'application/pdf' }));
 
     await waitFor(() => expect(uploadDailyReportAttachment).toHaveBeenCalledOnce());
+    expect(screen.getByRole('progressbar', { name: 'page.pdf 上传进度' })).toHaveValue(100);
+    expect(screen.getByText('上传完成')).toBeVisible();
+    expect(screen.getByText('100%')).toBeVisible();
     expect(beginDailyReportUploadSession).toHaveBeenCalledWith({
       reportDate: currentBusinessDate(), status: 'submitted', classification: 'internal',
     });
     await user.click(screen.getByRole('button', { name: '移除 page.pdf' }));
     expect(removeAttachment).toHaveBeenCalledWith('attachment-new', { preserveRevisionHistory: false });
+  });
+
+  it.each([
+    ['clearance', '附件密级超过权限'],
+    ['storage', '附件存储失败，请重试。'],
+    ['network', '网络错误，请检查连接后重试。'],
+    ['locked', '日报已锁定'],
+  ] as const)('shows actionable upload error copy for %s', async (error, expectedMessage) => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-employee');
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data })),
+      beginDailyReportUploadSession: vi.fn(async () => ({ ok: true as const, data: { reportId: 'report-upload-error', sessionId: 'session-upload-error' } })),
+      uploadDailyReportAttachment: vi.fn(async () => ({ ok: false as const, error: { code: error, message: '请求未完成，请稍后重试' } })),
+      abandonDailyReportUploadSession: vi.fn(async () => ({ ok: true as const, data: undefined })),
+      adoptDailyReportAttachments: vi.fn(async () => ({ ok: true as const, data: undefined })),
+      submitDailyReportSession: vi.fn(async () => ({ ok: true as const, data: { id: 'report-upload-error', revision: 1 } })),
+      removeAttachment: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '填写今日日报' }));
+    await user.upload(screen.getByLabelText('选择成果附件'), new File(['proof'], 'error.pdf', { type: 'application/pdf' }));
+
+    expect(await screen.findByText(expectedMessage)).toBeVisible();
   });
 
   it.each([

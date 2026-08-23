@@ -136,6 +136,26 @@ describe('SupabaseOkrRepository', () => {
     expect(rpc).toHaveBeenCalledWith('begin_entry_attachment_upload', expect.objectContaining({ p_display_name: `Display ${fileName}` }));
   });
 
+  it.each([
+    ['Daily report is locked', 'locked'],
+    ['Attachment classification exceeds user clearance', 'clearance'],
+  ])('preserves the upload failure category for %s', async (message, expectedCode) => {
+    const { client } = createClient({ rpcError: { code: '42501', message } });
+    const updates: Array<{ state: string; error?: string }> = [];
+
+    const result = await new SupabaseOkrRepository(client).uploadDailyReportAttachment({
+      session: { reportId: 'report-1', sessionId: 'session-1' },
+      file: new File(['proof'], 'proof.pdf', { type: 'application/pdf' }),
+      entryPosition: 1,
+      label: 'proof.pdf',
+      classification: 'internal',
+      onChange: (update) => updates.push(update),
+    });
+
+    expect(result).toEqual({ ok: false, error: { code: expectedCode, message: '请求未完成，请稍后重试' } });
+    expect(updates.at(-1)).toEqual({ state: 'failed', progress: 0, error: '请求未完成，请稍后重试' });
+  });
+
   it('submits a session with finalized attachment identities and no file transfer', async () => {
     vi.mocked(uploadStorageObject).mockClear();
     const { client, rpc } = createClient({ rpcData: [{ report_id: 'report-1', revision: 3 }] });
@@ -206,6 +226,25 @@ describe('SupabaseOkrRepository', () => {
     ]);
     expect(remove).toHaveBeenCalledWith(['organization/o/reports/r/failed.pdf']);
     expect([...failedUpdates].reverse().find((update) => update.state === 'failed')).toEqual({ state: 'failed', progress: 0, attachmentId: undefined, error: '请求未完成，请稍后重试' });
+  });
+
+  it('classifies a non-network storage transfer failure for actionable upload copy', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { id: 'attachment-storage', path: 'organization/o/reports/r/storage.pdf', bucket: 'report-attachments' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'attachment-storage', path: 'organization/o/reports/r/storage.pdf', bucket: 'report-attachments' }, error: null });
+    const { client } = createClient();
+    client.rpc = rpc;
+    client.auth.getSession = vi.fn(async () => ({ data: { session: { user: { id: 'profile-1' }, access_token: 'access-token' } }, error: null }));
+    vi.mocked(uploadStorageObject).mockRejectedValueOnce(new Error('storage service unavailable'));
+
+    await expect(new SupabaseOkrRepository(client).uploadDailyReportAttachment({
+      session: { reportId: 'report-1', sessionId: 'session-1' },
+      file: new File(['proof'], 'proof.pdf', { type: 'application/pdf' }),
+      entryPosition: 1,
+      label: 'proof.pdf',
+      classification: 'internal',
+      onChange: vi.fn(),
+    })).resolves.toEqual({ ok: false, error: { code: 'storage', message: '请求未完成，请稍后重试' } });
   });
 
   it('propagates metadata cleanup failure instead of hiding an orphaned upload row', async () => {

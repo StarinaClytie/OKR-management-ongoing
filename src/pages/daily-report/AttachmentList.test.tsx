@@ -8,6 +8,23 @@ it.each([1, 50, 100])('renders real progress value %s in the matching attachment
   expect(screen.getByRole('progressbar', { name: 'proof.pdf 上传进度' })).toHaveValue(progress);
 });
 
+it('uses localized upload states and a visible percentage for each attachment', () => {
+  render(<AttachmentList items={[
+    { id: 'waiting', label: 'waiting.pdf', kind: 'file', classification: 'internal', uploadState: 'selected', uploadProgress: 0 },
+    { id: 'uploading', label: 'uploading.pdf', kind: 'file', classification: 'internal', uploadState: 'uploading', uploadProgress: 42 },
+    { id: 'verifying', label: 'verifying.pdf', kind: 'file', classification: 'internal', uploadState: 'verifying', uploadProgress: 100 },
+    { id: 'complete', label: 'complete.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100 },
+    { id: 'failed', label: 'failed.pdf', kind: 'file', classification: 'internal', uploadState: 'failed', uploadProgress: 0 },
+  ]} />);
+
+  expect(screen.getByText('等待上传')).toBeVisible();
+  expect(screen.getByText('上传中 42%')).toBeVisible();
+  expect(screen.getByText('服务器校验中')).toBeVisible();
+  expect(screen.getByText('上传完成')).toBeVisible();
+  expect(screen.getByText('上传失败')).toBeVisible();
+  expect(screen.getAllByText('100%')).toHaveLength(2);
+});
+
 it('shows progress, retry, replace, remove, and signed-download actions', async () => {
   const user = userEvent.setup(); const onRetry = vi.fn(); const onRemove = vi.fn(); const onDownload = vi.fn(); const onReplace = vi.fn();
   const { rerender } = render(<AttachmentList items={[{ id: 'a', label: 'evidence.pdf', kind: 'file', classification: 'confidential', uploadState: 'failed', uploadProgress: 40, error: '网络中断' }]} onRetry={onRetry} onRemove={onRemove} onDownload={onDownload} onReplace={onReplace} />);

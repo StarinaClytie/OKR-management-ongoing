@@ -4,6 +4,7 @@ import { attachments, documents } from '../mocks/security';
 import { mockData } from '../mocks/repository';
 import { users } from '../mocks/users';
 import { getDailyReportPermissionScopes, type ActiveShare, type SystemPermissionScope } from '../domain/permissions';
+import { currentBusinessDate } from '../domain/progressStatus';
 import { can, getUserPermissionScope } from './permissionService';
 
 const admin = users.find((user) => user.id === 'user-administrator')!;
@@ -79,9 +80,13 @@ describe('can — capability, ownership, and field-level access', () => {
     expect(can(projectLeader, 'okr.update', memberOwnedKr).allowed).toBe(false);
   });
 
-  it('allows project leaders to author their own reports and review but never edit member bodies', () => {
+  it('allows owners to edit only unconfirmed reports from the current business date', () => {
+    const editableReport = { ...leaderReport, date: currentBusinessDate(), status: 'submitted' as const };
+
     expect(can(projectLeader, 'daily_report.create', leaderReport).allowed).toBe(true);
-    expect(can(projectLeader, 'daily_report.edit', leaderReport).allowed).toBe(true);
+    expect(can(projectLeader, 'daily_report.edit', editableReport).allowed).toBe(true);
+    expect(can(projectLeader, 'daily_report.edit', { ...editableReport, status: 'confirmed' }).allowed).toBe(false);
+    expect(can(projectLeader, 'daily_report.edit', { ...editableReport, date: '2026-08-20' }).allowed).toBe(false);
     expect(can(projectLeader, 'daily_report.review', memberReport).allowed).toBe(true);
     expect(can(projectLeader, 'daily_report.edit', memberReport).allowed).toBe(false);
   });

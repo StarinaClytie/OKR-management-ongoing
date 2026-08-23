@@ -1,5 +1,7 @@
 import type { Action, ActiveShare, PermissionDecision, PermissionResource, ResourceType, UserPermissionScope } from '../domain/permissions';
 import type { Classification, CollaborationRelation, Objective, OrganizationRelation, ProjectMembership, Role, User, WorkloadEntry } from '../domain/types';
+import { canEditDailyReport } from '../domain/dailyReportPolicy';
+import { currentBusinessDate } from '../domain/progressStatus';
 
 export type { Action, PermissionDecision, PermissionResource } from '../domain/permissions';
 
@@ -476,7 +478,9 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
   }
 
   if (action === 'daily_report.edit') {
-    return context.ownerId === user.id && hasProjectRole(user.id, context.projectId)
+    const editable = 'date' in resource && 'status' in resource && 'authorId' in resource
+      && canEditDailyReport(user.id, resource, currentBusinessDate());
+    return editable && hasProjectRole(user.id, context.projectId)
       ? allow('可管理本人日报')
       : deny();
   }
