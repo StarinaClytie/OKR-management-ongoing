@@ -181,7 +181,10 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   }
 
   async function removePersistedAttachment(attachmentId: string) {
-    const result = await dataRepository.removeAttachment(attachmentId);
+    // Persisted evidence belongs to an immutable revision. This call performs
+    // server-side authorization only; omission from the next save detaches it
+    // without soft-deleting the historical file or its prior associations.
+    const result = await dataRepository.removeAttachment(attachmentId, { preserveRevisionHistory: true });
     if (!result.ok) setNotice('common.requestFailed');
     return result.ok;
   }

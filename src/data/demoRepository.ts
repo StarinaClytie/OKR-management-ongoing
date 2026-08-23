@@ -362,6 +362,6 @@ export class DemoOkrRepository implements OkrRepository {
   async beginAttachmentUpload(_input: Record<string, unknown>): Promise<RepositoryResult<import('./types').AttachmentUploadTarget>> { return unsupported<import('./types').AttachmentUploadTarget>(); }
   async finalizeAttachmentUpload(_id: string, _checksum?: string): Promise<RepositoryResult<unknown>> { return unsupported<unknown>(); }
   async replaceAttachment(_id: string, _input: Record<string, unknown>): Promise<RepositoryResult<unknown>> { return unsupported<unknown>(); }
-  async removeAttachment(_id: string): Promise<RepositoryResult<void>> { return unsupported<void>(); }
+  async removeAttachment(_id: string, _options?: { preserveRevisionHistory?: boolean }): Promise<RepositoryResult<void>> { return unsupported<void>(); }
   async createAttachmentDownload(_id: string): Promise<RepositoryResult<{ url: string }>> { return unsupported<{ url: string }>(); }
 }

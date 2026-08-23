@@ -100,13 +100,24 @@ describe('DailyReportsPage', () => {
     await user.type(screen.getByLabelText('成果 1'), '保留附件新名称');
     await user.selectOptions(screen.getByLabelText('成果 1 密级'), 'confidential');
     await user.click(screen.getAllByRole('button', { name: '移除' })[1]!);
-    expect(removeAttachment).toHaveBeenCalledWith('attachment-removed');
+    expect(removeAttachment).toHaveBeenCalledWith('attachment-removed', { preserveRevisionHistory: true });
     expect(screen.queryByDisplayValue('移除附件')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    await user.click(screen.getByRole('button', { name: '编辑我的日报' }));
+    expect(screen.getByDisplayValue('保留附件')).toBeVisible();
+    expect(screen.getByDisplayValue('移除附件')).toBeVisible();
+
+    await user.clear(screen.getByLabelText('成果 1'));
+    await user.type(screen.getByLabelText('成果 1'), '保留附件新名称');
+    await user.selectOptions(screen.getByLabelText('成果 1 密级'), 'confidential');
+    await user.click(screen.getAllByRole('button', { name: '移除' })[1]!);
 
     await user.click(screen.getByRole('button', { name: '保存日报修改' }));
     expect(saveDailyReport).toHaveBeenCalledWith(expect.objectContaining({ blocks: [expect.objectContaining({
       attachments: [{ attachmentId: 'attachment-retained', displayName: '保留附件新名称', classification: 'confidential' }],
     })] }), []);
+    expect(removeAttachment).toHaveBeenCalledTimes(2);
     anchorClick.mockRestore();
   });
 });

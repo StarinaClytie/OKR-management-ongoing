@@ -378,6 +378,15 @@ describe('SupabaseOkrRepository', () => {
     expect(createSignedUrl).toHaveBeenCalledWith('organization/o/reports/r/a.pdf', 60);
   });
 
+  it('authorizes a revision detach without soft-deleting immutable evidence', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const result = await new SupabaseOkrRepository(client).removeAttachment('attachment-1', { preserveRevisionHistory: true });
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(rpc).toHaveBeenCalledWith('authorize_attachment_revision_removal', { p_attachment_id: 'attachment-1' });
+    expect(rpc).not.toHaveBeenCalledWith('soft_delete_attachment', expect.anything());
+  });
+
   it('does not write a report revision until every selected attachment is uploaded and finalized', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({ data: 'report-shell', error: null })

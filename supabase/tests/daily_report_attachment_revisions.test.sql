@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(15);
+select plan(20);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -55,8 +55,23 @@ select lives_ok(
   'first submission creates revision-scoped associations for new uploads'
 );
 select is((select count(*) from public.report_attachment_revisions), 2::bigint, 'revision one retains both attachment associations');
+select is((select current_revision from public.daily_reports where report_date = current_date), 1, 'the first reload resolves revision one as current');
+select is(
+  (select count(*) from public.report_attachment_revisions rar join public.daily_report_revisions rr on rr.id = rar.revision_id join public.daily_reports dr on dr.id = rr.report_id where rr.revision_number = dr.current_revision),
+  2::bigint,
+  'the first reload returns both current-revision evidence associations'
+);
 
-select public.soft_delete_attachment((select id from public.report_attachments where original_name = 'remove.pdf'));
+select lives_ok(
+  $$select public.authorize_attachment_revision_removal((select id from public.report_attachments where original_name = 'remove.pdf'))$$,
+  'the persisted removal control authorizes a staged revision detach'
+);
+select is((select state::text from public.report_attachments where original_name = 'remove.pdf'), 'uploaded', 'staging removal does not mutate immutable evidence before save');
+select is(
+  (select count(*) from public.report_attachment_revisions rar join public.daily_report_revisions rr on rr.id = rar.revision_id join public.daily_reports dr on dr.id = rr.report_id where rr.revision_number = dr.current_revision),
+  2::bigint,
+  'cancel or reload before resubmit still returns both current-revision attachments'
+);
 select lives_ok(
   $$select * from public.save_daily_report(
     current_date, 'submitted', 'internal',
@@ -78,7 +93,11 @@ select lives_ok(
   'second submission carries retained evidence metadata into its new revision'
 );
 select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000002', true);
-select is((select count(*) from public.report_attachment_revisions), 0::bigint, 'a reader below the retained evidence classification cannot read association metadata');
+select is(
+  (select count(*) from public.report_attachment_revisions rar join public.daily_report_revisions rr on rr.id = rar.revision_id join public.daily_reports dr on dr.id = rr.report_id where rr.revision_number = dr.current_revision),
+  0::bigint,
+  'a reader below the retained current evidence classification cannot read current association metadata'
+);
 select throws_ok(
   $$select public.create_attachment_download((select id from public.report_attachments where original_name = 'retain.pdf'))$$,
   '42501', 'Attachment is not available',

@@ -97,6 +97,58 @@ where attachment.revision_id is not null
   and attachment.daily_okr_block_id is not null
 on conflict (revision_id, attachment_id) do nothing;
 
+-- Authorize staging an attachment's omission from the next revision without
+-- mutating the file or the still-current immutable revision. The following
+-- save_daily_report call makes the detach durable by omitting the association.
+create or replace function public.authorize_attachment_revision_removal(p_attachment_id uuid)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  target public.report_attachments%rowtype;
+begin
+  select attachment.* into target
+  from public.report_attachments attachment
+  join public.daily_reports report on report.id = attachment.report_id
+  where attachment.id = p_attachment_id
+    and attachment.organization_id = private.current_organization_id()
+    and attachment.uploader_id = auth.uid()
+    and attachment.state = 'uploaded'
+    and private.has_clearance(attachment.classification)
+    and report.author_id = auth.uid()
+    and report.status <> 'confirmed';
+  if not found then
+    raise exception 'Attachment is not available for revision removal' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1
+    from public.report_attachment_revisions association
+    join public.daily_report_revisions revision on revision.id = association.revision_id
+    join public.daily_reports report on report.id = revision.report_id
+    where association.attachment_id = target.id
+      and report.id = target.report_id
+      and revision.revision_number = report.current_revision
+  ) and not exists (
+    select 1
+    from public.daily_report_revisions revision
+    join public.daily_reports report on report.id = revision.report_id
+    where revision.id = target.revision_id
+      and report.id = target.report_id
+      and revision.revision_number = report.current_revision
+      and target.daily_okr_block_id is not null
+  ) then
+    raise exception 'Attachment is not part of the current report revision' using errcode = '42501';
+  end if;
+end;
+$$;
+
+revoke all on function public.authorize_attachment_revision_removal(uuid) from public, anon;
+grant execute on function public.authorize_attachment_revision_removal(uuid) to authenticated;
+
 create or replace function public.save_daily_report(
   p_report_date date,
   p_status public.report_status,

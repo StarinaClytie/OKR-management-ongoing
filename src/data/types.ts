@@ -461,6 +461,6 @@ export interface OkrRepository {
   beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>>;
   finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>>;
   replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>>;
-  removeAttachment(id: string): Promise<RepositoryResult<void>>;
+  removeAttachment(id: string, options?: { preserveRevisionHistory?: boolean }): Promise<RepositoryResult<void>>;
   createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>>;
 }

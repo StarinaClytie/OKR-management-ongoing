@@ -883,8 +883,12 @@ export class SupabaseOkrRepository implements OkrRepository {
   async replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>> {
     return this.callRpc('replace_attachment', { p_attachment_id: id, ...input });
   }
-  async removeAttachment(id: string): Promise<RepositoryResult<void>> {
-    return this.callRpc('soft_delete_attachment', { p_attachment_id: id });
+  async removeAttachment(id: string, options?: { preserveRevisionHistory?: boolean }): Promise<RepositoryResult<void>> {
+    const functionName = options?.preserveRevisionHistory
+      ? 'authorize_attachment_revision_removal'
+      : 'soft_delete_attachment';
+    const result = await this.callRpc<null>(functionName, { p_attachment_id: id });
+    return result.ok ? { ok: true, data: undefined } : result;
   }
   async createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>> {
     const authorized = await this.callRpc<{ bucket: string; path: string; expiresIn: number }>('create_attachment_download', { p_attachment_id: id });
