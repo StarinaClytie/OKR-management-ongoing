@@ -59,15 +59,15 @@ select lives_ok(
 );
 select matches((select storage_path from public.report_attachments where original_name = 'evidence.pdf'), '^organization/72000000-0000-0000-0000-000000000001/reports/75000000-0000-0000-0000-000000000001/[0-9a-f-]+/evidence\.pdf$', 'server derives the storage path');
 select throws_ok(
-  $$select public.begin_attachment_upload('75000000-0000-0000-0000-000000000001', 'payload.exe', 'application/x-msdownload', 12, 'internal')$$,
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'payload.exe', 'application/x-msdownload', 12, 'internal', 'Payload')$$,
   '22023', 'Unsupported attachment type', 'forbidden MIME type is rejected'
 );
 select throws_ok(
-  $$select public.begin_attachment_upload('75000000-0000-0000-0000-000000000001', 'empty.pdf', 'application/pdf', 0, 'internal')$$,
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'empty.pdf', 'application/pdf', 0, 'internal', 'Empty')$$,
   '22023', 'Attachment size must be between 1 and 10485760 bytes', 'zero-byte upload is rejected'
 );
 select throws_ok(
-  $$select public.begin_attachment_upload('75000000-0000-0000-0000-000000000001', 'large.pdf', 'application/pdf', 10485761, 'internal')$$,
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'large.pdf', 'application/pdf', 10485761, 'internal', 'Large')$$,
   '22023', 'Attachment size must be between 1 and 10485760 bytes', '10 MB plus one byte is rejected'
 );
 

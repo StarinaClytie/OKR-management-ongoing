@@ -98,6 +98,39 @@ begin
     raise exception 'Daily report is locked' using errcode = '42501';
   end if;
 
+  -- A new edit session supersedes every active session for this report. Lock
+  -- the rows first so concurrent starts serialize: the later caller retires
+  -- the earlier caller's incomplete work before becoming the sole active one.
+  perform 1
+  from public.daily_report_upload_sessions session
+  where session.organization_id = target_org
+    and session.report_id = target_report.id
+    and session.author_id = auth.uid()
+    and session.status = 'active'
+  for update;
+
+  update public.report_attachments attachment
+  set state = 'deleted'
+  where attachment.organization_id = target_org
+    and attachment.report_id = target_report.id
+    and attachment.uploader_id = auth.uid()
+    and attachment.state = 'pending'
+    and attachment.upload_session_id in (
+      select session.id
+      from public.daily_report_upload_sessions session
+      where session.organization_id = target_org
+        and session.report_id = target_report.id
+        and session.author_id = auth.uid()
+        and session.status = 'active'
+    );
+
+  update public.daily_report_upload_sessions
+  set status = 'abandoned', abandoned_at = timezone('utc', now())
+  where organization_id = target_org
+    and report_id = target_report.id
+    and author_id = auth.uid()
+    and status = 'active';
+
   insert into public.daily_report_upload_sessions (organization_id, report_id, author_id)
   values (target_org, target_report.id, auth.uid())
   returning id into target_session_id;
@@ -331,6 +364,7 @@ declare
   requested_attachment_id uuid;
   requested_attachment_ids uuid[] := '{}'::uuid[];
   requested_classification public.classification;
+  target_attachment public.report_attachments%rowtype;
   business_date date := (timezone('Asia/Shanghai', now()))::date;
 begin
   target_org := private.current_organization_id();
@@ -423,16 +457,20 @@ begin
   end if;
 
   foreach requested_attachment_id in array requested_attachment_ids loop
-    perform 1
+    select attachment.* into target_attachment
     from public.report_attachments attachment
     where attachment.id = requested_attachment_id
       and attachment.organization_id = target_org
       and attachment.report_id = target.id
       and attachment.uploader_id = auth.uid()
       and attachment.upload_session_id = target_session.id
-      and attachment.state = 'uploaded';
+      and attachment.state = 'uploaded'
+    for update;
     if not found then
       raise exception 'Attachment is not available for this report revision' using errcode = '42501';
+    end if;
+    if not private.has_clearance(target_attachment.classification) then
+      raise exception 'Attachment classification exceeds user clearance' using errcode = '42501';
     end if;
   end loop;
 
@@ -510,17 +548,25 @@ set search_path = ''
 as $$
 declare
   business_date date := (timezone('Asia/Shanghai', now()))::date;
+  target public.report_attachments%rowtype;
 begin
-  update public.report_attachments attachment
-  set state = 'deleted'
+  select attachment.* into target
+  from public.report_attachments attachment
   where attachment.id = p_attachment_id
     and attachment.organization_id = private.current_organization_id()
     and attachment.uploader_id = auth.uid()
     and attachment.state in ('pending', 'uploaded', 'failed')
-    and private.daily_report_is_editable(attachment.report_id, auth.uid(), business_date);
+  for update;
   if not found then
+    raise exception 'Attachment is not available for deletion' using errcode = '42501';
+  end if;
+  if not private.daily_report_is_editable(target.report_id, auth.uid(), business_date) then
     raise exception 'Daily report is locked' using errcode = '42501';
   end if;
+  if target.upload_session_id is null or target.revision_id is not null or target.daily_okr_block_id is not null then
+    raise exception 'Attachment is not available for deletion' using errcode = '42501';
+  end if;
+  update public.report_attachments set state = 'deleted' where id = target.id;
 end;
 $$;
 
@@ -560,6 +606,25 @@ revoke all on function public.update_daily_report(uuid, integer, public.report_s
 revoke all on function public.update_daily_report_with_attachments(uuid, integer, public.report_status, public.classification, jsonb, jsonb) from public, anon, authenticated;
 revoke all on function public.save_daily_report(date, public.report_status, public.classification, jsonb, jsonb) from public, anon, authenticated;
 revoke all on function public.replace_attachment(uuid, text, text, integer, public.classification) from public, anon, authenticated;
+
+do $$
+declare
+  signature text;
+  target regprocedure;
+begin
+  foreach signature in array array[
+    'public.create_daily_report(uuid,uuid,date,public.report_status,public.classification,numeric,text,numeric,jsonb,jsonb)',
+    'public.update_daily_report(uuid,integer,public.report_status,public.classification,numeric,text,numeric,jsonb,jsonb)',
+    'public.begin_daily_report_with_attachments(uuid,uuid,date,public.report_status,public.classification,numeric)',
+    'public.update_daily_report_with_attachments(uuid,integer,public.report_status,public.classification,numeric,text,numeric,jsonb,jsonb)'
+  ] loop
+    target := to_regprocedure(signature);
+    if target is not null then
+      execute format('revoke all on function %s from public, anon, authenticated', target);
+    end if;
+  end loop;
+end;
+$$;
 
 revoke all on function public.begin_daily_report_upload_session(date, public.report_status, public.classification) from public, anon;
 revoke all on function public.abandon_daily_report_upload_session(uuid) from public, anon;
