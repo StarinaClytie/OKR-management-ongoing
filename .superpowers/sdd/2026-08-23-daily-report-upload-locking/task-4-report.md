@@ -1,6 +1,9 @@
 # Task 4 Report: Immediate Daily Evidence Upload State Machine
 
-Implementation commit: `b54666d` — `feat: upload daily evidence before submission`
+Implementation commits:
+
+- `b54666d` — `feat: upload daily evidence before submission`
+- `7adde4b` — `fix: integrate daily upload sessions end to end` (review fix round 1/5)
 
 ## Delivered
 
@@ -20,27 +23,58 @@ Implementation commit: `b54666d` — `feat: upload daily evidence before submiss
 - The first full-suite run exposed a circular import through the Task 3 transport's Supabase configuration. The upload transport is now imported only when an upload starts, preserving repository-factory initialization without changing Task 3's API.
 - Independent review confirmed the Task 4 state machine and identified page/database integration concerns listed below. The actionable Task 4 whole-block cleanup and failed-removal retry defects were fixed and regression-tested.
 
+## Review Fix Round 1/5
+
+- `DailyReportsPage` now passes the Shanghai business date (or today's editable report date), `currentUser.clearance`, and bound upload-repository wrappers into the real form. Supabase submissions no longer call the revoked attachment-free overload: even a report with no attachments begins/resumes a session and calls `submitDailyReportSession`.
+- The page uses `canEditDailyReport` in addition to permission checks, so only the author can edit today's unconfirmed report. Confirmed reports and prior Shanghai business dates render locked before the form can open.
+- Added additive migration `202608230007_daily_attachment_adoption.sql`. `adopt_daily_report_revision_attachments` validates the active author/session/report boundary, rejects duplicate, foreign, unassociated, non-current-revision, and over-clearance evidence, then explicitly binds retained current-revision attachments to the edit session. Saving preserves the prior immutable association and adds the new revision association.
+- The migration also adds session cleanup discovery and idempotent destructive deletion RPCs. Adopted immutable evidence is excluded from destructive cleanup and detached when a cleaned edit session is abandoned. Unassociated finalized uploads remain recoverable until metadata and Storage deletion both succeed.
+- Repository abandonment discovers and removes unassociated session rows (including after refresh) before calling abandon. Metadata and Storage failures are checked and returned; the final failed UI update clears provisional attachment IDs so they cannot be mistaken for finalized provenance.
+- Form cancellation first removes every locally known finalized session upload, then asks the repository to clean recovered leftovers and abandon. A cleanup failure keeps the form open. Whole-block deletion now removes each successful item from draft state immediately, so a later failure leaves only failed items for retry.
+- The page removal adapter preserves historical revision evidence by default and honors `{ preserveRevisionHistory: false }` for new session uploads.
+
+Round 1 TDD evidence:
+
+- Repository RED: 5 failures for the absent adoption method, unchecked metadata/Storage cleanup, retained provisional ID, and abandon-without-recovery cleanup.
+- Form RED: 4 failures for provisional-ID retention, missing finalized cleanup before cancel, missing refresh-session recovery, and partial whole-block cleanup rollback.
+- Page RED: 4 failures for absent clearance/session/upload wiring and missing confirmed/prior-day locks.
+- pgTAP was authored before the additive migration. Its RED/GREEN execution remains environment-blocked as described below.
+
 ## Verification
 
-Fresh verification after the final change:
+Fresh verification after review fix round 1:
 
 ```text
-npm test -- --run src/data/supabaseRepository.test.ts src/pages/daily-report/DailyReportForm.test.tsx src/pages/daily-report/DailyReportEvidence.test.tsx src/pages/daily-report/AttachmentList.test.tsx
-  4 files passed; 79 tests passed
+npm test -- --run src/data/supabaseRepository.test.ts src/pages/DailyReportsPage.test.tsx src/pages/daily-report/DailyReportForm.test.tsx src/pages/daily-report/DailyReportEvidence.test.tsx src/pages/daily-report/AttachmentList.test.tsx
+  5 files passed; 94 tests passed
 
 npm run typecheck
   passed
 
+npm run build
+  passed (Vite emitted its existing >500 kB chunk-size advisory)
+
 npm test -- --run
-  58 files passed; 441 tests passed
+  58 files passed; 451 tests passed
 
 git diff --check
   passed
 ```
 
-## Handoff Concerns
+The lifecycle pgTAP plan now contains 46 assertions. These commands were each
+attempted after the final code change:
 
-- Task 5 must pass `reportDate`, `currentUser.clearance`, and the four upload repository methods from `DailyReportsPage`, and must submit through `submitDailyReportSession`. The legacy `saveDailyReport` signature is revoked by the Task 1 migration and is retained here only for interface compatibility until that page wiring changes.
-- Task 5's removal adapter must honor `{ preserveRevisionHistory: false }` for attachments finalized in the active session; persisted revision attachments continue to use revision-preserving removal.
-- Task 1 accepts only attachments owned by the active upload session when saving a revision. Editing a report while carrying forward persisted attachments therefore needs an explicit server contract or copy-forward mechanism; changing that migration/RPC was outside Task 4's file scope.
-- The page-level `canEditDailyReport` lock policy is Task 5 scope and is not wired by this commit.
+```text
+npx supabase test db supabase/tests/daily_upload_lifecycle.test.sql
+npx supabase test db supabase/tests/storage.test.sql
+npx supabase db lint --local --level warning
+```
+
+All three exited with status 1 before executing SQL because the local database
+at `127.0.0.1:54322` refused the connection. Docker/local Supabase is not
+running. Start it with `supabase start`, then rerun all three commands; the SQL
+suite and database lint are therefore **not claimed as passing** in this report.
+
+## Remaining Concerns
+
+- The only verification gap is environmental: the additive migration and 46-assertion pgTAP suite need a running local Supabase instance. JS/TS integration, build, typecheck, and full unit/component regression are verified as above.
