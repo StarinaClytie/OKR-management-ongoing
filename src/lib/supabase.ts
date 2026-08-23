@@ -10,11 +10,13 @@ export function readAppMode(value: string | undefined): AppMode {
   throw new Error(`不支持的 VITE_APP_MODE: ${value}`);
 }
 
+export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
+export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 export const appMode = readAppMode(import.meta.env.VITE_APP_MODE);
 export const repository = createRepository({
   mode: appMode,
-  supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
-  supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+  supabaseUrl,
+  supabaseAnonKey,
 });
 
 export const adminUserService = repository instanceof SupabaseOkrRepository
