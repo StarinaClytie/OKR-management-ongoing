@@ -610,6 +610,43 @@ describe('SupabaseOkrRepository', () => {
     expect(rpc).toHaveBeenCalledWith('list_eligible_kr_owners', { p_objective_id: 'objective-1' });
   });
 
+  it('lists eligible resource owners through the focused RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: [{
+      id: 'profile-2',
+      display_name: '资源负责人',
+      email: 'owner@example.com',
+      department: '运营部',
+      job_title: '设备主管',
+      is_active: true,
+      approval_status: 'approved',
+      created_at: '2026-08-23T00:00:00Z',
+      user_roles: [{ role: 'employee' }],
+      project_members: [],
+    }] });
+    const repository = new SupabaseOkrRepository(client);
+
+    await expect(repository.listEligibleResourceOwners()).resolves.toEqual({
+      ok: true,
+      data: [expect.objectContaining({
+        id: 'profile-2', displayName: '资源负责人', email: 'owner@example.com', department: '运营部', jobTitle: '设备主管',
+        role: 'employee', isActive: true, approvalStatus: 'approved', projectIds: [],
+      })],
+    });
+    expect(rpc).toHaveBeenCalledWith('list_eligible_resource_owners', {});
+  });
+
+  it('passes the selected owner to the assigned-owner resource create overload', async () => {
+    const { client, rpc } = createClient({ rpcData: 'resource-1' });
+    const repository = new SupabaseOkrRepository(client);
+
+    await expect(repository.createResource({
+      name: 'Assigned Tool', category: 'tools', resourceKind: 'durable', description: '', location: 'Workshop',
+      purchaseDate: null, purchaseVendor: '', purchaseReference: '', usageNotes: '', manualUrl: '', quantity: 1, unit: 'set',
+      ownerId: 'profile-2',
+    })).resolves.toEqual({ ok: true, data: { id: 'resource-1' } });
+    expect(rpc).toHaveBeenCalledWith('create_resource', expect.objectContaining({ p_owner_id: 'profile-2' }));
+  });
+
   it('approves a pending user through the restricted RPC', async () => {
     const { client, rpc } = createClient({ rpcData: null });
     const result = await new SupabaseOkrRepository(client).approvePendingUser({ userId: 'u1', role: 'employee', department: '产品', jobTitle: '工程师' });

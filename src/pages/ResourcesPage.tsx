@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { can } from '../auth/permissionService';
 import { DataTable } from '../components/DataTable';
 import { MetricCard } from '../components/MetricCard';
 import { PageHeader } from '../components/PageHeader';
 import { ResourceFormModal, type ResourceFormValues } from '../components/ResourceFormModal';
 import { ResourceStatusBadge } from '../components/ResourceStatusBadge';
 import { resourceCategories, resourceCategoryKeys, resourceStatusKeys, resourceStatuses } from '../components/resourceLabels';
-import type { OkrRepository, Resource } from '../data/types';
+import type { OkrRepository, OrganizationUser, Resource } from '../data/types';
+import type { PermissionScope } from '../domain/permissions';
 import type { ResourceCategory, ResourceStatus } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
@@ -35,6 +37,8 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
   const [showArchived, setShowArchived] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [ownerOptions, setOwnerOptions] = useState<OrganizationUser[]>([]);
+  const [ownersLoading, setOwnersLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | undefined>(undefined);
 
@@ -57,6 +61,29 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  useEffect(() => {
+    let active = true;
+    if (!currentUser || dataRepository.mode !== 'supabase') {
+      setOwnerOptions([]);
+      setOwnersLoading(false);
+      return () => { active = false; };
+    }
+
+    setOwnersLoading(true);
+    void dataRepository.listEligibleResourceOwners()
+      .then((result) => {
+        if (!active) return;
+        setOwnerOptions(result.ok ? result.data : []);
+      })
+      .catch(() => {
+        if (active) setOwnerOptions([]);
+      })
+      .finally(() => {
+        if (active) setOwnersLoading(false);
+      });
+    return () => { active = false; };
+  }, [currentUser, dataRepository]);
+
   const owners = useMemo(() => {
     const map = new Map<string, string>();
     for (const resource of resources) map.set(resource.ownerId, resource.ownerName || '—');
@@ -64,6 +91,13 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
   }, [resources]);
 
   if (!currentUser) return null;
+
+  const createScope: PermissionScope = {
+    resourceId: 'resource-create',
+    resourceType: 'resource',
+    ownerId: currentUser.id,
+    classification: 'internal',
+  };
 
   const visible = resources.filter((resource) => {
     if (!showArchived && resource.status === 'archived') return false;
@@ -89,6 +123,7 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
     setSubmitting(true);
     setFormError(undefined);
     const created = await dataRepository.createResource({
+      ownerId: values.ownerId,
       name: values.name,
       category: values.category,
       resourceKind: values.resourceKind,
@@ -127,7 +162,7 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
       <PageHeader
         title={t('resources.title')}
         description={t('resources.description')}
-        primaryAction={dataRepository.mode === 'supabase' ? { label: t('resources.create'), onClick: () => { setFormError(undefined); setCreateOpen(true); } } : undefined}
+        primaryAction={dataRepository.mode === 'supabase' && can(currentUser, 'resource.create', createScope).allowed ? { label: t('resources.create'), onClick: () => { setFormError(undefined); setCreateOpen(true); } } : undefined}
       />
       {notice ? <p className="page-notice" role="status">{t(notice)}</p> : null}
 
@@ -203,11 +238,13 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
           title={t('resources.createTitle')}
           mode="create"
           initial={{
+            ownerId: currentUser.id,
             name: '', category: 'other', resourceKind: 'durable', description: '', location: '',
             purchaseDate: '', purchaseVendor: '', purchaseReference: '', quantity: '', unit: '',
             usageNotes: '', manualUrl: '', attachmentFile: null, status: 'available',
           }}
-          ownerName={currentUser.name}
+          ownerOptions={ownerOptions}
+          ownersLoading={ownersLoading}
           submitting={submitting}
           error={formError}
           onSubmit={(values) => void handleCreate(values)}

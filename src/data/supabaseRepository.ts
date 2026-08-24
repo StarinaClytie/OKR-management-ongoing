@@ -805,6 +805,12 @@ export class SupabaseOkrRepository implements OkrRepository {
     const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
     return { ok: true, data: users };
   }
+  async listEligibleResourceOwners(): Promise<RepositoryResult<OrganizationUser[]>> {
+    const result = await this.callRpc<Record<string, unknown>[]>('list_eligible_resource_owners', {});
+    if (!result.ok) return result;
+    const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
+    return { ok: true, data: users };
+  }
   async approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>> {
     const result = await this.callRpc<null>('approve_pending_user', {
       p_target_user_id: input.userId,
@@ -932,6 +938,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_manual_url: input.manualUrl,
       p_quantity: input.quantity,
       p_unit: input.unit,
+      p_owner_id: input.ownerId,
     });
     return result.ok ? { ok: true, data: { id: result.data } } : result;
   }

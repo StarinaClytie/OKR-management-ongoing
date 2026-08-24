@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(62);
+select plan(105);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: org A (admin/management/leader/employee owner/employee peer/HR/
@@ -32,7 +32,8 @@ from (values
   ('15000000-0000-0000-0000-000000000007'::uuid, 'inactive@resource.test'),
   ('15000000-0000-0000-0000-000000000008'::uuid, 'onboarding@resource.test'),
   ('15000000-0000-0000-0000-000000000009'::uuid, 'mgrb@resource.test'),
-  ('15000000-0000-0000-0000-000000000010'::uuid, 'empb@resource.test')
+  ('15000000-0000-0000-0000-000000000010'::uuid, 'empb@resource.test'),
+  ('15000000-0000-0000-0000-000000000011'::uuid, 'norole@resource.test')
 ) as users(id, email);
 
 insert into public.organizations (id, name) values
@@ -51,7 +52,8 @@ from (values
   ('15000000-0000-0000-0000-000000000007'::uuid, '23000000-0000-0000-0000-000000000001'::uuid, 'Inactive A', 'inactive@resource.test', 'confidential'::public.classification, false, true),
   ('15000000-0000-0000-0000-000000000008'::uuid, '23000000-0000-0000-0000-000000000001'::uuid, 'Onboarding A', 'onboarding@resource.test', 'confidential'::public.classification, true, false),
   ('15000000-0000-0000-0000-000000000009'::uuid, '23000000-0000-0000-0000-000000000002'::uuid, 'Management B', 'mgrb@resource.test', 'confidential'::public.classification, true, true),
-  ('15000000-0000-0000-0000-000000000010'::uuid, '23000000-0000-0000-0000-000000000002'::uuid, 'Employee B', 'empb@resource.test', 'confidential'::public.classification, true, true)
+  ('15000000-0000-0000-0000-000000000010'::uuid, '23000000-0000-0000-0000-000000000002'::uuid, 'Employee B', 'empb@resource.test', 'confidential'::public.classification, true, true),
+  ('15000000-0000-0000-0000-000000000011'::uuid, '23000000-0000-0000-0000-000000000001'::uuid, 'No Role A', 'norole@resource.test', 'confidential'::public.classification, true, true)
 ) as p(id, organization_id, display_name, email, clearance, is_active, onboarding_completed);
 
 -- Backfill mirrors the migration: onboarding-complete members are explicitly
@@ -282,9 +284,14 @@ select is(
 );
 
 select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000004', true);
+select throws_ok(
+  $$select public.archive_resource('24000000-0000-0000-0000-000000000001')$$,
+  '42501', 'Resource is not archivable by the current user', 'owner cannot archive a resource'
+);
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000002', true);
 select lives_ok(
   $$select public.archive_resource('24000000-0000-0000-0000-000000000001')$$,
-  'owner archives a resource'
+  'management archives a resource'
 );
 select is(
   (select status::text from public.resources where id = '24000000-0000-0000-0000-000000000001'),
@@ -315,9 +322,14 @@ select throws_ok(
   $$select public.update_resource('24000000-0000-0000-0000-000000000001', 'Fixture Lens', 'optics', 'durable', '', 'Optics Lab / Cabinet A', null, null, null, '', null, null, null, 'available')$$,
   '22023', 'Archived resources cannot be edited', 'archived resource rejects edits'
 );
+select throws_ok(
+  $$select public.restore_resource('24000000-0000-0000-0000-000000000001')$$,
+  '42501', 'Resource is not archivable by the current user', 'owner cannot restore an archived resource'
+);
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000002', true);
 select lives_ok(
   $$select public.restore_resource('24000000-0000-0000-0000-000000000001')$$,
-  'owner restores an archived resource'
+  'management restores an archived resource'
 );
 select is(
   (select status::text from public.resources where id = '24000000-0000-0000-0000-000000000001'),
@@ -439,6 +451,166 @@ select throws_ok(
   $$select public.retry_resource_problem_notification((select id from public.resource_problems where description = 'Notification state machine fixture'))$$,
   '42501', 'Notification is not retryable by the current user', 'a cross-org retry is rejected'
 );
+
+-- ---------------------------------------------------------------------------
+-- Every active role can read, create, and report resource problems.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000004', true);
+select lives_ok($$select public.list_resources(false)$$, 'employee can list resources');
+select ok(public.get_resource_detail('24000000-0000-0000-0000-000000000001') is not null, 'employee can read resource detail');
+select lives_ok(
+  $$select public.create_resource('Employee Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set')$$,
+  'employee can add a resource'
+);
+select lives_ok(
+  $$select public.report_resource_problem('24000000-0000-0000-0000-000000000001', 'location_incorrect', 'Employee role matrix')$$,
+  'employee can report a resource problem'
+);
+
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000006', true);
+select lives_ok($$select public.list_resources(false)$$, 'HR can list resources');
+select ok(public.get_resource_detail('24000000-0000-0000-0000-000000000001') is not null, 'HR can read resource detail');
+select lives_ok(
+  $$select public.create_resource('HR Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set')$$,
+  'HR can add a resource'
+);
+select lives_ok(
+  $$select public.report_resource_problem('24000000-0000-0000-0000-000000000001', 'location_incorrect', 'HR role matrix')$$,
+  'HR can report a resource problem'
+);
+
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000003', true);
+select lives_ok($$select public.list_resources(false)$$, 'Project Leader can list resources');
+select ok(public.get_resource_detail('24000000-0000-0000-0000-000000000001') is not null, 'Project Leader can read resource detail');
+select lives_ok(
+  $$select public.create_resource('Leader Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set')$$,
+  'Project Leader can add a resource'
+);
+select lives_ok(
+  $$select public.report_resource_problem('24000000-0000-0000-0000-000000000001', 'location_incorrect', 'Project Leader role matrix')$$,
+  'Project Leader can report a resource problem'
+);
+
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000002', true);
+select lives_ok($$select public.list_resources(false)$$, 'management can list resources');
+select ok(public.get_resource_detail('24000000-0000-0000-0000-000000000001') is not null, 'management can read resource detail');
+select lives_ok(
+  $$select public.create_resource('Management Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set')$$,
+  'management can add a resource'
+);
+select lives_ok(
+  $$select public.report_resource_problem('24000000-0000-0000-0000-000000000001', 'location_incorrect', 'Management role matrix')$$,
+  'management can report a resource problem'
+);
+
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000001', true);
+select lives_ok($$select public.list_resources(false)$$, 'administrator can list resources');
+select ok(public.get_resource_detail('24000000-0000-0000-0000-000000000001') is not null, 'administrator can read resource detail');
+select lives_ok(
+  $$select public.create_resource('Administrator Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set')$$,
+  'administrator can add a resource'
+);
+select lives_ok(
+  $$select public.report_resource_problem('24000000-0000-0000-0000-000000000001', 'location_incorrect', 'Administrator role matrix')$$,
+  'administrator can report a resource problem'
+);
+
+-- ---------------------------------------------------------------------------
+-- Explicit owner assignment validates eligibility and commits atomically with
+-- exactly one notification when the owner differs from the creator.
+-- ---------------------------------------------------------------------------
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000004', true);
+select lives_ok(
+  $$select public.create_resource('Assigned Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000005')$$,
+  'employee assigns an eligible peer as owner'
+);
+reset role;
+select is(
+  (select created_by::text || ':' || owner_id::text from public.resources where name = 'Assigned Tool'),
+  '15000000-0000-0000-0000-000000000004:15000000-0000-0000-0000-000000000005',
+  'creator and assigned owner remain distinct'
+);
+select is(
+  (select count(*) from public.user_notifications where resource_id = (select id from public.resources where name = 'Assigned Tool') and notification_type = 'resource_owner_assigned'),
+  1::bigint,
+  'assigning another owner creates one notification'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000004', true);
+select lives_ok(
+  $$select public.create_resource('Self Assigned Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000004')$$,
+  'employee can explicitly assign themselves as owner'
+);
+reset role;
+select is(
+  (select count(*) from public.user_notifications where resource_id = (select id from public.resources where name = 'Self Assigned Tool')),
+  0::bigint,
+  'assigning self creates no notification'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000004', true);
+
+select throws_ok(
+  $$select public.create_resource('Cross Org Owner Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000010')$$,
+  '42501', 'Resource owner is not eligible', 'cross-organization owner is rejected'
+);
+select throws_ok(
+  $$select public.create_resource('Inactive Owner Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000007')$$,
+  '42501', 'Resource owner is not eligible', 'inactive owner is rejected'
+);
+select throws_ok(
+  $$select public.create_resource('Pending Owner Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000008')$$,
+  '42501', 'Resource owner is not eligible', 'pending owner is rejected'
+);
+select throws_ok(
+  $$select public.create_resource('No Role Owner Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000011')$$,
+  '42501', 'Resource owner is not eligible', 'owner without an active role is rejected'
+);
+reset role;
+select is(
+  (select count(*) from public.resources where name in ('Cross Org Owner Tool', 'Inactive Owner Tool', 'Pending Owner Tool', 'No Role Owner Tool')),
+  0::bigint,
+  'rejected assignments persist no resource'
+);
+select is(
+  (select count(*) from public.user_notifications where actor_id = '15000000-0000-0000-0000-000000000004' and notification_type = 'resource_owner_assigned'),
+  1::bigint,
+  'rejected assignments add no notification beyond the valid assignment'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000004', true);
+select is(
+  (select count(*) from jsonb_array_elements(public.list_eligible_resource_owners()) owner where owner->>'id' in (
+    '15000000-0000-0000-0000-000000000001',
+    '15000000-0000-0000-0000-000000000002',
+    '15000000-0000-0000-0000-000000000003',
+    '15000000-0000-0000-0000-000000000004',
+    '15000000-0000-0000-0000-000000000005',
+    '15000000-0000-0000-0000-000000000006'
+  )),
+  6::bigint,
+  'eligible-owner list contains every active role in the caller organization'
+);
+select is(
+  (select count(*) from jsonb_array_elements(public.list_eligible_resource_owners()) owner where owner->>'id' in (
+    '15000000-0000-0000-0000-000000000007',
+    '15000000-0000-0000-0000-000000000008',
+    '15000000-0000-0000-0000-000000000010',
+    '15000000-0000-0000-0000-000000000011'
+  )),
+  0::bigint,
+  'eligible-owner list excludes inactive, pending, cross-org, and roleless profiles'
+);
+
+reset role;
+select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.user_notifications'::regclass), 'user notifications enforce row-level security');
+select ok(not has_table_privilege('authenticated', 'public.user_notifications', 'INSERT'), 'browser cannot insert user notifications directly');
+select ok(not has_table_privilege('authenticated', 'public.user_notifications', 'UPDATE'), 'browser cannot update user notifications directly');
+select ok(not has_table_privilege('authenticated', 'public.user_notifications', 'DELETE'), 'browser cannot delete user notifications directly');
+select ok(has_function_privilege('authenticated', 'public.list_eligible_resource_owners()', 'EXECUTE'), 'authenticated users can list eligible owners through RPC');
+select ok(not has_function_privilege('anon', 'public.list_eligible_resource_owners()', 'EXECUTE'), 'anonymous users cannot list eligible owners');
+select ok(has_function_privilege('authenticated', 'public.create_resource(text, public.resource_category, public.resource_kind, text, text, date, text, text, text, text, numeric, text, uuid)', 'EXECUTE'), 'authenticated users can call assigned-owner create overload');
+select ok(not has_function_privilege('anon', 'public.create_resource(text, public.resource_category, public.resource_kind, text, text, date, text, text, text, text, numeric, text, uuid)', 'EXECUTE'), 'anonymous users cannot call assigned-owner create overload');
 
 select * from finish();
 rollback;

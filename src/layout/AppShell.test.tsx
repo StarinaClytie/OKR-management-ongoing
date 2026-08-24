@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, AuthProvider, type AuthContextValue } from '../auth/AuthContext';
 import type { OkrRepository } from '../data/types';
+import type { Role } from '../domain/types';
 import { LocaleProvider } from '../i18n/LocaleProvider';
 import { users } from '../mocks/users';
 import { AppShell } from './AppShell';
@@ -35,6 +36,20 @@ function renderSupabaseShell() {
         <MemoryRouter>
           <AppShell />
         </MemoryRouter>
+      </LocaleProvider>
+    </AuthContext.Provider>,
+  );
+}
+
+function renderShellAs(role: Role) {
+  const currentUser = users.find((user) => user.role === role)!;
+  const auth: AuthContextValue = {
+    status: 'ready', mode: 'supabase', currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn(async () => undefined),
+  };
+  return render(
+    <AuthContext.Provider value={auth}>
+      <LocaleProvider repository={{ mode: 'supabase' } as OkrRepository}>
+        <MemoryRouter><AppShell /></MemoryRouter>
       </LocaleProvider>
     </AuthContext.Provider>,
   );
@@ -132,6 +147,13 @@ describe('application shell', () => {
     expect(screen.getByRole('complementary', { name: '主导航' })).toBeVisible();
     expect(screen.queryByLabelText('移动端主导航')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '打开导航' })).not.toBeInTheDocument();
+  });
+
+  it.each(['employee', 'hr'] as const)('shows resource navigation to %s users', (role) => {
+    mockResponsiveViewport(false);
+    renderShellAs(role);
+
+    expect(screen.getByRole('link', { name: '资源与耗材' })).toBeVisible();
   });
 
   it('switches to only the mobile sidebar when matchMedia crosses the breakpoint', () => {

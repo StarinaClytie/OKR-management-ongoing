@@ -62,6 +62,9 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'permission.manage',
     'audit.read',
     'user.read',
+    'resource.create',
+    'resource.update',
+    'resource.archive',
   ]),
   management: new Set([
     'dashboard.view',
@@ -86,6 +89,9 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'document.download',
     'record.export',
     'user.read',
+    'resource.create',
+    'resource.update',
+    'resource.archive',
   ]),
   project_leader: new Set([
     'dashboard.view',
@@ -111,6 +117,8 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'document.download',
     'record.export',
     'user.read',
+    'resource.create',
+    'resource.update',
   ]),
   employee: new Set([
     'dashboard.view',
@@ -133,8 +141,10 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'document.read_body',
     'document.download',
     'user.read',
+    'resource.create',
+    'resource.update',
   ]),
-  hr: new Set(['dashboard.view', 'okr.read_summary', 'company_objective.read', 'daily_report.read', 'weekly_report.read', 'worklog.read_hours', 'user.read']),
+  hr: new Set(['dashboard.view', 'okr.read_summary', 'company_objective.read', 'daily_report.read', 'weekly_report.read', 'worklog.read_hours', 'user.read', 'resource.create', 'resource.update']),
 };
 
 const systemActions = new Set<Action>(['dashboard.view', 'user.manage', 'permission.manage', 'audit.read']);
@@ -330,6 +340,7 @@ function isResourceCompatibleWithAction(action: Action, context: ResourceContext
   if (action === 'task.read') return context.type === 'project_task';
 
   if (action === 'project.manage') return context.type === 'project';
+  if (action.startsWith('resource.')) return context.type === 'resource';
   if (action === 'daily_report.read_body') return context.type === 'daily_report' || context.type === 'daily_report_body';
   if (action.startsWith('daily_report.')) return context.type === 'daily_report';
   if (action.startsWith('weekly_report.')) return context.type === 'weekly_report';
@@ -441,6 +452,18 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
     }
     if (hasProjectRole(user.id, context.projectId, 'leader')) return allow('可查看项目成员工时');
     return deny();
+  }
+
+  if (action === 'resource.create') return allow('可新增组织资源');
+  if (action === 'resource.update') {
+    return context.ownerId === user.id || user.role === 'management' || user.role === 'administrator'
+      ? allow('可修改负责范围内资源')
+      : deny();
+  }
+  if (action === 'resource.archive') {
+    return user.role === 'management' || user.role === 'administrator'
+      ? allow('可归档组织资源')
+      : deny();
   }
 
   const explicitlyShared = shareableReadActions.has(action) && hasActiveShare(user.id, action, context);

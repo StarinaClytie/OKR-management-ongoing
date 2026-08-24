@@ -160,6 +160,10 @@ export class DemoOkrRepository implements OkrRepository {
     };
   }
 
+  async listEligibleResourceOwners(): Promise<RepositoryResult<OrganizationUser[]>> {
+    return this.listOrganizationUsers();
+  }
+
   // ---- Projects (execution-view) CRUD ----
 
   async createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>> {

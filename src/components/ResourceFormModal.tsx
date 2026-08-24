@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import type { OrganizationUser } from '../data/types';
 import type { ResourceCategory, ResourceKind, ResourceStatus } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
 import { validateAttachment } from '../services/attachmentService';
 import { resourceCategories, resourceCategoryKeys, resourceKinds, resourceKindKeys, resourceStatuses, resourceStatusKeys } from './resourceLabels';
 
 export interface ResourceFormValues {
+  ownerId: string;
   name: string;
   category: ResourceCategory;
   resourceKind: ResourceKind;
@@ -26,6 +28,8 @@ export interface ResourceFormModalProps {
   mode: 'create' | 'edit';
   initial: ResourceFormValues;
   ownerName?: string;
+  ownerOptions?: OrganizationUser[];
+  ownersLoading?: boolean;
   submitting?: boolean;
   error?: string;
   onSubmit: (values: ResourceFormValues) => void;
@@ -47,6 +51,8 @@ export function ResourceFormModal({
   mode,
   initial,
   ownerName,
+  ownerOptions = [],
+  ownersLoading = false,
   submitting = false,
   error,
   onSubmit,
@@ -81,10 +87,12 @@ export function ResourceFormModal({
   const manualUrlValid = isHttpUrl(values.manualUrl);
   const referenceValid = isHttpUrl(values.purchaseReference);
   const attachmentError = values.attachmentFile ? validateAttachment(values.attachmentFile) : null;
+  const ownerValid = !isCreate || (!ownersLoading && ownerOptions.some((owner) => owner.id === values.ownerId));
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (submitting) return;
+    if (!ownerValid) return;
     if (!nameValid) {
       setFieldError(t('resources.validation.nameRequired'));
       return;
@@ -113,7 +121,7 @@ export function ResourceFormModal({
     onSubmit({ ...values, name: values.name.trim(), location: values.location.trim() });
   }
 
-  const submitDisabled = submitting || !nameValid || !locationValid || !quantityValid || !manualUrlValid || !referenceValid;
+  const submitDisabled = submitting || !ownerValid || !nameValid || !locationValid || !quantityValid || !manualUrlValid || !referenceValid;
 
   return (
     <div className="modal-scrim" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -125,10 +133,26 @@ export function ResourceFormModal({
           <input ref={firstFieldRef} value={values.name} onChange={(event) => set('name', event.target.value)} required />
         </label>
 
-        <div className="modal-field">
-          <span>{t('resources.field.owner')}</span>
-          <input value={ownerName ?? '—'} disabled />
-        </div>
+        {isCreate ? (
+          <label className="modal-field">
+            <span>{t('resources.field.owner')} *</span>
+            <select
+              value={values.ownerId}
+              disabled={ownersLoading || ownerOptions.length === 0}
+              onChange={(event) => set('ownerId', event.target.value)}
+              required
+            >
+              {ownersLoading ? <option value={values.ownerId}>{t('common.loading')}</option> : null}
+              {!ownersLoading && ownerOptions.length === 0 ? <option value="">—</option> : null}
+              {!ownersLoading ? ownerOptions.map((owner) => <option key={owner.id} value={owner.id}>{owner.displayName}</option>) : null}
+            </select>
+          </label>
+        ) : (
+          <div className="modal-field">
+            <span>{t('resources.field.owner')}</span>
+            <input value={ownerName ?? '—'} disabled />
+          </div>
+        )}
 
         <label className="modal-field">
           <span>{t('resources.field.category')} *</span>

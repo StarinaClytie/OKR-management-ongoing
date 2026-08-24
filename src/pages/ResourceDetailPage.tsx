@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { can } from '../auth/permissionService';
 import { ResourceFormModal, type ResourceFormValues } from '../components/ResourceFormModal';
 import { ResourceStatusBadge } from '../components/ResourceStatusBadge';
 import { resourceCategoryKeys, resourceKindKeys, resourceProblemStatusKeys, resourceProblemTypeKeys, resourceProblemTypes } from '../components/resourceLabels';
 import type { OkrRepository, ResourceDetail, ResourceProblem } from '../data/types';
 import type { ResourceProblemType } from '../domain/types';
+import type { PermissionScope } from '../domain/permissions';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
 import { repositoryErrorKey } from '../i18n/repositoryErrors';
 import { repository, resourceNotificationService } from '../lib/supabase';
-import { resourceRoles } from '../navigation/navigation';
 import { AccessDeniedPage } from './AccessDeniedPage';
 
 type LoadState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: ResourceDetail };
@@ -59,7 +60,6 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
   useEffect(() => { void refresh(); }, [refresh]);
 
   if (!currentUser) return null;
-  if (!resourceRoles.includes(currentUser.role)) return <AccessDeniedPage />;
 
   if (state.status === 'loading') {
     return (
@@ -74,7 +74,14 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
   const detail = state.data;
   const isAdminOrMgmt = currentUser.role === 'management' || currentUser.role === 'administrator';
   const isOwner = detail.ownerId === currentUser.id;
-  const canEdit = isAdminOrMgmt || isOwner;
+  const resourceScope: PermissionScope = {
+    resourceId: detail.id,
+    resourceType: 'resource',
+    ownerId: detail.ownerId,
+    classification: 'internal',
+  };
+  const canEdit = can(currentUser, 'resource.update', resourceScope).allowed;
+  const canArchive = can(currentUser, 'resource.archive', resourceScope).allowed;
   const canResolve = isAdminOrMgmt || isOwner;
   const isArchived = detail.status === 'archived';
 
@@ -267,7 +274,7 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
           ) : null}
           {canEdit && !isArchived ? <button className="button button--secondary" onClick={() => { setFormError(undefined); setEditOpen(true); }}>{t('resources.edit')}</button> : null}
           {canEdit && !isArchived ? <button className="button button--secondary" onClick={() => { setUploadFile(null); setUploadError(undefined); setUploadOpen(true); }}>{t('resources.uploadAttachment')}</button> : null}
-          {canEdit ? (
+          {canArchive ? (
             <button className="button button--secondary" onClick={() => setArchiveConfirm(true)}>
               {isArchived ? t('resources.restore') : t('resources.archive')}
             </button>
@@ -372,6 +379,7 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
           title={t('resources.editTitle')}
           mode="edit"
           initial={{
+            ownerId: detail.ownerId,
             name: detail.name,
             category: detail.category,
             resourceKind: detail.resourceKind,

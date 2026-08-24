@@ -3,7 +3,7 @@ import { dailyReports, weeklyReports } from '../mocks/reports';
 import { attachments, documents } from '../mocks/security';
 import { mockData } from '../mocks/repository';
 import { users } from '../mocks/users';
-import { getDailyReportPermissionScopes, type ActiveShare, type SystemPermissionScope } from '../domain/permissions';
+import { getDailyReportPermissionScopes, type ActiveShare, type PermissionScope, type SystemPermissionScope } from '../domain/permissions';
 import { currentBusinessDate } from '../domain/progressStatus';
 import { can, getUserPermissionScope } from './permissionService';
 
@@ -33,6 +33,17 @@ const managementPermissionScope: SystemPermissionScope = {
   resourceType: 'system',
   classification: 'internal',
   systemAction: 'permission.manage',
+};
+const employeeOwnedResource: PermissionScope = {
+  resourceId: 'resource-employee',
+  resourceType: 'resource',
+  ownerId: employee.id,
+  classification: 'internal',
+};
+const peerOwnedResource: PermissionScope = {
+  ...employeeOwnedResource,
+  resourceId: 'resource-peer',
+  ownerId: projectPeer.id,
 };
 
 function addActiveShare(share: ActiveShare): () => void {
@@ -124,6 +135,27 @@ describe('can — capability, ownership, and field-level access', () => {
   it('uses the typed user scope for project-member team visibility', () => {
     expect(can(projectLeader, 'user.read', getUserPermissionScope(employee)).allowed).toBe(true);
     expect(can(projectLeader, 'user.read', getUserPermissionScope(hr)).allowed).toBe(false);
+  });
+
+  it.each([admin, management, projectLeader, employee, hr])('allows active $role users to create resources', (user) => {
+    expect(can(user, 'resource.create', { ...employeeOwnedResource, ownerId: user.id }).allowed).toBe(true);
+  });
+
+  it('limits resource updates to the owner, management, and administrator', () => {
+    expect(can(employee, 'resource.update', employeeOwnedResource).allowed).toBe(true);
+    expect(can(employee, 'resource.update', peerOwnedResource).allowed).toBe(false);
+    expect(can(projectLeader, 'resource.update', employeeOwnedResource).allowed).toBe(false);
+    expect(can(hr, 'resource.update', employeeOwnedResource).allowed).toBe(false);
+    expect(can(management, 'resource.update', employeeOwnedResource).allowed).toBe(true);
+    expect(can(admin, 'resource.update', employeeOwnedResource).allowed).toBe(true);
+  });
+
+  it('limits resource archive and restore controls to management and administrator', () => {
+    expect(can(employee, 'resource.archive', employeeOwnedResource).allowed).toBe(false);
+    expect(can(projectLeader, 'resource.archive', employeeOwnedResource).allowed).toBe(false);
+    expect(can(hr, 'resource.archive', employeeOwnedResource).allowed).toBe(false);
+    expect(can(management, 'resource.archive', employeeOwnedResource).allowed).toBe(true);
+    expect(can(admin, 'resource.archive', employeeOwnedResource).allowed).toBe(true);
   });
 });
 

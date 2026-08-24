@@ -313,6 +313,7 @@ export interface ResourceDetail extends Resource {
 }
 
 export interface CreateResourceInput {
+  ownerId: string;
   name: string;
   category: ResourceCategory;
   resourceKind: ResourceKind;
@@ -429,6 +430,7 @@ export interface OkrRepository {
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>>;
   listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>>;
+  listEligibleResourceOwners(): Promise<RepositoryResult<OrganizationUser[]>>;
   createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>>;
   updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>>;
   setProjectLeader(projectId: string, leaderId: string): Promise<RepositoryResult<void>>;
