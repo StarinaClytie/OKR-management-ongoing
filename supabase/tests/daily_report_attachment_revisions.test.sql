@@ -76,9 +76,6 @@ select lives_ok(
   )$$,
   'author uploads evidence that will later be removed'
 );
-insert into storage.objects (bucket_id, name, owner_id, metadata)
-select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size)
-from public.report_attachments where state = 'pending';
 select pg_temp.confirm_test_upload(id, 'sha256:first')
 from public.report_attachments where state = 'pending';
 

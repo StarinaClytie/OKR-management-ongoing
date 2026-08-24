@@ -313,10 +313,6 @@ with started as (
 )
 insert into upload_lifecycle_ids (over_clearance_attachment_id, over_clearance_path)
 select (value->>'id')::uuid, value->>'path' from started;
-insert into storage.objects (bucket_id, name, owner_id, metadata)
-select 'report-attachments', over_clearance_path, auth.uid()::text,
-  jsonb_build_object('mimetype', 'application/pdf', 'size', 128)
-from upload_lifecycle_ids where over_clearance_attachment_id is not null;
 select lives_ok(
   $$select pg_temp.confirm_test_upload(
     (select over_clearance_attachment_id from upload_lifecycle_ids where over_clearance_attachment_id is not null),
@@ -352,12 +348,6 @@ select public.delete_daily_report_upload_attachment(
 select pg_temp.confirm_test_deletion(
   (select over_clearance_attachment_id from upload_lifecycle_ids where over_clearance_attachment_id is not null)
 );
-set local role postgres;
-select set_config('storage.allow_delete_query', 'true', true);
-delete from storage.objects
-where bucket_id = 'report-attachments'
-  and name = (select over_clearance_path from upload_lifecycle_ids where over_clearance_path is not null);
-set local role authenticated;
 select public.abandon_daily_report_upload_session(
   (select fresh_session_id from upload_lifecycle_ids where fresh_session_id is not null)
 );
@@ -373,10 +363,6 @@ with started as (
 )
 insert into upload_lifecycle_ids (associated_attachment_id, associated_path)
 select (value->>'id')::uuid, value->>'path' from started;
-insert into storage.objects (bucket_id, name, owner_id, metadata)
-select 'report-attachments', associated_path, auth.uid()::text,
-  jsonb_build_object('mimetype', 'application/pdf', 'size', 128)
-from upload_lifecycle_ids where associated_attachment_id is not null;
 select pg_temp.confirm_test_upload(
   (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null),
   'sha256:associated'
@@ -477,10 +463,6 @@ with started as (
 )
 insert into upload_lifecycle_ids (cleanup_attachment_id, cleanup_path)
 select (value->>'id')::uuid, value->>'path' from started;
-insert into storage.objects (bucket_id, name, owner_id, metadata)
-select 'report-attachments', cleanup_path, auth.uid()::text,
-  jsonb_build_object('mimetype', 'application/pdf', 'size', 128)
-from upload_lifecycle_ids where cleanup_attachment_id is not null;
 select lives_ok(
   $$select pg_temp.confirm_test_upload(
     (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null),
@@ -549,12 +531,6 @@ select is(
   (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null),
   'the resumed session can retry idempotent metadata deletion before Storage cleanup'
 );
-set local role postgres;
-select set_config('storage.allow_delete_query', 'true', true);
-delete from storage.objects
-where bucket_id = 'report-attachments'
-  and name = (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null);
-set local role authenticated;
 select pg_temp.confirm_test_deletion(
   (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null)
 );

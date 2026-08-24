@@ -4,7 +4,7 @@
 
 旧 Supabase Storage 对象和历史测试对象均不迁移，也不提供兼容下载路径。它们不是受支持的新业务附件传输通道。OSS bucket 保持私有，**不需要也不得配置自定义 OSS 域名**；浏览器直接使用短时签名 URL，业务 API 始终走同源 `/api/`。
 
-> 安全门禁：`202608240004` 已撤销资源 Storage 入口；日报历史 Storage metadata RPC 仍在迁移历史中。上线前必须由独立、已审批的 forward-only 安全迁移审计/撤销这些日报旧入口。完成前，不能宣称数据库层已强制阻断全部旧日报 Storage 写入。
+> 安全边界：`202608240005` 移除日报遗留的 Supabase Storage 对象策略和 helper grants；与 `202608240004` 一起，数据库层阻断日报和资源附件经 Storage 直接传输。session-aware `begin_entry_attachment_upload` 仅创建 OSS metadata，必须保留给受支持的上传流程。
 
 > 本文只描述已审批发布窗口内的操作。未完成本地完整验证和人工复核前，不得执行生产 `db push`、重启服务或修改 Nginx/OSS。
 
@@ -62,7 +62,7 @@ WantedBy=multi-user.target
 以下步骤覆盖资源访问/日报审核变更，以及日报和资源 OSS 变更。每一步失败即停止，不用手工 SQL、`migration repair` 或重新授权旧 Storage RPC 绕过失败。
 
 1. 在待发布 commit 的仓库根目录确认本地完整验证已通过，并从受保护运行时环境注入 `DATABASE_URL`；它不能进入 shell history、Git 或日志。运行 `npx supabase migration list --db-url "$DATABASE_URL"`，逐行核对远端历史。
-2. 运行 `npx supabase db push --dry-run --db-url "$DATABASE_URL"`。待执行集合只能是本发布审批的 `202608240001_resource_access.sql`、`202608240002_report_review_notifications.sql`、`202608240003_daily_report_oss_storage.sql` 和 `202608240004_resource_attachment_oss_storage.sql`；若任何额外 migration、漂移或 destructive SQL 出现，停止并对账。
+2. 运行 `npx supabase db push --dry-run --db-url "$DATABASE_URL"`。待执行集合只能是本发布审批的 `202608240001_resource_access.sql`、`202608240002_report_review_notifications.sql`、`202608240003_daily_report_oss_storage.sql`、`202608240004_resource_attachment_oss_storage.sql` 和 `202608240005_daily_report_storage_lockdown.sql`；若任何额外 migration、漂移或 destructive SQL 出现，停止并对账。
 3. 运行 `npx supabase db push --db-url "$DATABASE_URL"`，随后运行 `npx supabase migration list --db-url "$DATABASE_URL"`，确认本地/远端完全一致。不要迁移旧对象或历史测试对象。
 4. 构建前端与 Node 服务：
 
@@ -103,7 +103,7 @@ WantedBy=multi-user.target
    curl -fsS https://okr.trspectra.com/api/health
    ```
 
-7. 用隔离的已批准 QA 账号完成日报和资源各一次上传、HEAD 校验、下载和删除验证。上传进度必须在服务端 OSS HEAD 校验前停在 99%，确认 RPC 成功后才显示 100%。无 token 应为 401，跨组织或无权签名应为 403；支持的生产流程不得调用 Supabase Storage。日报旧 Storage RPC 的撤销/audit 未完成时停止上线。
+7. 用隔离的已批准 QA 账号完成日报和资源各一次上传、HEAD 校验、下载和删除验证。上传进度必须在服务端 OSS HEAD 校验前停在 99%，确认 RPC 成功后才显示 100%。无 token 应为 401，跨组织或无权签名应为 403；任何新业务附件传输不得调用 Supabase Storage。
 
 ## 发布后门禁
 

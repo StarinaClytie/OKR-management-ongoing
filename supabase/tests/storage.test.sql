@@ -20,7 +20,7 @@ begin
   );
 end;
 $$;
-select plan(19);
+select plan(15);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 select '00000000-0000-0000-0000-000000000001', id, 'authenticated', 'authenticated', email, 'not-used', now(), '{}'::jsonb, '{}'::jsonb, now(), now()
@@ -90,42 +90,25 @@ select throws_ok(
   '22023', 'Attachment size must be between 1 and 104857600 bytes', '100 MB plus one byte is rejected'
 );
 
-select ok(
-  private.can_insert_attachment_object(
+select throws_ok(
+  $$select private.can_insert_attachment_object(
     (select storage_path from public.report_attachments where state = 'pending' limit 1),
     '{}'::jsonb
-  ),
-  'storage insert accepts an authorized pending path before backend metadata is populated'
+  )$$,
+  '42501', null, 'authenticated users cannot invoke the retired daily Storage insert helper'
 );
-
-insert into storage.objects (bucket_id, name, owner_id, metadata)
-select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size)
-from public.report_attachments where state = 'pending';
 select lives_ok(
   $$select pg_temp.confirm_test_upload((select id from public.report_attachments where state = 'pending'), 'sha256:first')$$,
   'owner finalizes an uploaded object'
 );
 select is((select state::text from public.report_attachments where original_name = 'evidence.pdf'), 'uploaded', 'finalize marks metadata uploaded');
-select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 1::bigint, 'owner can enumerate only the uploaded object');
 select is((public.create_attachment_download((select id from public.report_attachments where original_name = 'evidence.pdf'))->>'path'), (select storage_path from public.report_attachments where original_name = 'evidence.pdf'), 'authorized owner receives a verified download path');
-
-select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000002', true);
-select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 0::bigint, 'project member without a scoped block cannot enumerate the object');
-
-select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000003', true);
-select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 0::bigint, 'unrelated user cannot enumerate object names');
-
-select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000004', true);
-select is((select count(*) from storage.objects where bucket_id = 'report-attachments'), 0::bigint, 'HR cannot enumerate object names');
 
 select set_config('request.jwt.claim.sub', '71000000-0000-0000-0000-000000000001', true);
 select lives_ok(
   $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'mismatch.pdf', 'application/pdf', 128, 'confidential', 'Mismatch')$$,
   'owner begins a second session-authorized upload without exposing a caller path'
 );
-insert into storage.objects (bucket_id, name, owner_id, metadata)
-select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size - 1)
-from public.report_attachments where original_name = 'mismatch.pdf';
 select throws_ok(
   $$select pg_temp.confirm_test_upload((select id from public.report_attachments where original_name = 'mismatch.pdf'), 'sha256:mismatch', 127)$$,
   '22023', 'Uploaded object metadata does not match attachment',

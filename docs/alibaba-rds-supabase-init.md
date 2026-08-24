@@ -28,7 +28,7 @@
 
 ### 1.3 数据库函数
 
-- **公开 RPC**：所有写操作均为 `SECURITY DEFINER` RPC（如 `create_project`、`create_objective`、`create_key_result`、`update_key_result`、`save_kr_progress_update`、`approve_pending_user`、`set_user_active`、`begin_attachment_upload`、`create_attachment_download`、`list_organization_users`、`list_projects` 等）。日报附件以 `begin_daily_report_upload_session` 开始，经 `begin_entry_attachment_upload` / `finalize_attachment_upload` 上传并校验，以 session-aware `save_daily_report` 提交；同日编辑还使用 `adopt_daily_report_revision_attachments`。
+- **公开 RPC**：所有写操作均为 `SECURITY DEFINER` RPC（如 `create_project`、`create_objective`、`create_key_result`、`update_key_result`、`save_kr_progress_update`、`approve_pending_user`、`set_user_active`、`begin_attachment_upload`、`create_attachment_download`、`list_organization_users`、`list_projects` 等）。日报附件以 `begin_daily_report_upload_session` 和 session-aware `begin_entry_attachment_upload` 创建 OSS metadata，再由 authenticated 授权、Node 服务 OSS HEAD 校验、service-role confirmation 确认，最后以 session-aware `save_daily_report` 提交；同日编辑还使用 `adopt_daily_report_revision_attachments`。`finalize_attachment_upload` 已退休，必须持续拒绝 authenticated/anon/public，绝不可重新授权。
 - **私有辅助函数**：`private.*`，包含权限判定（`has_role`、`is_project_leader`、`is_project_member`、`has_clearance`、`can_read_business_subject`、`can_read_report_detail`、`is_eligible_kr_owner`、`is_eligible_project_assignee` 等）。
 
 ### 1.4 触发器
@@ -51,7 +51,7 @@
 
 - 本发布支持的生产 UI/API 流程会将所有新日报和资源附件字节写入同一个**私有** OSS bucket `timetech-okr-files`；日报使用 `organization/{organizationId}/reports/...`，资源使用 `organization/{organizationId}/resources/...`。PostgreSQL 生成路径、保存 metadata 并执行授权；Node 附件服务签名、HEAD 校验和删除对象。
 - 浏览器通过同源 `/api/` 获得短时精确对象签名 URL，不得到 OSS AccessKey、service-role key、永久 URL 或自定义 OSS 域名。OSS bucket 不公开。
-- 早期 `report-attachments` 和 `resource-documents` Supabase Storage bucket/schema 可能仍存在于迁移历史。它们不是受支持的生产附件路径，旧对象只是可丢弃测试数据：不迁移、不复制、不支持兼容下载。`202608240004` 已撤销资源 Storage 入口；日报的历史 Storage metadata RPC 仍需在独立的 forward-only 安全变更中审计/撤销，不能据此宣称数据库层已经强制禁止所有旧日报 Storage 写入。
+- 早期 `report-attachments` 和 `resource-documents` Supabase Storage bucket/schema 可能仍存在于迁移历史。它们不是受支持的生产附件路径，旧对象只是可丢弃测试数据：不迁移、不复制、不支持兼容下载。`202608240004` 撤销资源 Storage 入口，`202608240005` 移除日报 Storage 对象策略和 helper grants；两者共同阻断附件字节经 Storage 直接传输，同时保留 session-aware OSS metadata RPC。
 
 ---
 
@@ -69,6 +69,7 @@
 6. `202608240002_report_review_notifications.sql`：日报详情、受限审核/评论、确认通知与通知中心已读状态。
 7. `202608240003_daily_report_oss_storage.sql`：日报附件字节改为私有 OSS、增加服务端对象确认，并撤销旧 Storage 最终确认入口。
 8. `202608240004_resource_attachment_oss_storage.sql`：资源附件字节改为同一私有 OSS bucket、最大 100 MiB、增加服务端对象确认，并撤销旧 Storage 入口。
+9. `202608240005_daily_report_storage_lockdown.sql`：移除日报 Storage 对象 insert/read/delete 策略并撤销相关 helper grants，保留 session-aware OSS metadata 入口。
 
 > 只追加新迁移；**不要**编辑、重命名、回退或重新执行远端已经记录的迁移，也不要手工删表。生产升级只允许本次发布审批过的迁移处于 pending 状态。
 
@@ -138,7 +139,6 @@ select to_regclass('public.daily_report_upload_sessions') as upload_sessions,
 
 select to_regprocedure('public.begin_daily_report_upload_session(date,public.report_status,public.classification)') as begin_session_rpc,
        to_regprocedure('public.begin_entry_attachment_upload(uuid,uuid,integer,text,text,integer,public.classification,text)') as begin_upload_rpc,
-       to_regprocedure('public.finalize_attachment_upload(uuid,text)') as finalize_upload_rpc,
        to_regprocedure('public.save_daily_report(date,public.report_status,public.classification,jsonb,uuid,jsonb)') as save_report_rpc,
        to_regprocedure('public.adopt_daily_report_revision_attachments(uuid,uuid,uuid[])') as adopt_rpc,
        to_regprocedure('public.list_daily_report_upload_session_cleanup(uuid)') as cleanup_list_rpc,
@@ -170,7 +170,6 @@ with expected(signature) as (
   values
     ('public.begin_daily_report_upload_session(date,public.report_status,public.classification)'),
     ('public.begin_entry_attachment_upload(uuid,uuid,integer,text,text,integer,public.classification,text)'),
-    ('public.finalize_attachment_upload(uuid,text)'),
     ('public.save_daily_report(date,public.report_status,public.classification,jsonb,uuid,jsonb)'),
     ('public.adopt_daily_report_revision_attachments(uuid,uuid,uuid[])'),
     ('public.list_daily_report_upload_session_cleanup(uuid)'),
@@ -229,6 +228,24 @@ select signature,
        true as confirmation_rpc
 from service_role_expected
 order by confirmation_rpc, signature;
+
+-- 202608240005：日报 Storage 不能再直接传输业务附件；旧 client
+-- finalizer 与 Storage helpers 必须对 authenticated/anon/public 均不可执行。
+select
+  not exists (
+    select 1 from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and policyname in ('attachment_object_insert', 'attachment_object_read', 'attachment_object_delete')
+  ) as daily_storage_policies_absent,
+  coalesce(not has_function_privilege('authenticated', 'public.finalize_attachment_upload(uuid,text)', 'EXECUTE'), false) as finalizer_authenticated_denied,
+  coalesce(not has_function_privilege('anon', 'public.finalize_attachment_upload(uuid,text)', 'EXECUTE'), false) as finalizer_anon_denied,
+  coalesce(not has_function_privilege('public', 'public.finalize_attachment_upload(uuid,text)', 'EXECUTE'), false) as finalizer_public_denied,
+  coalesce(not has_function_privilege('authenticated', 'private.can_insert_attachment_object(text,jsonb)', 'EXECUTE'), false) as insert_helper_authenticated_denied,
+  coalesce(not has_function_privilege('anon', 'private.can_insert_attachment_object(text,jsonb)', 'EXECUTE'), false) as insert_helper_anon_denied,
+  coalesce(not has_function_privilege('public', 'private.can_insert_attachment_object(text,jsonb)', 'EXECUTE'), false) as insert_helper_public_denied,
+  coalesce(not has_function_privilege('authenticated', 'private.can_read_attachment_object(text)', 'EXECUTE'), false) as read_helper_authenticated_denied,
+  coalesce(not has_function_privilege('anon', 'private.can_read_attachment_object(text)', 'EXECUTE'), false) as read_helper_anon_denied,
+  coalesce(not has_function_privilege('public', 'private.can_read_attachment_object(text)', 'EXECUTE'), false) as read_helper_public_denied;
 
 -- 202608240001/002：每行必须是 function_exists=true 且
 -- authenticated_execute=true；anon/public 不得有 EXECUTE。
@@ -305,7 +322,7 @@ curl --fail-with-body --silent --show-error \
   --data '{"p_include_archived":false}'
 ```
 
-返回 HTTP 200 与 JSON 数组，且同一账号可通过通知中心 RPC 读取自己的通知，才算 PostgREST 已取得 `202608240001` 至 `202608240004` 的 schema。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 **PostgREST 服务**；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据或旧 OSS/Storage 测试对象**。
+返回 HTTP 200 与 JSON 数组，且同一账号可通过通知中心 RPC 读取自己的通知，才算 PostgREST 已取得 `202608240001` 至 `202608240005` 的 schema。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 **PostgREST 服务**；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据或旧 OSS/Storage 测试对象**。
 
 ---
 
@@ -333,7 +350,7 @@ curl --fail-with-body --silent --show-error \
 - 本发布支持的日报和资源附件流程均由浏览器经同源 Node API 获取 OSS 短时签名后，直接上传到同一个私有 `timetech-okr-files` bucket；日报路径为 `organization/{organizationId}/reports/...`，资源路径为 `organization/{organizationId}/resources/...`。ECS 不代理文件字节。
 - 仅 Node 附件服务在 ECS 运行时环境读取 OSS 和 `SUPABASE_SERVICE_ROLE_KEY`；前端只绑定 `api.okr.trspectra.com`。生产 bundle、Git、Nginx、日志、浏览器变量和文档示例均不得包含 OSS AccessKey、service-role、数据库密码、JWT secret 或内部 RDS 主机名。
 - 不需要或不允许绑定自定义 OSS 域名。对象下载通过约 60 秒的精确 OSS GET 签名完成，bucket 一直为 private。
-- 旧 Supabase Storage object 不迁移、不复制、也不用于生产兼容；不要为了旧测试对象恢复 Storage RLS/RPC 或新建第二个附件服务。日报历史 Storage RPC 的单独撤销/audit 是上线前的安全门禁，不是兼容路径。完整代码、Node 重启、Nginx、CORS 和 QA 顺序见 `docs/alibaba-oss-daily-attachments.md`。
+- 旧 Supabase Storage object 不迁移、不复制、也不用于生产兼容；不要为了旧测试对象恢复 Storage RLS/RPC 或新建第二个附件服务。`202608240005` 让日报遗留的 Storage object policy/helper 失效；完整代码、Node 重启、Nginx、CORS 和 QA 顺序见 `docs/alibaba-oss-daily-attachments.md`。
 
 ### 5.1 历史 Storage 残留（不属于本次业务文件发布）
 
@@ -418,7 +435,7 @@ where state = 'deleted'
 
 ### 8.2 回滚与紧急止血
 
-本发布所含 migration（`202608240001` 至 `202608240004`）都是 additive/forward-only。资源 Storage 入口和旧的无 session 写入口已撤销 `authenticated` 权限；日报历史 Storage RPC 则需要单独的已审核 forward migration 才能撤销。**不要** drop 新表/列、删除 migration history，也不要为了回滚前端重新开放旧 RPC；那会恢复残留 pending、绕过锁定、重新暴露 Storage 传输或破坏通知审计路径。
+本发布所含 migration（`202608240001` 至 `202608240005`）都是 additive/forward-only。资源 Storage 入口、日报 Storage object policy/helper 和旧的无 session 写入口均已撤销 `authenticated` 权限。**不要** drop 新表/列、删除 migration history，也不要为了回滚前端重新开放旧 RPC；那会恢复残留 pending、绕过锁定、重新暴露 Storage 传输或破坏通知审计路径。
 
 - 前端回滚只能回到与 session-aware RPC 签名兼容的已审核构建。
 - 若需要立即止血，先撤销新日报写 RPC 的 `authenticated` 执行权限，使日报暂时只读，再 reload PostgREST。该操作必须有变更审批：
@@ -427,7 +444,6 @@ where state = 'deleted'
 begin;
 revoke execute on function public.begin_daily_report_upload_session(date, public.report_status, public.classification) from authenticated;
 revoke execute on function public.begin_entry_attachment_upload(uuid, uuid, integer, text, text, integer, public.classification, text) from authenticated;
-revoke execute on function public.finalize_attachment_upload(uuid, text) from authenticated;
 revoke execute on function public.save_daily_report(date, public.report_status, public.classification, jsonb, uuid, jsonb) from authenticated;
 revoke execute on function public.adopt_daily_report_revision_attachments(uuid, uuid, uuid[]) from authenticated;
 revoke execute on function public.delete_daily_report_upload_attachment(uuid) from authenticated;
@@ -451,7 +467,6 @@ commit;
 begin;
 grant execute on function public.begin_daily_report_upload_session(date, public.report_status, public.classification) to authenticated;
 grant execute on function public.begin_entry_attachment_upload(uuid, uuid, integer, text, text, integer, public.classification, text) to authenticated;
-grant execute on function public.finalize_attachment_upload(uuid, text) to authenticated;
 grant execute on function public.save_daily_report(date, public.report_status, public.classification, jsonb, uuid, jsonb) to authenticated;
 grant execute on function public.adopt_daily_report_revision_attachments(uuid, uuid, uuid[]) to authenticated;
 grant execute on function public.delete_daily_report_upload_attachment(uuid) to authenticated;
