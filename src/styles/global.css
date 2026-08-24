@@ -2003,6 +2003,110 @@ select {
   margin-top: var(--space-4);
 }
 
+.daily-report-detail {
+  width: min(760px, 100%);
+}
+
+.daily-report-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.daily-report-detail__header h2,
+.daily-report-detail__header p {
+  margin: 0;
+}
+
+.daily-report-detail__header p {
+  margin-top: var(--space-1);
+  color: #64748b;
+}
+
+.daily-report-detail__meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+}
+
+.daily-report-detail__meta div,
+.daily-report-detail__entry,
+.daily-report-detail__comments li {
+  padding: var(--space-3);
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-sm);
+}
+
+.daily-report-detail__meta dt {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.daily-report-detail__meta dd {
+  margin: var(--space-1) 0 0;
+}
+
+.daily-report-detail h3 {
+  margin: var(--space-5) 0 var(--space-3);
+}
+
+.daily-report-detail__entries,
+.daily-report-detail__comments {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.daily-report-detail__entry h4,
+.daily-report-detail__entry p,
+.daily-report-detail__comments p {
+  margin: 0 0 var(--space-2);
+}
+
+.daily-report-detail__attachments {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.daily-report-detail__attachments li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.daily-report-detail__comments {
+  padding: 0;
+  list-style: none;
+}
+
+.daily-report-detail textarea {
+  resize: vertical;
+  min-height: 84px;
+  padding: 10px;
+  border: 1px solid #d1d5db;
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+@media (max-width: 640px) {
+  .daily-report-detail__header,
+  .daily-report-detail__attachments {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .daily-report-detail__meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .users-section {
   margin-top: var(--space-6);
 }
