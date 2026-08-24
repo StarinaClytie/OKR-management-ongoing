@@ -158,6 +158,102 @@ describe('SupabaseOkrRepository', () => {
     expect(rpc).toHaveBeenCalledWith('confirm_daily_report', { p_report_id: 'report-1', p_expected_revision: 3 });
   });
 
+  it('maps the authorized daily report detail RPC payload including visible attachments', async () => {
+    const { client, rpc } = createClient({ rpcData: {
+      id: 'report-1', authorId: 'author-1', authorName: '日报作者', date: '2026-08-24', status: 'submitted', hours: 8, currentRevision: 2,
+      blocks: [{
+        id: 'block-1', dailyObjective: '完成光学测试', keyResultId: 'kr-1', workDescription: '完成测试和记录', hours: 8, result: '通过',
+        keyResults: [{ id: 'daily-kr-1', title: '记录测试结果' }],
+        attachments: [{ attachmentId: 'attachment-1', displayName: 'test-results.pdf', classification: 'internal' }],
+      }],
+      comments: [{ id: 'comment-1', reportId: 'report-1', authorId: 'leader-1', authorName: '直属负责人', body: '请补充数据', createdAt: '2026-08-24T09:00:00.000Z' }],
+      canComment: true, canConfirm: true,
+    } });
+
+    await expect(new SupabaseOkrRepository(client).getDailyReportDetail('report-1')).resolves.toEqual({
+      ok: true,
+      data: {
+        id: 'report-1', authorId: 'author-1', authorName: '日报作者', date: '2026-08-24', status: 'submitted', hours: 8, currentRevision: 2,
+        blocks: [{
+          id: 'block-1', dailyObjective: '完成光学测试', keyResultId: 'kr-1', workDescription: '完成测试和记录', hours: 8, result: '通过',
+          keyResults: [{ id: 'daily-kr-1', title: '记录测试结果' }],
+          evidenceItems: [{ id: 'attachment-attachment-1', attachmentId: 'attachment-1', label: 'test-results.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100 }],
+        }],
+        comments: [{ id: 'comment-1', reportId: 'report-1', authorId: 'leader-1', authorName: '直属负责人', body: '请补充数据', createdAt: '2026-08-24T09:00:00.000Z' }],
+        canComment: true, canConfirm: true,
+      },
+    });
+    expect(rpc).toHaveBeenCalledWith('get_daily_report_detail', { p_report_id: 'report-1' });
+  });
+
+  it('maps a posted daily report comment through the reviewer RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: {
+      id: 'comment-1', reportId: 'report-1', authorId: 'leader-1', authorName: '直属负责人', body: '请补充数据', createdAt: '2026-08-24T09:00:00.000Z',
+    } });
+
+    await expect(new SupabaseOkrRepository(client).commentDailyReport('report-1', '请补充数据')).resolves.toEqual({
+      ok: true,
+      data: { id: 'comment-1', reportId: 'report-1', authorId: 'leader-1', authorName: '直属负责人', body: '请补充数据', createdAt: '2026-08-24T09:00:00.000Z' },
+    });
+    expect(rpc).toHaveBeenCalledWith('comment_daily_report', { p_report_id: 'report-1', p_body: '请补充数据' });
+  });
+
+  it('maps notification dates, nullable read state, and pagination cursor from the notification RPC', async () => {
+    const { client, rpc } = createClient({ rpcData: {
+      items: [
+        { id: 'notification-resource-1', type: 'resource_owner_assigned', reportId: null, resourceId: 'resource-1', actorName: '管理员', readAt: null, createdAt: '2026-08-24T10:00:00.000Z' },
+        { id: 'notification-report-1', type: 'daily_report_comment', reportId: 'report-1', resourceId: null, actorName: '直属负责人', readAt: '2026-08-24T09:00:00.000Z', createdAt: '2026-08-24T08:00:00.000Z' },
+      ],
+      nextCursor: { createdAt: '2026-08-24T08:00:00.000Z', id: 'notification-report-1' },
+      unreadCount: 1,
+    } });
+    const cursor = { createdAt: '2026-08-24T11:00:00.000Z', id: 'notification-cursor-1' };
+
+    await expect(new SupabaseOkrRepository(client).listMyNotifications(10, cursor)).resolves.toEqual({
+      ok: true,
+      data: {
+        items: [
+          { id: 'notification-resource-1', type: 'resource_owner_assigned', reportId: null, resourceId: 'resource-1', actorName: '管理员', readAt: null, createdAt: '2026-08-24T10:00:00.000Z' },
+          { id: 'notification-report-1', type: 'daily_report_comment', reportId: 'report-1', resourceId: null, actorName: '直属负责人', readAt: '2026-08-24T09:00:00.000Z', createdAt: '2026-08-24T08:00:00.000Z' },
+        ],
+        nextCursor: { createdAt: '2026-08-24T08:00:00.000Z', id: 'notification-report-1' },
+        unreadCount: 1,
+      },
+    });
+    expect(rpc).toHaveBeenCalledWith('list_my_notifications', {
+      p_limit: 10,
+      p_cursor_created_at: '2026-08-24T11:00:00.000Z',
+      p_cursor_id: 'notification-cursor-1',
+    });
+  });
+
+  it('marks one or all notifications read only through their RPCs', async () => {
+    const { client, rpc } = createClient({ rpcData: null });
+    const repository = new SupabaseOkrRepository(client);
+
+    await expect(repository.markNotificationRead('notification-1')).resolves.toEqual({ ok: true, data: undefined });
+    expect(rpc).toHaveBeenLastCalledWith('mark_notification_read', { p_notification_id: 'notification-1' });
+    rpc.mockResolvedValueOnce({ data: 3, error: null });
+    await expect(repository.markAllNotificationsRead()).resolves.toEqual({ ok: true, data: 3 });
+    expect(rpc).toHaveBeenLastCalledWith('mark_all_notifications_read', {});
+  });
+
+  it.each([
+    ['Daily report is locked', 'locked'],
+    ['Attachment classification exceeds user clearance', 'clearance'],
+    ['Daily report is not available', 'unauthorized'],
+    ['Daily report revision conflict', 'conflict'],
+    ['network request failed', 'network'],
+  ])('preserves the repository error category for daily report detail %s', async (message, expectedCode) => {
+    const code = expectedCode === 'conflict' ? '40001' : expectedCode === 'network' ? '500' : '42501';
+    const { client } = createClient({ rpcError: { code, message } });
+
+    await expect(new SupabaseOkrRepository(client).getDailyReportDetail('report-1')).resolves.toEqual({
+      ok: false,
+      error: { code: expectedCode, message: expectedCode === 'unauthorized' ? '无权访问请求的资源' : '请求未完成，请稍后重试' },
+    });
+  });
+
   it.each([
     ['Daily report is locked', 'locked'],
     ['Attachment classification exceeds user clearance', 'clearance'],

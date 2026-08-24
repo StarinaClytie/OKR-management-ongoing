@@ -1,5 +1,5 @@
 import type { DashboardData } from '../data/types';
-import type { Classification, DailyReport, ProjectStatus, Role, User } from '../domain/types';
+import type { Classification, DailyOkrBlock, DailyReport, DailyReportComment, DailyReportDetail, NotificationPage, ProjectStatus, Role, User, UserNotification } from '../domain/types';
 import type { DailyEvidenceDraft } from '../domain/dailyEntry';
 import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
@@ -111,6 +111,84 @@ function mapReportAttachment(row: Record<string, unknown>, revisionMetadata?: Re
     classification: (revisionMetadata?.classification ?? row.classification) as import('../domain/types').Classification,
     uploadState: 'uploaded',
     uploadProgress: 100,
+  };
+}
+
+function mapDailyReportComment(row: Record<string, unknown>): DailyReportComment | null {
+  if (typeof row.id !== 'string' || typeof row.reportId !== 'string' || typeof row.authorId !== 'string'
+    || typeof row.authorName !== 'string' || typeof row.body !== 'string' || typeof row.createdAt !== 'string') return null;
+  return { id: row.id, reportId: row.reportId, authorId: row.authorId, authorName: row.authorName, body: row.body, createdAt: row.createdAt };
+}
+
+function mapDailyReportDetailBlock(row: Record<string, unknown>): DailyOkrBlock | null {
+  if (typeof row.id !== 'string' || typeof row.dailyObjective !== 'string' || typeof row.keyResultId !== 'string'
+    || typeof row.result !== 'string') return null;
+  const keyResults = Array.isArray(row.keyResults)
+    ? row.keyResults.flatMap((item) => {
+      const value = item as Record<string, unknown>;
+      return typeof value.id === 'string' && typeof value.title === 'string' ? [{ id: value.id, title: value.title }] : [];
+    })
+    : [];
+  const evidenceItems = Array.isArray(row.attachments)
+    ? row.attachments.flatMap((item) => {
+      const attachment = item as Record<string, unknown>;
+      return typeof attachment.attachmentId === 'string' && typeof attachment.displayName === 'string' && typeof attachment.classification === 'string'
+        ? [{ id: `attachment-${attachment.attachmentId}`, attachmentId: attachment.attachmentId, label: attachment.displayName, kind: 'file' as const, classification: attachment.classification as Classification, uploadState: 'uploaded' as const, uploadProgress: 100 }]
+        : [];
+    })
+    : [];
+  return {
+    id: row.id,
+    dailyObjective: row.dailyObjective,
+    keyResultId: row.keyResultId,
+    workDescription: typeof row.workDescription === 'string' ? row.workDescription : undefined,
+    hours: numberValue(row.hours),
+    result: row.result,
+    keyResults,
+    evidenceItems,
+  };
+}
+
+function mapDailyReportDetail(row: Record<string, unknown>): DailyReportDetail | null {
+  const statuses: readonly DailyReportDetail['status'][] = ['draft', 'submitted', 'returned', 'confirmed'];
+  if (typeof row.id !== 'string' || typeof row.authorId !== 'string' || typeof row.authorName !== 'string'
+    || typeof row.date !== 'string' || !statuses.includes(row.status as DailyReportDetail['status'])
+    || typeof row.canComment !== 'boolean' || typeof row.canConfirm !== 'boolean') return null;
+  const blocks = Array.isArray(row.blocks) ? row.blocks.map((item) => mapDailyReportDetailBlock(item as Record<string, unknown>)).filter((item): item is DailyOkrBlock => item !== null) : [];
+  const comments = Array.isArray(row.comments) ? row.comments.map((item) => mapDailyReportComment(item as Record<string, unknown>)).filter((item): item is DailyReportComment => item !== null) : [];
+  return {
+    id: row.id,
+    authorId: row.authorId,
+    authorName: row.authorName,
+    date: row.date,
+    status: row.status as DailyReportDetail['status'],
+    hours: numberValue(row.hours),
+    currentRevision: numberValue(row.currentRevision),
+    blocks,
+    comments,
+    canComment: row.canComment,
+    canConfirm: row.canConfirm,
+  };
+}
+
+function mapUserNotification(row: Record<string, unknown>): UserNotification | null {
+  const types: readonly UserNotification['type'][] = ['daily_report_comment', 'daily_report_confirmed', 'resource_owner_assigned'];
+  const reportId = row.reportId;
+  const resourceId = row.resourceId;
+  const readAt = row.readAt;
+  if (typeof row.id !== 'string' || !types.includes(row.type as UserNotification['type']) || typeof row.actorName !== 'string' || typeof row.createdAt !== 'string'
+    || (reportId !== null && typeof reportId !== 'string') || (resourceId !== null && typeof resourceId !== 'string') || (readAt !== null && typeof readAt !== 'string')) return null;
+  return { id: row.id, type: row.type as UserNotification['type'], reportId: reportId as string | null, resourceId: resourceId as string | null, actorName: row.actorName, readAt: readAt as string | null, createdAt: row.createdAt };
+}
+
+function mapNotificationPage(row: Record<string, unknown>): NotificationPage | null {
+  if (!Array.isArray(row.items)) return null;
+  const cursor = row.nextCursor;
+  if (cursor !== null && (typeof cursor !== 'object' || cursor === null || typeof (cursor as Record<string, unknown>).createdAt !== 'string' || typeof (cursor as Record<string, unknown>).id !== 'string')) return null;
+  return {
+    items: row.items.map((item) => mapUserNotification(item as Record<string, unknown>)).filter((item): item is UserNotification => item !== null),
+    nextCursor: cursor === null ? null : { createdAt: (cursor as Record<string, string>).createdAt, id: (cursor as Record<string, string>).id },
+    unreadCount: numberValue(row.unreadCount),
   };
 }
 
@@ -486,6 +564,40 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_expected_revision: expectedRevision,
     });
     return confirmed.ok ? { ok: true, data: undefined } : confirmed;
+  }
+
+  async getDailyReportDetail(reportId: string): Promise<RepositoryResult<DailyReportDetail>> {
+    const result = await this.callRpc<Record<string, unknown>>('get_daily_report_detail', { p_report_id: reportId });
+    if (!result.ok) return result;
+    const detail = result.data ? mapDailyReportDetail(result.data) : null;
+    return detail ? { ok: true, data: detail } : notFound();
+  }
+
+  async commentDailyReport(reportId: string, body: string): Promise<RepositoryResult<DailyReportComment>> {
+    const result = await this.callRpc<Record<string, unknown>>('comment_daily_report', { p_report_id: reportId, p_body: body });
+    if (!result.ok) return result;
+    const comment = result.data ? mapDailyReportComment(result.data) : null;
+    return comment ? { ok: true, data: comment } : { ok: false, error: { code: 'unknown', message: '请求未完成，请稍后重试' } };
+  }
+
+  async listMyNotifications(limit = 20, cursor: NotificationPage['nextCursor'] = null): Promise<RepositoryResult<NotificationPage>> {
+    const result = await this.callRpc<Record<string, unknown>>('list_my_notifications', {
+      p_limit: limit,
+      p_cursor_created_at: cursor?.createdAt ?? null,
+      p_cursor_id: cursor?.id ?? null,
+    });
+    if (!result.ok) return result;
+    const page = result.data ? mapNotificationPage(result.data) : null;
+    return page ? { ok: true, data: page } : { ok: false, error: { code: 'unknown', message: '请求未完成，请稍后重试' } };
+  }
+
+  async markNotificationRead(notificationId: string): Promise<RepositoryResult<void>> {
+    const result = await this.callRpc<null>('mark_notification_read', { p_notification_id: notificationId });
+    return result.ok ? { ok: true, data: undefined } : result;
+  }
+
+  async markAllNotificationsRead(): Promise<RepositoryResult<number>> {
+    return this.callRpc<number>('mark_all_notifications_read', {});
   }
 
   async adoptDailyReportAttachments(session: DailyReportUploadSession, attachmentIds: string[]): Promise<RepositoryResult<void>> {

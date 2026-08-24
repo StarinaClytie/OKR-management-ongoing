@@ -1,6 +1,8 @@
 import type {
   Classification,
   CompanyObjective,
+  DailyReportComment,
+  DailyReportDetail,
   DailyReport,
   DocumentRecord,
   KeyResult,
@@ -24,6 +26,7 @@ import type {
   Risk,
   Role,
   User,
+  NotificationPage,
   WeeklyReport,
   WorkloadEntry,
 } from '../domain/types';
@@ -468,6 +471,11 @@ export interface OkrRepository {
   abandonDailyReportUploadSession?(sessionId: string): Promise<RepositoryResult<void>>;
   submitDailyReportSession?(input: DailyReportInput, sessionId: string): Promise<RepositoryResult<{ id: string; revision: number }>>;
   confirmDailyReport?(reportId: string, expectedRevision: number): Promise<RepositoryResult<void>>;
+  getDailyReportDetail(reportId: string): Promise<RepositoryResult<DailyReportDetail>>;
+  commentDailyReport(reportId: string, body: string): Promise<RepositoryResult<DailyReportComment>>;
+  listMyNotifications(limit?: number, cursor?: NotificationPage['nextCursor']): Promise<RepositoryResult<NotificationPage>>;
+  markNotificationRead(notificationId: string): Promise<RepositoryResult<void>>;
+  markAllNotificationsRead(): Promise<RepositoryResult<number>>;
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>>;

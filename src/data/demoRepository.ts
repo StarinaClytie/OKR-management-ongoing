@@ -32,6 +32,8 @@ import type {
   UpdateUserInput,
 } from './types';
 import type {
+  DailyReportComment,
+  DailyReportDetail,
   DailyReport,
   KeyResult,
   KrAssignment,
@@ -41,6 +43,7 @@ import type {
   Project,
   ProjectStatus,
   Risk,
+  NotificationPage,
 } from '../domain/types';
 
 function unsupported<T>(): RepositoryResult<T> {
@@ -121,6 +124,40 @@ export class DemoOkrRepository implements OkrRepository {
   async listDailyReports(): Promise<RepositoryResult<DailyReport[]>> {
     return { ok: true, data: mockData.dailyReports };
   }
+
+  async getDailyReportDetail(reportId: string): Promise<RepositoryResult<DailyReportDetail>> {
+    const report = mockData.dailyReports.find((candidate) => candidate.id === reportId);
+    const author = report ? mockData.users.find((user) => user.id === report.authorId) : undefined;
+    if (!report || !author) return { ok: false, error: { code: 'not_found', message: '请求的资源不存在' } };
+    return {
+      ok: true,
+      data: {
+        id: report.id, authorId: report.authorId, authorName: author.name, date: report.date, status: report.status, hours: report.hours,
+        currentRevision: report.currentRevision ?? 1, blocks: report.blocks ?? [], comments: [], canComment: false, canConfirm: false,
+      },
+    };
+  }
+
+  async commentDailyReport(reportId: string, body: string): Promise<RepositoryResult<DailyReportComment>> {
+    const author = mockData.users.find((user) => user.id === this.lastUserId);
+    if (!mockData.dailyReports.some((report) => report.id === reportId) || !author) return { ok: false, error: { code: 'not_found', message: '请求的资源不存在' } };
+    return { ok: true, data: { id: `demo-comment-${reportId}`, reportId, authorId: author.id, authorName: author.name, body, createdAt: '2026-08-24T09:00:00.000Z' } };
+  }
+
+  async listMyNotifications(_limit = 20, _cursor: NotificationPage['nextCursor'] = null): Promise<RepositoryResult<NotificationPage>> {
+    const resourceId = mockResources[0]?.id ?? null;
+    return {
+      ok: true,
+      data: {
+        items: [{ id: 'demo-resource-owner-assigned', type: 'resource_owner_assigned', reportId: null, resourceId, actorName: '管理员', readAt: null, createdAt: '2026-08-24T10:00:00.000Z' }],
+        nextCursor: null,
+        unreadCount: 1,
+      },
+    };
+  }
+
+  async markNotificationRead(_notificationId: string): Promise<RepositoryResult<void>> { return { ok: true, data: undefined }; }
+  async markAllNotificationsRead(): Promise<RepositoryResult<number>> { return { ok: true, data: 1 }; }
 
   async listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>> {
     return {
