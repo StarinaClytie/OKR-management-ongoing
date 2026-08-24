@@ -35,15 +35,30 @@ Management creates quarterly Objectives and assigns a Project Leader. The Projec
 
 Administrators maintain users and roles only. Management sees company Objectives, KR progress, Project Leaders, project progress, and employee recorded hours. Employees see Objectives they contribute to, their assigned KRs, progress, and daily reports.
 
-## 6. Switch between 中文 and English
+An **Administrator is not Management**. An administrator manages accounts, approvals, and role assignment, but an administrator role alone cannot review, comment on, or confirm another person’s daily report. Review authority belongs to Management with sufficient classification clearance, or to a direct Project Leader for the report blocks they are authorized to review. Neither Management nor a direct leader can edit the author’s report for them.
+
+## 6. Resources, owners, and owner notifications
+
+Every approved, active account with an active role in the organization can find resources, open resource details, and create a resource. This does not grant every resource-management action. A new resource defaults its owner to its creator. The creator may instead select another eligible person in the same organization: approved, active, and holding an active role. Cross-organization, inactive, pending, or roleless people are not eligible candidates, and the server rejects forged requests that attempt to assign them.
+
+- When another person is assigned, the resource retains the actual creator and the new owner receives one unread **resource owner assigned** notification. Keeping yourself as owner does not create a self-notification.
+- Resource details, attachments, and issue handling still follow server-side authorization. Being able to discover a resource never bypasses organization boundaries or grants permission to change/archive every resource.
+- Open the **Notification Center** from the account menu to see the unread dot and count. Opening an owner-assignment notification opens its resource detail and marks it read; notifications can be marked read individually or all at once.
+
+## 7. Switch between 中文 and English
 
 Use **中文 / English** in the top bar to switch instantly; the page and URL stay in place. Chinese is the default on the first visit. Before sign-in the choice is stored locally. After your profile loads, its saved preference takes precedence and is safely written back. If preference persistence temporarily fails, the interface still switches immediately and you can select the language again later.
 
-## 7. Daily reports, evidence, and attachments
+## 8. Daily reports, review, notifications, and export
 
 Complete structured daily reports and evidence as requested by the page. Upload only material you are authorized to handle; attachments are protected by permission, file-type, and size restrictions. HR and unauthorized people should not see protected attachment names, counts, paths, or download links. If an upload fails, check type, size, and network, then use the retry or replacement action in the interface.
 
-## 8. Help and troubleshooting
+- An author can open their own report detail. A direct Project Leader with sufficient clearance sees only blocks tied to KRs they are authorized to review; Management with sufficient clearance sees all current blocks. A non-direct Project Leader and an account with only the administrator role cannot open, comment on, or confirm the report.
+- An authorized reviewer can comment on and confirm a submitted report from its detail. A comment notifies the author; confirmation locks the report and notifies the author. Once confirmed, the author cannot edit, but an authorized reviewer can still comment. Repeated confirmation does not create duplicate confirmation notifications.
+- The author and an authorized reviewer can export the detail as a PDF print view or `.docx`. The export includes only content that the account is allowed to see in the detail. If the browser blocks the print window, allow pop-ups for the site and retry.
+- The account-menu Notification Center shows resource-owner, daily-report-comment, and daily-report-confirmed notifications. Opening a daily-report notification opens the corresponding detail and marks it read. Notifications are visible only to their recipient in the same organization.
+
+## 9. Help and troubleshooting
 
 - **KR progress did not save:** confirm that you own the KR, the percentage is 0–100, and date and note are present. The form retains its values after an error, so correct it and retry.
 - **A project is not visible:** this is normally an authorization boundary, not an application error. Restricted projects deliberately leave no project-list metadata. Ask a project administrator for membership or authorization; do not share screenshots or guess project names.
