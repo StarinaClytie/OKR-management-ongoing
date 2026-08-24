@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(27);
+select plan(35);
 
 -- Operational users and resource fixtures mirror the resource access boundary:
 -- only approved, active members with an active organization role may use OSS RPCs.
@@ -58,10 +58,18 @@ select lives_ok(
   $$select public.begin_resource_attachment_upload('34000000-0000-0000-0000-000000000001', 'maximum.pdf', 'application/pdf', 104857600)$$,
   'an approved active resource owner can begin a 100 MB upload'
 );
+create temporary table resource_attachment_oss_pending_metadata (value jsonb not null);
+insert into resource_attachment_oss_pending_metadata (value)
+select public.begin_resource_attachment_upload('34000000-0000-0000-0000-000000000001', 'metadata.pdf', 'application/pdf', 1);
 select is(
-  (select count(*) from jsonb_object_keys(public.begin_resource_attachment_upload('34000000-0000-0000-0000-000000000001', 'metadata.pdf', 'application/pdf', 1))),
-  2::bigint,
-  'pending resource metadata contains only id and database-generated path'
+  (select string_agg(key, ',' order by key) from resource_attachment_oss_pending_metadata, jsonb_object_keys(value) as key),
+  'id,path',
+  'pending resource metadata has exact id and path keys'
+);
+select is(
+  (select value->>'path' from resource_attachment_oss_pending_metadata),
+  (select storage_path from public.resource_attachments where id = (select (value->>'id')::uuid from resource_attachment_oss_pending_metadata)),
+  'pending resource metadata path equals the persisted storage path'
 );
 select matches(
   (select storage_path from public.resource_attachments where file_name = 'maximum.pdf'),
@@ -80,9 +88,35 @@ select lives_ok(
 reset role;
 insert into public.resource_attachments (id, organization_id, resource_id, uploader_id, file_name, storage_path, mime_type, size_bytes) values
   ('36000000-0000-0000-0000-000000000001', '33000000-0000-0000-0000-000000000001', '34000000-0000-0000-0000-000000000001', '35000000-0000-0000-0000-000000000003', 'inactive.pdf', 'organization/33000000-0000-0000-0000-000000000001/resources/34000000-0000-0000-0000-000000000001/36000000-0000-0000-0000-000000000001/inactive.pdf', 'application/pdf', 1),
-  ('36000000-0000-0000-0000-000000000002', '33000000-0000-0000-0000-000000000001', '34000000-0000-0000-0000-000000000001', '35000000-0000-0000-0000-000000000001', 'unverified.pdf', 'organization/33000000-0000-0000-0000-000000000001/resources/34000000-0000-0000-0000-000000000001/36000000-0000-0000-0000-000000000002/unverified.pdf', 'application/pdf', 1);
+  ('36000000-0000-0000-0000-000000000002', '33000000-0000-0000-0000-000000000001', '34000000-0000-0000-0000-000000000001', '35000000-0000-0000-0000-000000000001', 'unverified.pdf', 'organization/33000000-0000-0000-0000-000000000001/resources/34000000-0000-0000-0000-000000000001/36000000-0000-0000-0000-000000000002/unverified.pdf', 'application/pdf', 1),
+  ('36000000-0000-0000-0000-000000000003', '33000000-0000-0000-0000-000000000001', '34000000-0000-0000-0000-000000000001', '35000000-0000-0000-0000-000000000001', 'legacy-read.pdf', 'organization/33000000-0000-0000-0000-000000000001/resources/34000000-0000-0000-0000-000000000001/36000000-0000-0000-0000-000000000003/legacy-read.pdf', 'application/pdf', 1),
+  ('36000000-0000-0000-0000-000000000004', '33000000-0000-0000-0000-000000000001', '34000000-0000-0000-0000-000000000001', '35000000-0000-0000-0000-000000000001', 'legacy-delete.pdf', 'organization/33000000-0000-0000-0000-000000000001/resources/34000000-0000-0000-0000-000000000001/36000000-0000-0000-0000-000000000004/legacy-delete.pdf', 'application/pdf', 1);
+insert into storage.objects (bucket_id, name, owner_id, metadata)
+select 'resource-documents', storage_path, uploader_id::text, jsonb_build_object('mimetype', mime_type, 'size', size_bytes)
+from public.resource_attachments
+where file_name in ('legacy-read.pdf', 'legacy-delete.pdf');
 
 set local role authenticated;
+select set_config('request.jwt.claim.sub', '35000000-0000-0000-0000-000000000001', true);
+select throws_ok(
+  $$insert into storage.objects (bucket_id, name, owner_id, metadata)
+    select 'resource-documents', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', size_bytes)
+    from public.resource_attachments where file_name = 'unverified.pdf'$$,
+  '42501', null, 'authenticated users cannot insert resource attachment bytes into Supabase Storage'
+);
+select set_config('request.jwt.claim.sub', '35000000-0000-0000-0000-000000000002', true);
+select is(
+  (select count(*) from storage.objects where bucket_id = 'resource-documents' and name like '%/legacy-read.pdf'),
+  0::bigint,
+  'authenticated users cannot read resource attachment bytes from Supabase Storage'
+);
+select set_config('request.jwt.claim.sub', '35000000-0000-0000-0000-000000000001', true);
+select throws_ok(
+  $$delete from storage.objects where bucket_id = 'resource-documents' and name like '%/legacy-delete.pdf'$$,
+  '42501', 'Direct deletion from storage tables is not allowed. Use the Storage API instead.',
+  'authenticated users cannot delete resource attachment bytes from Supabase Storage'
+);
+
 select set_config('request.jwt.claim.sub', '35000000-0000-0000-0000-000000000003', true);
 select throws_ok(
   $$select public.authorize_resource_attachment_object_upload('36000000-0000-0000-0000-000000000001')$$,
@@ -98,6 +132,8 @@ select ok(not has_function_privilege('authenticated', 'public.confirm_resource_a
 select ok(has_function_privilege('service_role', 'public.confirm_resource_attachment_object_upload(uuid,text,text,bigint)', 'execute'), 'service role can attest verified OSS uploads');
 select ok(not has_function_privilege('authenticated', 'public.confirm_resource_attachment_object_deletion(uuid)', 'execute'), 'authenticated users cannot confirm OSS deletion');
 select ok(has_function_privilege('service_role', 'public.confirm_resource_attachment_object_deletion(uuid)', 'execute'), 'service role can confirm OSS deletion');
+select ok(not has_function_privilege('authenticated', 'private.can_insert_resource_attachment_object(text,jsonb)', 'execute'), 'authenticated users cannot execute the legacy Storage insert helper');
+select ok(not has_function_privilege('authenticated', 'private.can_read_resource_attachment_object(text)', 'execute'), 'authenticated users cannot execute the legacy Storage read helper');
 
 select set_config('request.jwt.claim.sub', '35000000-0000-0000-0000-000000000001', true);
 select ok(not has_function_privilege('authenticated', 'public.finalize_resource_attachment_upload(uuid)', 'execute'), 'legacy Supabase Storage finalization is denied to authenticated users');
@@ -119,10 +155,21 @@ select lives_ok(
   $$select public.authorize_resource_attachment_object_download((select id from public.resource_attachments where file_name = 'maximum.pdf'))$$,
   'an approved active same-organization user can download a verified object'
 );
+select is(
+  jsonb_array_length(public.get_resource_detail('34000000-0000-0000-0000-000000000001')->'attachments'),
+  1,
+  'resource detail exposes only verified uploaded attachments'
+);
 select set_config('request.jwt.claim.sub', '35000000-0000-0000-0000-000000000001', true);
 select lives_ok(
   $$select public.request_resource_attachment_object_deletion((select id from public.resource_attachments where file_name = 'maximum.pdf'))$$,
   'the uploader can request deletion of an OSS object'
+);
+select set_config('request.jwt.claim.sub', '35000000-0000-0000-0000-000000000002', true);
+select is(
+  jsonb_array_length(public.get_resource_detail('34000000-0000-0000-0000-000000000001')->'attachments'),
+  0,
+  'resource detail hides deleted attachments before OSS deletion confirmation'
 );
 
 reset role;
