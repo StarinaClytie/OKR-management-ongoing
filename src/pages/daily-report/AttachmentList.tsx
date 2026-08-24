@@ -39,18 +39,22 @@ export function AttachmentList({ items, onRetry, onReplace, onRemove, onDownload
     const isUploaded = dailyEvidenceIsUploaded(item);
     const missingAttachmentId = item.uploadState === 'uploaded' && !isUploaded;
     const state = missingAttachmentId ? 'verifying' : item.uploadState;
-    const progress = missingAttachmentId ? 0 : item.uploadProgress ?? (isUploaded ? 100 : 0);
-    const status = item.errorCode || item.error
+    const visibleProgress = missingAttachmentId ? 0 : item.uploadProgress ?? (isUploaded ? 100 : 0);
+    const stateLabel = item.errorCode || item.error
       ? t(uploadFailureKey(item.errorCode, item.error))
       : state === 'uploading'
-        ? t('daily.uploadingPercent', { percent: progress })
+        ? t('daily.uploadingPercent', { percent: visibleProgress })
         : state
           ? t(uploadStateKeys[state])
           : '';
     return <li key={item.id}>
-    <span>{item.label}</span><span>{t(classificationKeys[item.classification])}</span>
-    <span className="attachment-list__progress"><progress aria-label={t('daily.uploadProgress', { name: item.label })} max={100} value={progress} /><span aria-hidden="true">{progress}%</span></span>
-    <span className="attachment-list__status" role={item.errorCode || item.error ? 'alert' : undefined}>{status}</span>
+    <div className="daily-attachment-progress">
+      <span className="daily-attachment-progress__name" title={item.label}>{item.label}</span>
+      <progress aria-label={t('daily.uploadProgress', { name: item.label })} max={100} value={visibleProgress} />
+      <span className="daily-attachment-progress__percent" aria-hidden="true">{visibleProgress}%</span>
+      <span className="daily-attachment-progress__state" role={item.errorCode || item.error ? 'alert' : undefined}>{stateLabel}</span>
+    </div>
+    <span>{t(classificationKeys[item.classification])}</span>
     {item.uploadState === 'failed' && <button type="button" onClick={() => onRetry?.(item.id)}>{t('daily.retry')}</button>}
     {isUploaded && onDownload ? <button type="button" onClick={() => onDownload(item.id)}>{t('daily.download')}</button> : null}
     {onReplace ? <label className="text-button">{t('daily.replace')}<input className="sr-only" aria-label={t('daily.replaceLabel', { name: item.label })} type="file" onChange={(event) => event.target.files?.[0] && onReplace(item.id, event.target.files[0])} /></label> : null}

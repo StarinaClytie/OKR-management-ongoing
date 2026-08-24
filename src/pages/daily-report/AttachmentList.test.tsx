@@ -3,6 +3,24 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { AttachmentList } from './AttachmentList';
 
+it('keeps a long uploaded filename identifiable while showing its progress', () => {
+  const label = 'Q4_AI_Market_Review_Report_Answer_CN_with_a_very_long_name.docx';
+
+  render(<AttachmentList items={[{
+    id: 'long-uploaded-item',
+    label,
+    kind: 'file',
+    classification: 'internal',
+    uploadState: 'uploaded',
+    uploadProgress: 100,
+    attachmentId: 'attachment-long-uploaded-item',
+  }]} />);
+
+  expect(screen.getByText(/Q4_AI_Market/)).toHaveAttribute('title', expect.stringContaining('.docx'));
+  expect(screen.getByRole('progressbar')).toHaveAccessibleName(/Q4_AI_Market/);
+  expect(screen.getByText('100%')).toBeVisible();
+});
+
 it.each([1, 50, 100])('renders real progress value %s in the matching attachment progressbar', (progress) => {
   render(<AttachmentList items={[{ id: 'progress-item', label: 'proof.pdf', kind: 'file', classification: 'internal', uploadState: progress === 100 ? 'uploaded' : 'uploading', uploadProgress: progress, attachmentId: progress === 100 ? 'attachment-1' : undefined }]} />);
   expect(screen.getByRole('progressbar', { name: 'proof.pdf 上传进度' })).toHaveValue(progress);

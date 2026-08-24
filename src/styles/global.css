@@ -940,11 +940,13 @@ select {
 .daily-evidence__header { align-items: center; }
 .daily-evidence__row { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto; align-items: end; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid #e2e8f0; }
 .attachment-list { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
-.attachment-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(180px, 0.8fr) minmax(120px, 0.7fr) auto; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; border-top: 1px solid #e2e8f0; }
-.attachment-list__progress { display: flex; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
-.attachment-list__progress progress { width: 100%; accent-color: var(--color-primary); }
-.attachment-list__status { color: #475569; font-size: 13px; font-weight: 700; }
-.attachment-list__status[role='alert'] { color: #b91c1c; }
+.attachment-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; border-top: 1px solid #e2e8f0; }
+.daily-attachment-progress { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, 16rem) auto auto; align-items: center; gap: var(--space-2); min-width: 0; }
+.daily-attachment-progress__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.daily-attachment-progress progress { width: 100%; accent-color: var(--color-primary); }
+.daily-attachment-progress__percent { font-variant-numeric: tabular-nums; }
+.daily-attachment-progress__state { color: #475569; font-size: 13px; font-weight: 700; }
+.daily-attachment-progress__state[role='alert'] { color: #b91c1c; }
 .daily-entry-help { align-self: start; display: grid; gap: var(--space-3); background: #f8fafc; }
 .daily-entry-help-shell { align-self: start; }
 .daily-entry-help__eyebrow { color: #1d4ed8 !important; font-weight: 800; }
@@ -961,6 +963,13 @@ select {
   .daily-entry-help--mobile { margin-top: var(--space-2); }
   .form-card { padding: var(--space-4); }
   .daily-entry-form { gap: var(--space-4); }
+}
+
+@media (max-width: 720px) {
+  .attachment-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .daily-attachment-progress { grid-template-columns: minmax(0, 1fr) auto; }
+  .daily-attachment-progress progress,
+  .daily-attachment-progress__state { grid-column: 1 / -1; }
 }
 
 @media (max-width: 520px) {
