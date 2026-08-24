@@ -47,12 +47,11 @@
 - 读策略按五角色模型收敛：`Management → 组织业务可见`、`Project Leader → 所领导项目/成员`、`Employee → 项目同级 + 自有 KR`、`Administrator → 系统/用户管理`、`HR → 仅工作量视图`。
 - `profiles_read`、`roles_read` 为最小化策略；目录读取经 `list_organization_users()`（SECURITY DEFINER）提供。
 
-### 1.7 Storage
+### 1.7 业务附件字节存储
 
-- 两个**私有** bucket（`public=false`），由迁移直接 `insert into storage.buckets` 创建：
-  - `report-attachments`（10 MiB，PDF/Office/CSV/PNG/JPEG/TXT）。
-  - `resource-documents`（资源附件）。
-- `storage.objects` 的 RLS 策略（insert/select/delete）经 `private.can_insert_attachment_object` 等授权函数校验，附件只能经授权 RPC 上传/下载，不暴露原始 path。
+- 本发布支持的生产 UI/API 流程会将所有新日报和资源附件字节写入同一个**私有** OSS bucket `timetech-okr-files`；日报使用 `organization/{organizationId}/reports/...`，资源使用 `organization/{organizationId}/resources/...`。PostgreSQL 生成路径、保存 metadata 并执行授权；Node 附件服务签名、HEAD 校验和删除对象。
+- 浏览器通过同源 `/api/` 获得短时精确对象签名 URL，不得到 OSS AccessKey、service-role key、永久 URL 或自定义 OSS 域名。OSS bucket 不公开。
+- 早期 `report-attachments` 和 `resource-documents` Supabase Storage bucket/schema 可能仍存在于迁移历史。它们不是受支持的生产附件路径，旧对象只是可丢弃测试数据：不迁移、不复制、不支持兼容下载。`202608240004` 已撤销资源 Storage 入口；日报的历史 Storage metadata RPC 仍需在独立的 forward-only 安全变更中审计/撤销，不能据此宣称数据库层已经强制禁止所有旧日报 Storage 写入。
 
 ---
 
@@ -60,7 +59,7 @@
 
 `supabase/migrations/` 是唯一迁移清单。文件名前缀决定顺序；部署前用 `npx supabase migration list` 对比本地与远端历史，不在文档中维护容易过期的手工数量或文件副本。
 
-本次发布必须按版本顺序包含以下 additive migration；其中前四个为日报附件生命周期，最后两个为资源访问、日报审核与站内通知：
+本次发布必须按版本顺序包含以下 additive migration；其中前四个为日报附件生命周期，随后是资源访问、日报审核通知，以及两类附件迁移到 OSS：
 
 1. `202608230006_daily_upload_sessions_and_locks.sql`：上传 session、服务端终态校验、上海业务日及审核锁定。
 2. `202608230007_daily_attachment_adoption.sql`：同日编辑的历史附件继承、可重试的 session 清理 RPC。
@@ -68,6 +67,8 @@
 4. `202608230009_daily_upload_review_hardening.sql`：补齐日报审核/上传工作流的权限加固。
 5. `202608240001_resource_access.sql`：所有已批准、active 且有 active 角色的账号可发现/创建资源；创建者默认是负责人，可指定同组织合格负责人，并建立资源负责人通知。
 6. `202608240002_report_review_notifications.sql`：日报详情、受限审核/评论、确认通知与通知中心已读状态。
+7. `202608240003_daily_report_oss_storage.sql`：日报附件字节改为私有 OSS、增加服务端对象确认，并撤销旧 Storage 最终确认入口。
+8. `202608240004_resource_attachment_oss_storage.sql`：资源附件字节改为同一私有 OSS bucket、最大 100 MiB、增加服务端对象确认，并撤销旧 Storage 入口。
 
 > 只追加新迁移；**不要**编辑、重命名、回退或重新执行远端已经记录的迁移，也不要手工删表。生产升级只允许本次发布审批过的迁移处于 pending 状态。
 
@@ -131,6 +132,7 @@ order by column_name;
 
 select to_regclass('public.daily_report_upload_sessions') as upload_sessions,
        to_regclass('public.report_attachment_revisions') as attachment_revisions,
+       to_regclass('public.resource_attachments') as resource_attachments,
        to_regclass('public.daily_report_comments') as report_comments,
        to_regclass('public.user_notifications') as user_notifications;
 
@@ -154,6 +156,14 @@ select to_regprocedure('public.list_resources(boolean)') as list_resources_rpc,
        to_regprocedure('public.list_my_notifications(integer,timestamp with time zone,uuid)') as notifications_rpc,
        to_regprocedure('public.mark_notification_read(uuid)') as notification_read_rpc,
        to_regprocedure('public.mark_all_notifications_read()') as notifications_read_all_rpc;
+
+select to_regprocedure('public.authorize_attachment_object_upload(uuid)') as report_upload_authorize_rpc,
+       to_regprocedure('public.confirm_attachment_object_upload(uuid,text,text,bigint)') as report_upload_confirm_rpc,
+       to_regprocedure('public.authorize_resource_attachment_object_upload(uuid)') as resource_upload_authorize_rpc,
+       to_regprocedure('public.confirm_resource_attachment_object_upload(uuid,text,text,bigint)') as resource_upload_confirm_rpc,
+       to_regprocedure('public.authorize_resource_attachment_object_download(uuid)') as resource_download_authorize_rpc,
+       to_regprocedure('public.request_resource_attachment_object_deletion(uuid)') as resource_delete_request_rpc,
+       to_regprocedure('public.confirm_resource_attachment_object_deletion(uuid)') as resource_delete_confirm_rpc;
 
 -- 每行必须是 function_exists=true 且 authenticated_execute=true。
 with expected(signature) as (
@@ -181,6 +191,44 @@ select signature,
        ) as authenticated_execute
 from expected
 order by signature;
+
+-- 202608240003/004：授权 RPC 仅 authenticated 可调用；物理 OSS
+-- 确认 RPC 仅 service_role 可调用，authenticated/anon/public 均不得有 EXECUTE。
+-- function_exists 必须均为 true；授权行应为 authenticated=true、其余=false；
+-- 确认行应为 service_role=true、其余=false。
+with authenticated_expected(signature) as (
+  values
+    ('public.authorize_attachment_object_upload(uuid)'),
+    ('public.authorize_attachment_object_download(uuid)'),
+    ('public.request_attachment_object_deletion(uuid)'),
+    ('public.authorize_resource_attachment_object_upload(uuid)'),
+    ('public.authorize_resource_attachment_object_download(uuid)'),
+    ('public.request_resource_attachment_object_deletion(uuid)')
+), service_role_expected(signature) as (
+  values
+    ('public.confirm_attachment_object_upload(uuid,text,text,bigint)'),
+    ('public.confirm_attachment_object_deletion(uuid)'),
+    ('public.confirm_resource_attachment_object_upload(uuid,text,text,bigint)'),
+    ('public.confirm_resource_attachment_object_deletion(uuid)')
+)
+select signature,
+       to_regprocedure(signature) is not null as function_exists,
+       coalesce(has_function_privilege('authenticated', to_regprocedure(signature), 'EXECUTE'), false) as authenticated_execute,
+       coalesce(has_function_privilege('service_role', to_regprocedure(signature), 'EXECUTE'), false) as service_role_execute,
+       coalesce(has_function_privilege('anon', to_regprocedure(signature), 'EXECUTE'), false) as anon_execute,
+       coalesce(has_function_privilege('public', to_regprocedure(signature), 'EXECUTE'), false) as public_execute,
+       false as confirmation_rpc
+from authenticated_expected
+union all
+select signature,
+       to_regprocedure(signature) is not null as function_exists,
+       coalesce(has_function_privilege('authenticated', to_regprocedure(signature), 'EXECUTE'), false) as authenticated_execute,
+       coalesce(has_function_privilege('service_role', to_regprocedure(signature), 'EXECUTE'), false) as service_role_execute,
+       coalesce(has_function_privilege('anon', to_regprocedure(signature), 'EXECUTE'), false) as anon_execute,
+       coalesce(has_function_privilege('public', to_regprocedure(signature), 'EXECUTE'), false) as public_execute,
+       true as confirmation_rpc
+from service_role_expected
+order by confirmation_rpc, signature;
 
 -- 202608240001/002：每行必须是 function_exists=true 且
 -- authenticated_execute=true；anon/public 不得有 EXECUTE。
@@ -257,7 +305,7 @@ curl --fail-with-body --silent --show-error \
   --data '{"p_include_archived":false}'
 ```
 
-返回 HTTP 200 与 JSON 数组，且同一账号可通过通知中心 RPC 读取自己的通知，才算 PostgREST 已取得 `202608240001/002` 的 schema。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 **PostgREST 服务**；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据**。
+返回 HTTP 200 与 JSON 数组，且同一账号可通过通知中心 RPC 读取自己的通知，才算 PostgREST 已取得 `202608240001` 至 `202608240004` 的 schema。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 **PostgREST 服务**；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据或旧 OSS/Storage 测试对象**。
 
 ---
 
@@ -280,87 +328,16 @@ curl --fail-with-body --silent --show-error \
 
 ---
 
-## 5. Storage 兼容性
+## 5. 业务附件 OSS 兼容性
 
-- 两个私有 bucket 由迁移自动创建，**无需手工建 bucket**，也不要改成 public。
-- `storage.objects` 的 RLS 策略依赖 `auth.uid()` 与 `storage.buckets` 表，自托管 Storage 服务需与 Auth 共用同一 JWT 才能让策略生效。
-- 日报附件上传从服务端 session 开始，经 `begin_entry_attachment_upload` 领取受限 path，浏览器通过 `https://api.okr.trspectra.com/storage/v1/...` 上传，再由 `finalize_attachment_upload` 核对 Storage metadata。下载仍走 `create_attachment_download` 与 signed URL，**不需要迁移旧附件**。
-- 前端只需绑定 `api.okr.trspectra.com` 这个 Supabase API 入口；**不需要、也不应该把 OSS bucket 域名或 OSS AccessKey 绑到/注入前端**。OSS endpoint、bucket 凭据和跨域策略是自托管 Storage 服务的服务端配置；生产 bundle 不得包含内部 RDS 主机名或 OSS 凭据。
+- 本发布支持的日报和资源附件流程均由浏览器经同源 Node API 获取 OSS 短时签名后，直接上传到同一个私有 `timetech-okr-files` bucket；日报路径为 `organization/{organizationId}/reports/...`，资源路径为 `organization/{organizationId}/resources/...`。ECS 不代理文件字节。
+- 仅 Node 附件服务在 ECS 运行时环境读取 OSS 和 `SUPABASE_SERVICE_ROLE_KEY`；前端只绑定 `api.okr.trspectra.com`。生产 bundle、Git、Nginx、日志、浏览器变量和文档示例均不得包含 OSS AccessKey、service-role、数据库密码、JWT secret 或内部 RDS 主机名。
+- 不需要或不允许绑定自定义 OSS 域名。对象下载通过约 60 秒的精确 OSS GET 签名完成，bucket 一直为 private。
+- 旧 Supabase Storage object 不迁移、不复制、也不用于生产兼容；不要为了旧测试对象恢复 Storage RLS/RPC 或新建第二个附件服务。日报历史 Storage RPC 的单独撤销/audit 是上线前的安全门禁，不是兼容路径。完整代码、Node 重启、Nginx、CORS 和 QA 顺序见 `docs/alibaba-oss-daily-attachments.md`。
 
-### 5.1 生产残留清理边界
+### 5.1 历史 Storage 残留（不属于本次业务文件发布）
 
-正常取消/刷新恢复由前端在 session 仍为 active 且日报可编辑时，按 `list_daily_report_upload_session_cleanup` → `delete_daily_report_upload_attachment` → Storage DELETE → `abandon_daily_report_upload_session` 顺序完成。删除 RPC 先把未关联 metadata 标记为 `deleted`，随后普通 `authenticated` 用户才满足 Storage DELETE RLS（该策略只允许 metadata 状态为 `replaced` / `deleted`）。不要在完成该顺序前手工把 session 改为 abandoned，也不要定时清理 active session，因为它可能正在上传，也可能在刷新后恢复。
-
-如果确需生产人工清理，只处理超过已审批保留期、`status='abandoned'` 的 session 中，同时满足 `state='pending'`、`revision_id is null` 且 `daily_okr_block_id is null` 的**未关联**附件。先用以下只读查询生成受控候选清单：
-
-```sql
-select session.id as session_id,
-       attachment.id as attachment_id,
-       attachment.storage_path,
-       session.abandoned_at,
-       exists (
-         select 1 from storage.objects object
-         where object.bucket_id = 'report-attachments'
-           and object.name = attachment.storage_path
-       ) as storage_object_exists
-from public.daily_report_upload_sessions session
-join public.report_attachments attachment
-  on attachment.upload_session_id = session.id
- and attachment.organization_id = session.organization_id
- and attachment.report_id = session.report_id
-where session.organization_id = '<approved-organization-uuid>'::uuid
-  and session.status = 'abandoned'
-  and session.abandoned_at < '<approved-cutoff-timestamptz>'::timestamptz
-  and attachment.state = 'pending'
-  and attachment.revision_id is null
-  and attachment.daily_okr_block_id is null
-order by session.abandoned_at, attachment.id;
-```
-
-对已是 abandoned 的 session，现有删除 RPC 会因 session 非 active 而拒绝；同时 `pending` metadata 不满足 Storage DELETE RLS，因此普通 `authenticated` 用户**无法也不应**删除这类 Storage 对象。不得通过临时改 RLS、把 session 改回 active、在浏览器使用高权限 key，或直接删 `storage.objects` 记录来绕过该状态机。
-
-如果候选中 `storage_object_exists=true`，这是一次受控的服务端运维修复，而不是普通用户流程。推荐流程为：
-
-1. 变更单固定 organization、session ID、attachment ID、完整 storage path、cutoff、候选数量和执行时间窗口；双人复核只读候选清单。
-2. 专用的服务端维护 job 仅在该窗口内从密码库直接注入短时 service-role/admin 凭据，按清单的完整 path 调用 Storage API。凭据或 token 值不进入浏览器、命令行参数、shell history、本文档、Git 或日志，本文档也不提供带凭据的临时删除命令。
-3. job 只记录变更单 ID、执行人/进程身份、session/attachment ID、path 的不可逆摘要、删除结果、前后数量和时间戳，不记录凭据、Authorization header 或文件内容。
-4. 删除后用只读查询确认清单中每个 Storage 对象已不存在，再执行下方 rollback-first metadata 软删除；最后撤销/失效短时凭据并归档审计记录。
-
-对已确认无 Storage 对象的同一批次，可在变更单附带的显式 organization/cutoff 边界内将 metadata 软删除：
-
-```sql
-begin;
-
-with approved_candidates as (
-  select attachment.id
-  from public.daily_report_upload_sessions session
-  join public.report_attachments attachment
-    on attachment.upload_session_id = session.id
-   and attachment.organization_id = session.organization_id
-   and attachment.report_id = session.report_id
-  where session.organization_id = '<approved-organization-uuid>'::uuid
-    and session.status = 'abandoned'
-    and session.abandoned_at < '<approved-cutoff-timestamptz>'::timestamptz
-    and attachment.state = 'pending'
-    and attachment.revision_id is null
-    and attachment.daily_okr_block_id is null
-    and not exists (
-      select 1 from storage.objects object
-      where object.bucket_id = 'report-attachments'
-        and object.name = attachment.storage_path
-    )
-)
-update public.report_attachments attachment
-set state = 'deleted'
-from approved_candidates candidate
-where attachment.id = candidate.id
-returning attachment.id, attachment.upload_session_id;
-
--- 核对 returning 行数与已批准清单完全一致后才 COMMIT，否则 ROLLBACK。
-rollback;
-```
-
-首次演练保留 `rollback`；只有返回集与审批清单完全一致后，才在变更窗口把最后一行改为 `commit`。绝不处理 active/completed session、已终态上传、已关联 revision/block 的附件，或审核后日报的证据。
+旧 Storage 对象不属于此部署顺序，且当前发布不迁移、复制、删除或调用它们。任何历史对象的保留或删除都需要独立变更单、独立审计和专门 runbook；不得使用本发布的 OSS 操作、生产浏览器账号或附件 API 来处理它们。
 
 ---
 
@@ -441,7 +418,7 @@ where state = 'deleted'
 
 ### 8.2 回滚与紧急止血
 
-本发布所含 migration（包括 `202608240001`、`202608240002`）都是 additive/forward-only，且旧的无 session 写 RPC 已撤销 `authenticated` 权限。**不要** drop 新表/列、删除 migration history，也不要为了回滚前端重新开放旧 RPC；那会恢复残留 pending、绕过锁定或破坏通知审计路径。
+本发布所含 migration（`202608240001` 至 `202608240004`）都是 additive/forward-only。资源 Storage 入口和旧的无 session 写入口已撤销 `authenticated` 权限；日报历史 Storage RPC 则需要单独的已审核 forward migration 才能撤销。**不要** drop 新表/列、删除 migration history，也不要为了回滚前端重新开放旧 RPC；那会恢复残留 pending、绕过锁定、重新暴露 Storage 传输或破坏通知审计路径。
 
 - 前端回滚只能回到与 session-aware RPC 签名兼容的已审核构建。
 - 若需要立即止血，先撤销新日报写 RPC 的 `authenticated` 执行权限，使日报暂时只读，再 reload PostgREST。该操作必须有变更审批：
@@ -499,7 +476,7 @@ commit;
 - `npm ci && npm run typecheck && npm run test:run` 全绿。
 - `npm run build:production`（注入真实 URL/anon key）通过。
 - 新实例：注册→登录→session→管理员审批→角色绑定端到端可用。
-- 附件上传/下载、两个私有 bucket、RLS 拒绝项逐项冒烟。
+- 日报/资源附件上传与下载、同一私有 OSS bucket 的两个前缀、RLS 与 API 拒绝项逐项冒烟；旧 Storage 测试对象不迁移。
 - 结构迁移后 `supabase db lint` 零错误。
 
 日报附件发布的角色化手工 QA 门禁：
