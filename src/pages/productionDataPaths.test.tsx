@@ -12,6 +12,9 @@ const repositoryMock = vi.hoisted(() => ({
   mode: 'supabase' as const,
   getDashboardData: vi.fn(),
   setMyLocale: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  listMyNotifications: vi.fn().mockResolvedValue({ ok: true, data: { items: [], unreadCount: 0, nextCursor: null } }),
+  markNotificationRead: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  markAllNotificationsRead: vi.fn().mockResolvedValue({ ok: true, data: 0 }),
 }));
 
 vi.mock('../lib/supabase', () => ({

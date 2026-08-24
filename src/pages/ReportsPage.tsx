@@ -1,9 +1,10 @@
-import { useId } from 'react';
+import { useContext, useEffect, useId, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useLocale } from '../i18n/LocaleProvider';
 import type { MessageKey } from '../i18n/messages';
-import { DailyReportsPage } from './DailyReportsPage';
+import { DailyReportsPage, type DailyReportsPageHandle } from './DailyReportsPage';
 import { WeeklyReportsPage } from './WeeklyReportsPage';
+import { ReportNotificationOpenContext } from '../layout/AppShell';
 
 type ReportTab = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
@@ -23,9 +24,18 @@ export function ReportsPage() {
   const { t } = useLocale();
   const [searchParams, setSearchParams] = useSearchParams();
   const idBase = useId();
+  const dailyReportsRef = useRef<DailyReportsPageHandle>(null);
+  const reportNotificationRegistration = useContext(ReportNotificationOpenContext);
   const requested = searchParams.get('tab');
   const activeTab: ReportTab = isReportTab(requested) ? requested : 'daily';
   const active = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
+
+  useEffect(() => {
+    if (activeTab !== 'daily' || !reportNotificationRegistration) return undefined;
+    return reportNotificationRegistration.register(async (reportId) => {
+      await dailyReportsRef.current?.openReportDetail(reportId);
+    });
+  }, [activeTab, reportNotificationRegistration]);
 
   const selectTab = (tab: ReportTab) => {
     setSearchParams((current) => {
@@ -56,7 +66,7 @@ export function ReportsPage() {
 
       {activeTab === 'daily' ? (
         <section id={`${idBase}-daily-panel`} role="tabpanel" aria-labelledby={`${idBase}-daily-tab`}>
-          <DailyReportsPage />
+          <DailyReportsPage ref={dailyReportsRef} />
         </section>
       ) : activeTab === 'weekly' ? (
         <section id={`${idBase}-weekly-panel`} role="tabpanel" aria-labelledby={`${idBase}-weekly-tab`}>

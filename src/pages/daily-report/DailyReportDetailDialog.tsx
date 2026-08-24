@@ -13,6 +13,7 @@ export interface DailyReportDetailDialogProps {
   repository: OkrRepository;
   onClose: () => void;
   onConfirmed: (reportId: string) => void;
+  onNotificationMutation?: () => void;
 }
 
 const focusableSelector = [
@@ -31,6 +32,7 @@ export function DailyReportDetailDialog({
   repository,
   onClose,
   onConfirmed,
+  onNotificationMutation,
 }: DailyReportDetailDialogProps) {
   const { t } = useLocale();
   const titleId = useId();
@@ -88,6 +90,7 @@ export function DailyReportDetailDialog({
     }
     setCurrentDetail((current) => current ? { ...current, comments: [...current.comments, result.data] } : current);
     setCommentBody('');
+    onNotificationMutation?.();
   }
 
   async function confirmReport() {
@@ -103,6 +106,7 @@ export function DailyReportDetailDialog({
     const reportId = currentDetail.id;
     setCurrentDetail((current) => current ? { ...current, status: 'confirmed', canConfirm: false } : current);
     onConfirmed(reportId);
+    onNotificationMutation?.();
   }
 
   async function downloadAttachment(attachmentId: string) {

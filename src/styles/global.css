@@ -1812,6 +1812,7 @@ select {
 }
 
 .account-menu__trigger {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1821,6 +1822,18 @@ select {
   border: 1px solid #d1d5db;
   border-radius: 999px;
   cursor: pointer;
+}
+
+.account-menu__notification-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  background: #dc2626;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(153, 27, 27, 0.16);
 }
 
 .account-menu__trigger:focus-visible {
@@ -1941,6 +1954,91 @@ select {
   height: 1px;
   background: #e2e8f0;
   margin: var(--space-2) 0;
+}
+
+.notification-center__scrim {
+  z-index: 70;
+}
+
+.notification-center {
+  width: min(560px, 100%);
+}
+
+.notification-center__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.notification-center__header h2 {
+  margin-bottom: var(--space-1);
+}
+
+.notification-center__header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.notification-center__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-3);
+}
+
+.notification-center__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notification-center__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px var(--space-3);
+  padding: var(--space-3);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+}
+
+.notification-center__item--unread {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  box-shadow: inset 3px 0 #dc2626;
+}
+
+.notification-center__open {
+  padding: 0;
+  color: #1f2937;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-center__open:hover,
+.notification-center__open:focus-visible {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.notification-center__item time {
+  grid-column: 1;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.notification-center__item .text-button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
 }
 
 .modal-scrim {

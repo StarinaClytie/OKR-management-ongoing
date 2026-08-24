@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useContext, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
@@ -22,6 +22,7 @@ import { useDashboardData } from '../data/useDashboardData';
 import { RepositoryDataState } from '../components/RepositoryDataState';
 import { repositoryErrorKey } from '../i18n/repositoryErrors';
 import { DailyReportDetailDialog } from './daily-report/DailyReportDetailDialog';
+import { NotificationCenterContext } from '../layout/NotificationCenter';
 
 function authorName(authorId: string, users: User[], fallback: string) {
   return users.find((user) => user.id === authorId)?.name ?? fallback;
@@ -50,6 +51,7 @@ export interface DailyReportsPageHandle {
 export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataRepository?: OkrRepository }>(function DailyReportsPage({ dataRepository = repository }, ref) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
+  const notificationCenter = useContext(NotificationCenterContext);
   const [notice, setNotice] = useState<MessageKey | null>(null);
   const [isAuthoring, setIsAuthoring] = useState(false);
   const [editingReport, setEditingReport] = useState<DailyReport>();
@@ -368,6 +370,7 @@ export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataReposit
           repository={dataRepository}
           onClose={closeReportDetail}
           onConfirmed={handleReportConfirmed}
+          onNotificationMutation={notificationCenter?.notifications.refresh}
         />
       ) : null}
     </section>

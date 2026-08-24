@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, AuthProvider, type AuthContextValue } from '../auth/AuthContext';
@@ -6,7 +6,7 @@ import type { OkrRepository } from '../data/types';
 import type { Role } from '../domain/types';
 import { LocaleProvider } from '../i18n/LocaleProvider';
 import { users } from '../mocks/users';
-import { AppShell } from './AppShell';
+import { AppShell, createReportNotificationOpenRegistry } from './AppShell';
 
 function renderShell() {
   return render(
@@ -202,10 +202,62 @@ describe('application shell', () => {
 
     const menuButton = screen.getByRole('button', { name: '打开导航' });
     await user.click(menuButton);
-    await user.click(screen.getByRole('button', { name: '打开账户菜单' }));
+    await user.click(screen.getByRole('button', { name: /^打开账户菜单/ }));
     await user.click(screen.getByRole('menuitem', { name: '个人资料' }));
 
     expect(screen.queryByRole('dialog', { name: '移动端主导航' })).not.toBeInTheDocument();
     expect(menuButton).toHaveFocus();
+  });
+});
+
+describe('report notification opener registry', () => {
+  it('consumes a queued report once when the page registers later', async () => {
+    const registry = createReportNotificationOpenRegistry();
+    const opened: string[] = [];
+
+    await registry.request('report-1');
+    registry.register(async (reportId) => { opened.push(reportId); });
+
+    await waitFor(() => expect(opened).toEqual(['report-1']));
+    const secondOpener = vi.fn(async () => undefined);
+    registry.register(secondOpener);
+    expect(secondOpener).not.toHaveBeenCalled();
+  });
+
+  it('keeps at most the most recent queued report', async () => {
+    const registry = createReportNotificationOpenRegistry();
+    const opener = vi.fn(async () => undefined);
+
+    await registry.request('report-1');
+    await registry.request('report-2');
+    registry.register(opener);
+
+    await waitFor(() => expect(opener).toHaveBeenCalledTimes(1));
+    expect(opener).toHaveBeenCalledWith('report-2');
+  });
+
+  it('does not call an opener after it unregisters', async () => {
+    const registry = createReportNotificationOpenRegistry();
+    const staleOpener = vi.fn(async () => undefined);
+    const unregister = registry.register(staleOpener);
+    unregister();
+
+    await registry.request('report-1');
+    expect(staleOpener).not.toHaveBeenCalled();
+
+    const currentOpener = vi.fn(async () => undefined);
+    registry.register(currentOpener);
+    await waitFor(() => expect(currentOpener).toHaveBeenCalledWith('report-1'));
+  });
+
+  it('clears queued work when the account changes', async () => {
+    const registry = createReportNotificationOpenRegistry();
+    await registry.request('old-user-report');
+
+    registry.clear();
+    const opener = vi.fn(async () => undefined);
+    registry.register(opener);
+
+    expect(opener).not.toHaveBeenCalled();
   });
 });

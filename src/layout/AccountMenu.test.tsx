@@ -7,6 +7,7 @@ import type { OkrRepository } from '../data/types';
 import type { User } from '../domain/types';
 import { LocaleProvider } from '../i18n/LocaleProvider';
 import { AccountMenu } from './AccountMenu';
+import { NotificationCenterContext, type NotificationCenterContextValue } from './NotificationCenter';
 
 const admin: User = {
   id: 'admin-1',
@@ -19,7 +20,7 @@ const admin: User = {
   organization: 'Acme',
 };
 
-function renderMenu(auth: Partial<AuthContextValue> = {}, compact = false) {
+function renderMenu(auth: Partial<AuthContextValue> = {}, compact = false, notificationCenter?: NotificationCenterContextValue) {
   const signOut = vi.fn(async () => undefined);
   const value: AuthContextValue = {
     status: 'ready',
@@ -35,7 +36,11 @@ function renderMenu(auth: Partial<AuthContextValue> = {}, compact = false) {
     <AuthContext.Provider value={value}>
       <LocaleProvider repository={{ mode: 'supabase' } as OkrRepository}>
         <MemoryRouter>
-          <AccountMenu compact={compact} />
+          {notificationCenter ? (
+            <NotificationCenterContext.Provider value={notificationCenter}>
+              <AccountMenu compact={compact} />
+            </NotificationCenterContext.Provider>
+          ) : <AccountMenu compact={compact} />}
         </MemoryRouter>
       </LocaleProvider>
     </AuthContext.Provider>,
@@ -44,6 +49,21 @@ function renderMenu(auth: Partial<AuthContextValue> = {}, compact = false) {
 }
 
 describe('AccountMenu', () => {
+  function notificationCenter(unreadCount: number): NotificationCenterContextValue {
+    return {
+      notifications: {
+        items: unreadCount > 0 ? [{ id: 'notification-1', type: 'daily_report_comment', reportId: 'report-1', resourceId: null, actorName: '主管', readAt: null, createdAt: '2026-08-24T10:00:00.000Z' }] : [],
+        unreadCount,
+        loading: false,
+        refresh: vi.fn(async () => undefined),
+        markRead: vi.fn(async () => true),
+        markAllRead: vi.fn(async () => true),
+      },
+      openReportFromNotification: vi.fn(async () => undefined),
+      openResourceFromNotification: vi.fn(),
+    };
+  }
+
   it('shows the signed-in identity with role, email, and organization', async () => {
     const user = userEvent.setup();
     renderMenu();
@@ -112,5 +132,31 @@ describe('AccountMenu', () => {
     expect(screen.getByRole('menu', { name: '账户菜单' })).toBeVisible();
     expect(screen.getByRole('menu', { name: '账户菜单' })).toHaveTextContent('陈安');
     expect(screen.getByRole('menu', { name: '账户菜单' })).toHaveTextContent('管理员');
+  });
+
+  it('does not show a red dot or unread count when there are no unread notifications', () => {
+    renderMenu({}, false, notificationCenter(0));
+
+    expect(screen.getByRole('button', { name: '打开账户菜单' })).toBeVisible();
+    expect(document.querySelector('.account-menu__notification-dot')).not.toBeInTheDocument();
+  });
+
+  it('keeps the unread red dot visible in compact mode and exposes the count accessibly', async () => {
+    const user = userEvent.setup();
+    const center = notificationCenter(2);
+    renderMenu({}, true, center);
+
+    const trigger = screen.getByRole('button', { name: '打开账户菜单，2 条未读通知' });
+    expect(trigger.querySelector('.account-menu__notification-dot')).toBeVisible();
+
+    await user.click(trigger);
+    expect(screen.getByRole('menuitem', { name: '消息通知 2' })).toBeVisible();
+    expect(center.notifications.refresh).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('menuitem', { name: '消息通知 2' }));
+    const dialog = await screen.findByRole('dialog', { name: '消息通知' });
+    expect(dialog).toBeVisible();
+    expect(dialog.closest('.account-menu')).toBeNull();
+    expect(center.notifications.refresh).toHaveBeenCalledTimes(2);
   });
 });

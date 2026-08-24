@@ -68,6 +68,7 @@ describe('DailyReportDetailDialog', () => {
 
   it('retains a typed comment after failure, then appends the server comment and clears the field', async () => {
     const user = userEvent.setup();
+    const onNotificationMutation = vi.fn();
     const commentDailyReport = vi.fn()
       .mockResolvedValueOnce({ ok: false, error: { code: 'network', message: 'offline' } })
       .mockResolvedValueOnce({
@@ -83,6 +84,7 @@ describe('DailyReportDetailDialog', () => {
         repository={repository({ commentDailyReport })}
         onClose={vi.fn()}
         onConfirmed={vi.fn()}
+        onNotificationMutation={onNotificationMutation}
       />,
     );
 
@@ -92,24 +94,28 @@ describe('DailyReportDetailDialog', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('网络错误，请检查连接后重试。');
     expect(input).toHaveValue('请补充样本量');
+    expect(onNotificationMutation).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: '添加评论' }));
 
     expect(commentDailyReport).toHaveBeenLastCalledWith('report-member', '请补充样本量');
     expect(await screen.findByText('请补充样本量')).toBeVisible();
     expect(input).toHaveValue('');
+    expect(onNotificationMutation).toHaveBeenCalledOnce();
   });
 
   it('uses server authorization to confirm and keeps commenting available afterward', async () => {
     const user = userEvent.setup();
     const confirmDailyReport = vi.fn(async () => ({ ok: true as const, data: undefined }));
     const onConfirmed = vi.fn();
+    const onNotificationMutation = vi.fn();
     render(
       <DailyReportDetailDialog
         detail={reportDetail({ canComment: true, canConfirm: true })}
         repository={repository({ confirmDailyReport })}
         onClose={vi.fn()}
         onConfirmed={onConfirmed}
+        onNotificationMutation={onNotificationMutation}
       />,
     );
 
@@ -117,6 +123,7 @@ describe('DailyReportDetailDialog', () => {
 
     expect(confirmDailyReport).toHaveBeenCalledWith('report-member', 4);
     expect(onConfirmed).toHaveBeenCalledWith('report-member');
+    expect(onNotificationMutation).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '评论内容' })).toBeEnabled();
     expect(screen.getByText('已确认')).toBeVisible();
