@@ -60,4 +60,46 @@ describe('ResourceFormModal owner selection', () => {
 
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
   });
+
+  it('does not refocus the resource name when upload progress rerenders and locks create fields while active', () => {
+    const { rerender } = render(
+      <>
+        <button type="button">Keep focus</button>
+        <ResourceFormModal
+          title="添加资源"
+          mode="create"
+          initial={values()}
+          ownerOptions={owners}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </>,
+    );
+
+    const focusTarget = screen.getByRole('button', { name: 'Keep focus' });
+    focusTarget.focus();
+
+    rerender(
+      <>
+        <button type="button">Keep focus</button>
+        <ResourceFormModal
+          title="添加资源"
+          mode="create"
+          initial={values()}
+          ownerOptions={owners}
+          submitting
+          attachmentProgress={<p>服务器校验中</p>}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </>,
+    );
+
+    expect(focusTarget).toHaveFocus();
+    expect(screen.getByLabelText(/资源名称/)).toBeDisabled();
+    expect(screen.getByLabelText(/负责人/)).toBeDisabled();
+    expect(screen.getByLabelText(/分类/)).toBeDisabled();
+    expect(screen.getByLabelText(/位置/)).toBeDisabled();
+    expect(screen.getByLabelText(/使用说明附件/)).toBeDisabled();
+  });
 });

@@ -36,3 +36,19 @@ Concerns: resource-create attachment failures still retain the established
 partial-success behavior: the resource is created and the user is directed to
 retry its attachment from the resource detail page, preventing duplicate
 resource creation.
+
+## Fix round 1: preserve focus and lock active create forms
+
+Separated mount-only autofocus from the Escape-key listener so progress-driven
+rerenders and inline parent callbacks cannot move focus back to the resource
+name. Every mutable resource-form field is disabled while `submitting` is
+active; fields and retry controls return to their normal state once the upload
+fails.
+
+Verification:
+
+- Red: `npm test -- --run src/components/ResourceFormModal.test.tsx` — 1 failed, reproducing focus being moved from `Keep focus` to the resource-name input after a progress rerender.
+- Focused green: `npm test -- --run src/components/ResourceFormModal.test.tsx src/pages/ResourcesPage.test.tsx src/pages/ResourceDetailPage.test.tsx` — 47 passed.
+- Full suite: `npm test -- --run` — 67 files and 579 tests passed.
+- `npm run typecheck` — passed.
+- `git diff --check` — passed.

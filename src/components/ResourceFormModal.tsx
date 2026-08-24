@@ -70,6 +70,9 @@ export function ResourceFormModal({
 
   useEffect(() => {
     firstFieldRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape' && !submitting) {
         event.preventDefault();
@@ -134,7 +137,7 @@ export function ResourceFormModal({
 
         <label className="modal-field">
           <span>{t('resources.field.name')} *</span>
-          <input ref={firstFieldRef} value={values.name} onChange={(event) => set('name', event.target.value)} required />
+          <input ref={firstFieldRef} value={values.name} disabled={submitting} onChange={(event) => set('name', event.target.value)} required />
         </label>
 
         {isCreate ? (
@@ -142,7 +145,7 @@ export function ResourceFormModal({
             <span>{t('resources.field.owner')} *</span>
             <select
               value={values.ownerId}
-              disabled={ownersLoading || ownerOptions.length === 0}
+              disabled={submitting || ownersLoading || ownerOptions.length === 0}
               onChange={(event) => set('ownerId', event.target.value)}
               required
             >
@@ -160,27 +163,27 @@ export function ResourceFormModal({
 
         <label className="modal-field">
           <span>{t('resources.field.category')} *</span>
-          <select value={values.category} onChange={(event) => set('category', event.target.value as ResourceCategory)}>
+          <select value={values.category} disabled={submitting} onChange={(event) => set('category', event.target.value as ResourceCategory)}>
             {resourceCategories.map((category) => <option key={category} value={category}>{t(resourceCategoryKeys[category])}</option>)}
           </select>
         </label>
 
         <label className="modal-field">
           <span>{t('resources.field.kind')} *</span>
-          <select value={values.resourceKind} onChange={(event) => set('resourceKind', event.target.value as ResourceKind)}>
+          <select value={values.resourceKind} disabled={submitting} onChange={(event) => set('resourceKind', event.target.value as ResourceKind)}>
             {resourceKinds.map((kind) => <option key={kind} value={kind}>{t(resourceKindKeys[kind])}</option>)}
           </select>
         </label>
 
         <label className="modal-field">
           <span>{t('resources.field.location')} *</span>
-          <input value={values.location} onChange={(event) => set('location', event.target.value)} placeholder="Optics Lab / Cabinet A" required />
+          <input value={values.location} disabled={submitting} onChange={(event) => set('location', event.target.value)} placeholder="Optics Lab / Cabinet A" required />
         </label>
 
         {!isCreate ? (
           <label className="modal-field">
             <span>{t('resources.field.status')} *</span>
-            <select value={values.status} onChange={(event) => set('status', event.target.value as ResourceStatus)}>
+            <select value={values.status} disabled={submitting} onChange={(event) => set('status', event.target.value as ResourceStatus)}>
               {resourceStatuses.map((status) => <option key={status} value={status}>{t(resourceStatusKeys[status])}</option>)}
             </select>
           </label>
@@ -188,40 +191,40 @@ export function ResourceFormModal({
 
         <label className="modal-field">
           <span>{t('resources.field.description')}</span>
-          <textarea value={values.description} onChange={(event) => set('description', event.target.value)} rows={2} />
+          <textarea value={values.description} disabled={submitting} onChange={(event) => set('description', event.target.value)} rows={2} />
         </label>
 
         <label className="modal-field">
           <span>{t('resources.field.purchaseDate')}</span>
-          <input type="date" value={values.purchaseDate} onChange={(event) => set('purchaseDate', event.target.value)} />
+          <input type="date" value={values.purchaseDate} disabled={submitting} onChange={(event) => set('purchaseDate', event.target.value)} />
         </label>
 
         <label className="modal-field">
           <span>{t('resources.field.purchaseVendor')}</span>
-          <input value={values.purchaseVendor} onChange={(event) => set('purchaseVendor', event.target.value)} placeholder="Thorlabs / Edmund Optics / Taobao" />
+          <input value={values.purchaseVendor} disabled={submitting} onChange={(event) => set('purchaseVendor', event.target.value)} placeholder="Thorlabs / Edmund Optics / Taobao" />
         </label>
 
         <label className="modal-field">
           <span>{t('resources.field.purchaseReference')}</span>
-          <input type="url" value={values.purchaseReference} onChange={(event) => set('purchaseReference', event.target.value)} placeholder="https://" />
+          <input type="url" value={values.purchaseReference} disabled={submitting} onChange={(event) => set('purchaseReference', event.target.value)} placeholder="https://" />
         </label>
 
         <div className="modal-field">
           <span>{t('resources.field.quantity')}</span>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
-            <input type="number" min="0" step="any" value={values.quantity} onChange={(event) => set('quantity', event.target.value)} placeholder="500" />
-            <input value={values.unit} onChange={(event) => set('unit', event.target.value)} placeholder={t('resources.field.unit')} />
+            <input type="number" min="0" step="any" value={values.quantity} disabled={submitting} onChange={(event) => set('quantity', event.target.value)} placeholder="500" />
+            <input value={values.unit} disabled={submitting} onChange={(event) => set('unit', event.target.value)} placeholder={t('resources.field.unit')} />
           </div>
         </div>
 
         <label className="modal-field">
           <span>{t('resources.field.usageNotes')}</span>
-          <textarea value={values.usageNotes} onChange={(event) => set('usageNotes', event.target.value)} rows={2} />
+          <textarea value={values.usageNotes} disabled={submitting} onChange={(event) => set('usageNotes', event.target.value)} rows={2} />
         </label>
 
         <label className="modal-field">
           <span>{t('resources.field.manualUrl')}</span>
-          <input type="url" value={values.manualUrl} onChange={(event) => set('manualUrl', event.target.value)} placeholder="https://" />
+          <input type="url" value={values.manualUrl} disabled={submitting} onChange={(event) => set('manualUrl', event.target.value)} placeholder="https://" />
         </label>
 
         {isCreate ? (
