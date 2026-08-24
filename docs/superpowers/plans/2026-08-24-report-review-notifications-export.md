@@ -16,6 +16,8 @@
 - 日报确认后正文与附件锁定，但授权审核者仍可追加评论。
 - 评论和确认通知必须与业务写入处于同一数据库事务。
 - 所有角色可查看、搜索、查看资源详情、报告问题和添加资源。
+- 添加资源时负责人默认当前添加人，也可指定同组织、已审核、在职且具有 active role 的员工；`created_by` 与 `owner_id` 必须分离保存。
+- 指定自己时不通知；指定其他员工时，资源与 `resource_owner_assigned` 通知必须在同一数据库事务提交。
 - 资源负责人、管理层、管理员可修改资源；只有管理层、管理员可归档资源。
 - 附件下载必须继续调用短期下载授权，不返回永久公开 URL 或 OSS 凭据。
 - 导出只包含已授权详情数据和附件清单，不嵌入附件原文件。
@@ -91,10 +93,14 @@ git commit -m "fix: separate daily attachment progress layout"
 - Modify: `src/auth/permissionService.test.ts`
 - Modify: `src/pages/ResourcesPage.tsx`
 - Modify: `src/pages/ResourcesPage.test.tsx`
+- Modify: `src/components/ResourceFormModal.tsx`
+- Modify: `src/components/ResourceFormModal.test.tsx`
 - Modify: `src/pages/ResourceDetailPage.tsx`
 - Modify: `src/pages/ResourceDetailPage.test.tsx`
 
 **Interfaces:**
+- Produces table/type foundation used by Task 3: `public.user_notification_type` with `daily_report_comment`、`daily_report_confirmed`、`resource_owner_assigned`，以及 `public.user_notifications`（含 nullable `report_id`、`resource_id`、`comment_id`）。
+- Produces: `public.list_eligible_resource_owners() returns jsonb`，以及带显式 `p_owner_id uuid` 的新版 `create_resource` overload。
 - Produces: 所有 active role 可执行 `list_resources`、`get_resource_detail`、`create_resource`、`report_resource_problem`。
 - Produces: `resource.update` 仅 owner/management/administrator；`resource.archive` 仅 management/administrator。
 
@@ -116,9 +122,23 @@ select throws_ok(
   $$select public.archive_resource('24000000-0000-0000-0000-000000000001')$$,
   '42501', 'Resource is not archivable by the current user', 'employee cannot archive'
 );
+select lives_ok(
+  $$select public.create_resource('Assigned Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000005')$$,
+  'employee assigns an eligible peer as owner'
+);
+select is(
+  (select created_by::text || ':' || owner_id::text from public.resources where name = 'Assigned Tool'),
+  '15000000-0000-0000-0000-000000000004:15000000-0000-0000-0000-000000000005',
+  'creator and assigned owner remain distinct'
+);
+select is(
+  (select count(*) from public.user_notifications where resource_id = (select id from public.resources where name = 'Assigned Tool') and notification_type = 'resource_owner_assigned'),
+  1::bigint,
+  'assigning another owner creates one notification'
+);
 ```
 
-前端断言 `resourceRoles` 不再过滤 employee/HR，且所有角色都看到“添加资源”；非 owner employee 不看到修改/归档。
+另写跨组织、inactive、pending、无 active role owner 的拒绝断言，并确认资源与通知都没有落库；指定自己时通知数为 0。前端断言 `resourceRoles` 不再过滤 employee/HR，所有角色都看到“添加资源”，负责人默认当前用户且可选择合格员工；非 owner employee 不看到修改/归档。
 
 - [ ] **Step 2: 运行 RED**
 
@@ -127,7 +147,29 @@ Expected: FAIL，当前导航过滤 employee/HR，且归档 RPC 仍允许资源 
 
 - [ ] **Step 3: 新增 additive migration**
 
-先以现有 `private.is_operational()` 为统一的“approved active profile + active role”边界；保留已满足要求的读取、详情、新增和问题报告函数，只在 `202608240001_resource_access.sql` 中 `create or replace` 当前不符合规格的 `archive_resource` 与 `restore_resource`，同时保持：
+先创建 `user_notification_type` 和 `user_notifications` 基础表、外键、索引并启用 FORCE RLS；浏览器不得直接写表。再以现有 `private.is_operational()` 为统一的“approved active profile + active role”边界；保留现有 12 参数 `create_resource` 作为兼容入口（始终令创建人负责），新增 13 参数 overload，最后一个参数为 `p_owner_id uuid`。新版函数验证候选人在当前组织、`approval_status='approved'`、`is_active=true` 且至少一个 active role；插入时 `created_by=auth.uid()`、`owner_id=validated_owner_id`。若 owner 不是当前用户，同一函数事务内插入 `resource_owner_assigned` 通知。另实现 `list_eligible_resource_owners()`，并 `create or replace` 当前不符合规格的 `archive_resource` 与 `restore_resource`：
+
+```sql
+create type public.user_notification_type as enum (
+  'daily_report_comment', 'daily_report_confirmed', 'resource_owner_assigned'
+);
+create table public.user_notifications (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  notification_type public.user_notification_type not null,
+  report_id uuid,
+  resource_id uuid references public.resources(id) on delete cascade,
+  comment_id uuid,
+  read_at timestamptz,
+  created_at timestamptz not null default timezone('utc', now()),
+  check ((notification_type = 'resource_owner_assigned') = (resource_id is not null))
+);
+alter table public.user_notifications enable row level security;
+alter table public.user_notifications force row level security;
+revoke all on public.user_notifications from public, anon, authenticated;
+```
 
 ```sql
 -- update
@@ -143,11 +185,11 @@ if not (private.has_role('management') or private.has_role('administrator')) the
 end if;
 ```
 
-替换的两个函数使用 `security definer`、`set search_path = ''`、精确 schema 引用，并分别执行 `revoke all on function public.archive_resource(uuid) from public, anon`、`revoke all on function public.restore_resource(uuid) from public, anon`，再仅向 `authenticated` grant execute。不得授予浏览器直接 INSERT/UPDATE/DELETE 表权限。
+所有新增/替换函数使用 `security definer`、`set search_path = ''`、精确 schema 引用；对 `public.list_eligible_resource_owners()`、完整 13 参数 `public.create_resource(...)`、`public.archive_resource(uuid)` 和 `public.restore_resource(uuid)` 撤销 `public, anon` 权限，再仅向 `authenticated` grant execute。不得授予浏览器直接 INSERT/UPDATE/DELETE 表权限。
 
 - [ ] **Step 4: 更新前端权限与导航**
 
-移除 `/resources` 的 `roles` 过滤；为 Resource permission scope 明确定义：create 对 active role 开放，update 检查 owner/management/administrator，archive 检查 management/administrator。按钮必须调用 `can(...)`，不能仅比较 role 字符串。
+移除 `/resources` 的 `roles` 过滤；为 Resource permission scope 明确定义：create 对 active role 开放，update 检查 owner/management/administrator，archive 检查 management/administrator。`ResourceFormModal` 的 create mode 接收 `ownerOptions: OrganizationUser[]` 和 `ownersLoading`，将 `ownerId` 纳入 `ResourceFormValues`；默认值使用当前用户 id，候选加载失败或为空时禁止提交。按钮必须调用 `can(...)`，不能仅比较 role 字符串。
 
 - [ ] **Step 5: 运行 focused tests**
 
@@ -157,7 +199,7 @@ Expected: PASS。
 - [ ] **Step 6: 提交**
 
 ```bash
-git add supabase/migrations/202608240001_resource_access.sql supabase/tests/resources.test.sql src/navigation/navigation.ts src/layout/AppShell.test.tsx src/auth/permissionService.ts src/auth/permissionService.test.ts src/pages/ResourcesPage.tsx src/pages/ResourcesPage.test.tsx src/pages/ResourceDetailPage.tsx src/pages/ResourceDetailPage.test.tsx
+git add supabase/migrations/202608240001_resource_access.sql supabase/tests/resources.test.sql src/navigation/navigation.ts src/layout/AppShell.test.tsx src/auth/permissionService.ts src/auth/permissionService.test.ts src/pages/ResourcesPage.tsx src/pages/ResourcesPage.test.tsx src/components/ResourceFormModal.tsx src/components/ResourceFormModal.test.tsx src/pages/ResourceDetailPage.tsx src/pages/ResourceDetailPage.test.tsx
 git commit -m "feat: open resource access to active employees"
 ```
 
@@ -178,7 +220,8 @@ git commit -m "feat: open resource access to active employees"
   - `public.list_my_notifications(integer,timestamptz,uuid) returns jsonb`
   - `public.mark_notification_read(uuid) returns void`
   - `public.mark_all_notifications_read() returns integer`
-- Produces tables: `daily_report_comments`, `user_notifications`。
+- Consumes: Task 2 已创建的 `user_notifications` 与 `user_notification_type`。
+- Produces table: `daily_report_comments`；并为既有 `user_notifications.comment_id` 补齐外键。
 
 - [ ] **Step 1: 写 35+ 项 pgTAP 权限与事务测试**
 
@@ -213,18 +256,9 @@ create table public.daily_report_comments (
   foreign key (organization_id, report_id) references public.daily_reports(organization_id, id) on delete cascade
 );
 
-create type public.user_notification_type as enum ('daily_report_comment', 'daily_report_confirmed');
-create table public.user_notifications (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  recipient_id uuid not null references public.profiles(id) on delete cascade,
-  actor_id uuid references public.profiles(id) on delete set null,
-  notification_type public.user_notification_type not null,
-  report_id uuid,
-  comment_id uuid references public.daily_report_comments(id) on delete cascade,
-  read_at timestamptz,
-  created_at timestamptz not null default timezone('utc', now())
-);
+alter table public.user_notifications
+  add constraint user_notifications_comment_id_fkey
+  foreign key (comment_id) references public.daily_report_comments(id) on delete cascade;
 ```
 
 启用并 FORCE RLS；撤销浏览器直接写。添加确认通知 partial unique index：`(recipient_id, report_id, notification_type) where notification_type='daily_report_confirmed'`。
@@ -284,7 +318,8 @@ git commit -m "feat: secure daily report reviews and notifications"
 
 **Interfaces:**
 - Produces types: `DailyReportDetail`, `DailyReportComment`, `UserNotification`, `NotificationPage`。
-- Produces repository methods: `getDailyReportDetail`、`commentDailyReport`、`listMyNotifications`、`markNotificationRead`、`markAllNotificationsRead`。
+- Extends: `CreateResourceInput.ownerId: string`。
+- Produces repository methods: `listEligibleResourceOwners`、`getDailyReportDetail`、`commentDailyReport`、`listMyNotifications`、`markNotificationRead`、`markAllNotificationsRead`。
 
 - [ ] **Step 1: 写 repository RPC mapping 的失败测试**
 
@@ -293,6 +328,10 @@ await expect(repository.getDailyReportDetail('report-1')).resolves.toEqual({ ok:
 expect(client.rpc).toHaveBeenCalledWith('get_daily_report_detail', { p_report_id: 'report-1' });
 await repository.commentDailyReport('report-1', '请补充数据');
 expect(client.rpc).toHaveBeenCalledWith('comment_daily_report', { p_report_id: 'report-1', p_body: '请补充数据' });
+await repository.createResource({ ...resourceInput, ownerId: 'profile-2' });
+expect(client.rpc).toHaveBeenCalledWith('create_resource', expect.objectContaining({ p_owner_id: 'profile-2' }));
+await repository.listEligibleResourceOwners();
+expect(client.rpc).toHaveBeenCalledWith('list_eligible_resource_owners', {});
 ```
 
 覆盖 locked、clearance、forbidden、conflict、network 错误映射；notification JSON 的日期、readAt nullable 和 cursor mapping。
@@ -302,14 +341,14 @@ expect(client.rpc).toHaveBeenCalledWith('comment_daily_report', { p_report_id: '
 ```ts
 export interface DailyReportComment { id: string; reportId: string; authorId: string; authorName: string; body: string; createdAt: string }
 export interface DailyReportDetail { id: string; authorId: string; authorName: string; date: string; status: ReportStatus; hours: number; currentRevision: number; blocks: DailyOkrBlock[]; comments: DailyReportComment[]; canComment: boolean; canConfirm: boolean }
-export type UserNotificationType = 'daily_report_comment' | 'daily_report_confirmed';
-export interface UserNotification { id: string; type: UserNotificationType; reportId: string; actorName: string; readAt: string | null; createdAt: string }
+export type UserNotificationType = 'daily_report_comment' | 'daily_report_confirmed' | 'resource_owner_assigned';
+export interface UserNotification { id: string; type: UserNotificationType; reportId: string | null; resourceId: string | null; actorName: string; readAt: string | null; createdAt: string }
 export interface NotificationPage { items: UserNotification[]; nextCursor: { createdAt: string; id: string } | null; unreadCount: number }
 ```
 
 - [ ] **Step 3: 实现 repository methods**
 
-所有方法只通过 `callRpc`；不得直接 select/insert 评论或通知表。Demo repository 返回确定性 mock notification/detail，不能写入生产 demo 数据。
+所有方法只通过 `callRpc`；不得直接 select/insert 评论或通知表。`createResource` 必须传 `p_owner_id: input.ownerId`，`listEligibleResourceOwners` 将 RPC JSON 映射为现有 `OrganizationUser[]`。Demo repository 返回确定性 mock notification/detail/owner candidates，不能写入生产 demo 数据。
 
 - [ ] **Step 4: 运行测试**
 
@@ -392,10 +431,11 @@ git commit -m "feat: review daily reports in a detail dialog"
 **Interfaces:**
 - Consumes: Task 4 notification repository methods。
 - Produces: `useNotifications()` 与 `openReportFromNotification(reportId)` callback。
+- Produces: `openResourceFromNotification(resourceId)` callback，使用现有 `/resources/:resourceId` 路由。
 
 - [ ] **Step 1: 写通知红点与已读状态 RED tests**
 
-覆盖无未读无红点、有未读显示 red dot 和可访问数量、菜单显示“消息通知 2”、单条已读、全部已读、点击通知先 mark 再请求详情、不可访问时仍已读并显示错误。
+覆盖无未读无红点、有未读显示 red dot 和可访问数量、菜单显示“消息通知 2”、单条已读、全部已读、点击日报通知先 mark 再请求详情、点击 `resource_owner_assigned` 先 mark 再导航 `/resources/resource-1`、不可访问时仍已读并显示错误。
 
 - [ ] **Step 2: 实现 hook**
 
@@ -415,7 +455,7 @@ export interface NotificationState {
 
 - [ ] **Step 3: 实现账户菜单入口与 panel**
 
-红点放在账户圆框右侧，compact sidebar 仍可见；`aria-label` 包含未读数。NotificationCenter 使用 dialog/panel，按创建时间倒序，提供逐条和全部已读。通过 AppShell/DailyReportsPage 的轻量 context 或 event callback 打开详情，不新增侧边栏 route。
+红点放在账户圆框右侧，compact sidebar 仍可见；`aria-label` 包含未读数。NotificationCenter 使用 dialog/panel，按创建时间倒序，提供逐条和全部已读。日报通知通过 AppShell/DailyReportsPage 的轻量 context 或 event callback 打开详情；资源负责人通知调用 React Router 导航到既有 `/resources/:resourceId`，不新增侧边栏 route。
 
 - [ ] **Step 4: 运行测试**
 
@@ -517,17 +557,19 @@ Expected: Vitest 全绿、typecheck/build 退出 0；bundle 包含 `https://api.
 
 如仓库已有 Playwright 则自动执行；否则使用本地 Supabase 的隔离账号执行并记录：
 
-1. employee 添加资源并提交带附件日报，进度布局不重叠；
-2. 直属 leader 只看到授权 blocks，查看、下载、评论；
-3. 非直属 leader 和 administrator 被拒绝；
-4. employee 账户出现红点，点击通知打开详情并标记已读；
-5. management 查看 Project Leader 日报并确认；
-6. confirmed 后作者不可编辑，reviewer 仍能评论；
-7. 作者和 reviewer 导出 PDF print view 与 `.docx`。
+1. employee 添加资源：先保留自己为负责人，再指定另一名合格员工；确认 `created_by`、`owner_id` 和通知均正确；
+2. 被指定员工看到红点，点击负责人通知打开资源详情；跨组织或 inactive 候选不能被选择且服务端拒绝伪造参数；
+3. employee 提交带附件日报，进度布局不重叠；
+4. 直属 leader 只看到授权 blocks，查看、下载、评论；
+5. 非直属 leader 和 administrator 被拒绝；
+6. employee 账户出现日报红点，点击通知打开详情并标记已读；
+7. management 查看 Project Leader 日报并确认；
+8. confirmed 后作者不可编辑，reviewer 仍能评论；
+9. 作者和 reviewer 导出 PDF print view 与 `.docx`。
 
 - [ ] **Step 4: 更新部署与用户指南**
 
-部署文档列出 `202608240001`、`202608240002` 顺序、`db push --dry-run`、PostgREST reload、RPC/grant 验证和 rollback-first 止血。用户指南说明资源权限、审核范围、评论、确认锁定、通知中心和导出；明确 administrator 不等于 management。
+部署文档列出 `202608240001`、`202608240002` 顺序、`db push --dry-run`、PostgREST reload、RPC/grant 验证和 rollback-first 止血。用户指南说明资源负责人默认值/指定规则/负责人通知、资源权限、审核范围、评论、确认锁定、通知中心和导出；明确 administrator 不等于 management。
 
 - [ ] **Step 5: 提交文档**
 
