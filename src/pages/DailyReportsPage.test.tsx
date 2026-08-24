@@ -1,4 +1,5 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { createRef } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider } from '../auth/AuthContext';
@@ -9,7 +10,7 @@ import { mockRepository } from '../mocks/repository';
 import type { DailyReportAttachmentUploadInput, OkrRepository } from '../data/types';
 import type { DailyReport, DailyReportDetail } from '../domain/types';
 import { currentBusinessDate } from '../domain/progressStatus';
-import { DailyReportsPage } from './DailyReportsPage';
+import { DailyReportsPage, type DailyReportsPageHandle } from './DailyReportsPage';
 
 function renderPageAs(userId: string) {
   return render(
@@ -209,6 +210,38 @@ describe('DailyReportsPage', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: /日报详情/ })).not.toBeInTheDocument();
     expect(viewButton).toHaveFocus();
+  });
+
+  it('does not restore a stale row trigger after a later programmatic detail open', async () => {
+    const user = userEvent.setup();
+    const pageRef = createRef<DailyReportsPageHandle>();
+    const data = mockRepository.getDashboardData('user-employee');
+    const report = editableReport(data.currentUser.id);
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
+      getDailyReportDetail: vi.fn(async () => ({ ok: true as const, data: detailFor(report) })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage ref={pageRef} dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    const viewButton = await screen.findByRole('button', { name: '查看详情' });
+    await user.click(viewButton);
+    await screen.findByRole('dialog', { name: /日报详情/ });
+    await user.keyboard('{Escape}');
+    expect(viewButton).toHaveFocus();
+
+    await act(async () => { await pageRef.current!.openReportDetail(report.id); });
+    await screen.findByRole('dialog', { name: /日报详情/ });
+    await user.keyboard('{Escape}');
+
+    expect(viewButton).not.toHaveFocus();
   });
 
   it('clears residual report details when a later detail request is denied', async () => {

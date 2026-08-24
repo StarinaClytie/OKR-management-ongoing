@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { can } from '../auth/permissionService';
@@ -43,7 +43,11 @@ function dailyReportMutationErrorKey(code: RepositoryErrorCode): MessageKey {
   return code === 'conflict' ? 'daily.conflict' : repositoryErrorKey(code);
 }
 
-export function DailyReportsPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
+export interface DailyReportsPageHandle {
+  openReportDetail(reportId: string): Promise<void>;
+}
+
+export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataRepository?: OkrRepository }>(function DailyReportsPage({ dataRepository = repository }, ref) {
   const { t } = useLocale();
   const { currentUser } = useAuth();
   const [notice, setNotice] = useState<MessageKey | null>(null);
@@ -62,6 +66,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   const detailRequestId = useRef(0);
   const dashboard = useDashboardData(dataRepository, currentUser?.id);
   const [searchParams] = useSearchParams();
+  useImperativeHandle(ref, () => ({ openReportDetail: (reportId: string) => openReportDetail(reportId) }));
   useEffect(() => {
     setIsAuthoring(false);
     setEditingReport(undefined);
@@ -285,7 +290,8 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
   async function openReportDetail(reportId: string, trigger?: HTMLButtonElement) {
     const requestId = detailRequestId.current + 1;
     detailRequestId.current = requestId;
-    if (trigger) detailTriggerRef.current = trigger;
+    detailTriggerRef.current = trigger ?? null;
+    restoreDetailFocus.current = false;
     setNotice(null);
     setDetailDialog({ reportId, loading: true });
     const result = await dataRepository.getDailyReportDetail(reportId);
@@ -299,7 +305,7 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
 
   function closeReportDetail() {
     detailRequestId.current += 1;
-    restoreDetailFocus.current = true;
+    restoreDetailFocus.current = detailTriggerRef.current !== null;
     setDetailDialog(undefined);
   }
 
@@ -366,4 +372,4 @@ export function DailyReportsPage({ dataRepository = repository }: { dataReposito
       ) : null}
     </section>
   );
-}
+});
