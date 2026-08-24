@@ -1,12 +1,54 @@
 import { Menu } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { RoleSwitcher } from './RoleSwitcher';
 import { Sidebar } from './Sidebar';
 import { useMediaQuery } from './useMediaQuery';
 import { useLocale } from '../i18n/LocaleProvider';
+import { useAuth } from '../auth/AuthContext';
+import { useNotifications } from '../hooks/useNotifications';
+import { NotificationCenterContext } from './NotificationCenter';
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'time-tech-okr.sidebar-collapsed';
+
+type ReportNotificationOpener = (reportId: string) => Promise<void>;
+
+export interface ReportNotificationOpenRegistry {
+  request(reportId: string): Promise<void>;
+  register(opener: ReportNotificationOpener): () => void;
+  clear(): void;
+}
+
+export function createReportNotificationOpenRegistry(): ReportNotificationOpenRegistry {
+  let opener: ReportNotificationOpener | undefined;
+  let pendingReportId: string | undefined;
+
+  return {
+    async request(reportId) {
+      if (opener) {
+        await opener(reportId);
+        return;
+      }
+      pendingReportId = reportId;
+    },
+    register(nextOpener) {
+      opener = nextOpener;
+      if (pendingReportId) {
+        const reportId = pendingReportId;
+        pendingReportId = undefined;
+        void nextOpener(reportId);
+      }
+      return () => {
+        if (opener === nextOpener) opener = undefined;
+      };
+    },
+    clear() {
+      pendingReportId = undefined;
+    },
+  };
+}
+
+export const ReportNotificationOpenContext = createContext<Pick<ReportNotificationOpenRegistry, 'register'> | undefined>(undefined);
 
 function readSidebarCollapsed(): boolean {
   try {
@@ -26,6 +68,9 @@ function storeSidebarCollapsed(collapsed: boolean): void {
 
 export function AppShell() {
   const { t } = useLocale();
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+  const notifications = useNotifications();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(readSidebarCollapsed);
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -33,10 +78,43 @@ export function AppShell() {
   const drawerRef = useRef<HTMLElement>(null);
   const restoreMenuFocus = useRef(false);
   const modalOpen = isMobile && mobileOpen;
+  const reportNotificationRegistry = useRef(createReportNotificationOpenRegistry());
+
+  useEffect(() => {
+    reportNotificationRegistry.current.clear();
+  }, [currentUser?.id]);
+
+  const openReportFromNotification = useCallback(async (reportId: string) => {
+    navigate('/reports?tab=daily');
+    await reportNotificationRegistry.current.request(reportId);
+  }, [navigate]);
+
+  const openResourceFromNotification = useCallback((resourceId: string) => {
+    navigate(`/resources/${resourceId}`);
+  }, [navigate]);
+
+  const notificationCenterValue = useMemo(() => ({
+    notifications,
+    openReportFromNotification,
+    openResourceFromNotification,
+  }), [notifications, openReportFromNotification, openResourceFromNotification]);
+
+  const reportNotificationRegistration = useMemo(() => ({
+    register: reportNotificationRegistry.current.register,
+  }), []);
 
   function closeMobileDrawer() {
     restoreMenuFocus.current = true;
     setMobileOpen(false);
+  }
+
+  function handOffMobileDrawerToNotifications() {
+    restoreMenuFocus.current = false;
+    setMobileOpen(false);
+  }
+
+  function restoreMobileNotificationFocus() {
+    menuButtonRef.current?.focus();
   }
 
   function changeDesktopCollapsed(next: boolean) {
@@ -95,6 +173,8 @@ export function AppShell() {
   }, [isMobile, mobileOpen]);
 
   return (
+    <ReportNotificationOpenContext.Provider value={reportNotificationRegistration}>
+      <NotificationCenterContext.Provider value={notificationCenterValue}>
     <div className="app-shell">
       {!isMobile ? (
         <Sidebar
@@ -110,6 +190,8 @@ export function AppShell() {
           mobileOpen={mobileOpen}
           onNavigate={closeMobileDrawer}
           onClose={closeMobileDrawer}
+          onNotificationsOpen={handOffMobileDrawerToNotifications}
+          onNotificationsClose={restoreMobileNotificationFocus}
           drawerRef={drawerRef}
         />
       ) : null}
@@ -137,5 +219,7 @@ export function AppShell() {
         </main>
       </div>
     </div>
+      </NotificationCenterContext.Provider>
+    </ReportNotificationOpenContext.Provider>
   );
 }

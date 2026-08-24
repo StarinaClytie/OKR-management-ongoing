@@ -194,6 +194,47 @@ export interface DailyReport {
   updatedAt?: string;
 }
 
+export interface DailyReportComment {
+  id: string;
+  reportId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface DailyReportDetail {
+  id: string;
+  authorId: string;
+  authorName: string;
+  date: string;
+  status: ReportStatus;
+  hours: number;
+  currentRevision: number;
+  blocks: DailyOkrBlock[];
+  comments: DailyReportComment[];
+  canComment: boolean;
+  canConfirm: boolean;
+}
+
+export type UserNotificationType = 'daily_report_comment' | 'daily_report_confirmed' | 'resource_owner_assigned';
+
+export interface UserNotification {
+  id: string;
+  type: UserNotificationType;
+  reportId: string | null;
+  resourceId: string | null;
+  actorName: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationPage {
+  items: UserNotification[];
+  nextCursor: { createdAt: string; id: string } | null;
+  unreadCount: number;
+}
+
 export interface WeeklyReport {
   id: string;
   authorId: string;

@@ -3,11 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
-import type { OkrRepository, Resource } from '../data/types';
-import type { User } from '../domain/types';
+import type { OkrRepository, OrganizationUser, Resource } from '../data/types';
+import type { Role, User } from '../domain/types';
 import { ResourcesPage } from './ResourcesPage';
 
 const employee: User = { id: 'user-employee', name: '周琳', role: 'employee', clearance: 'internal', title: '产品经理', department: '产品部', projectIds: ['project-orion'] };
+const eligibleOwners: OrganizationUser[] = [
+  { id: employee.id, displayName: employee.name, email: 'employee@example.com', department: employee.department, jobTitle: employee.title, role: employee.role, isActive: true, approvalStatus: 'approved', createdAt: '2026-08-01T00:00:00Z', projectIds: employee.projectIds },
+  { id: 'user-project-peer', displayName: '赵峰', email: 'peer@example.com', department: '数据部', jobTitle: '工程师', role: 'employee', isActive: true, approvalStatus: 'approved', createdAt: '2026-08-01T00:00:00Z', projectIds: ['project-orion'] },
+];
 
 function makeResource(overrides: Partial<Resource> = {}): Resource {
   return {
@@ -42,6 +46,7 @@ function makeRepository(overrides: Record<string, unknown> = {}): OkrRepository 
   return {
     mode: 'supabase',
     listResources: vi.fn(async () => ({ ok: true, data: [lensSet, vacuumPump, archivedWrench] })),
+    listEligibleResourceOwners: vi.fn(async () => ({ ok: true, data: eligibleOwners })),
     createResource: vi.fn(async () => ({ ok: true, data: { id: 'new-resource' } })),
     uploadResourceAttachment: vi.fn(async () => ({ ok: true, data: { id: 'att-new' } })),
     ...overrides,
@@ -131,13 +136,19 @@ describe('ResourcesPage list', () => {
 });
 
 describe('ResourcesPage create', () => {
-  it('creates a resource owned by the creator without an ownerId in the payload', async () => {
+  it.each(['employee', 'hr', 'project_leader', 'management', 'administrator'] as Role[])('shows add resource to %s users', async (role) => {
+    renderPage({ ...employee, role }, makeRepository());
+
+    expect(await screen.findByRole('button', { name: '添加资源' })).toBeVisible();
+  });
+
+  it('defaults the selected owner to the creator and includes ownerId in the payload', async () => {
     const repo = makeRepository();
     renderPage(employee, repo);
 
     await userEvent.click(await screen.findByRole('button', { name: '添加资源' }));
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByDisplayValue('周琳')).toBeVisible();
+    expect(within(dialog).getByLabelText(/负责人/)).toHaveValue(employee.id);
 
     await userEvent.type(within(dialog).getByLabelText(/资源名称/), 'New Lens');
     await userEvent.type(within(dialog).getByLabelText(/位置/), 'Optics Lab / Cabinet C');
@@ -147,8 +158,48 @@ describe('ResourcesPage create', () => {
     const payload = (repo.createResource as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(payload.name).toBe('New Lens');
     expect(payload.location).toBe('Optics Lab / Cabinet C');
-    expect(payload).not.toHaveProperty('ownerId');
+    expect(payload.ownerId).toBe(employee.id);
     expect(repo.listResources).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates a resource for another eligible owner', async () => {
+    const repo = makeRepository();
+    renderPage(employee, repo);
+
+    await userEvent.click(await screen.findByRole('button', { name: '添加资源' }));
+    const dialog = screen.getByRole('dialog');
+    await userEvent.selectOptions(within(dialog).getByLabelText(/负责人/), 'user-project-peer');
+    await userEvent.type(within(dialog).getByLabelText(/资源名称/), 'Assigned Tool');
+    await userEvent.type(within(dialog).getByLabelText(/位置/), 'Workshop');
+    await userEvent.click(within(dialog).getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(repo.createResource).toHaveBeenCalledWith(expect.objectContaining({ ownerId: 'user-project-peer' })));
+  });
+
+  it('disables create submission while eligible owners are loading', async () => {
+    const repo = makeRepository({ listEligibleResourceOwners: vi.fn(() => new Promise(() => undefined)) });
+    renderPage(employee, repo);
+    await userEvent.click(await screen.findByRole('button', { name: '添加资源' }));
+    const dialog = screen.getByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/资源名称/), 'Waiting Tool');
+    await userEvent.type(within(dialog).getByLabelText(/位置/), 'Workshop');
+
+    expect(within(dialog).getByRole('button', { name: '保存' })).toBeDisabled();
+  });
+
+  it.each([
+    ['the eligible-owner request fails', { ok: false, error: { code: 'network', message: '' } }],
+    ['the eligible-owner list is empty', { ok: true, data: [] }],
+  ])('disables create submission when %s', async (_label, ownerResult) => {
+    const repo = makeRepository({ listEligibleResourceOwners: vi.fn(async () => ownerResult) });
+    renderPage(employee, repo);
+    await userEvent.click(await screen.findByRole('button', { name: '添加资源' }));
+    const dialog = screen.getByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/资源名称/), 'Unavailable Owner Tool');
+    await userEvent.type(within(dialog).getByLabelText(/位置/), 'Workshop');
+
+    expect(within(dialog).getByRole('button', { name: '保存' })).toBeDisabled();
+    expect(repo.createResource).not.toHaveBeenCalled();
   });
 
   it('disables submission when required fields are empty', async () => {

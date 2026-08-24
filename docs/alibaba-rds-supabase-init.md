@@ -19,12 +19,12 @@
 | 目标 | `objectives` |
 | 关键结果 | `key_results`、`kr_assignments`、`kr_progress_updates`、`progress_snapshots`、`progress_baselines` |
 | 里程碑/风险 | `milestones`、`risks`、`legacy_project_risks` |
-| 日报/周报 | `daily_reports`、`daily_report_revisions`、`daily_report_revision_krs`、`daily_objectives`、`daily_key_results`、`daily_okr_blocks`、`report_evidence_links`、`report_attachments`、`report_attachment_revisions`、`daily_report_upload_sessions` |
-| 资源与补给 | `resources`、`resource_attachments`、`resource_problems`、`resource_problem_notifications` |
+| 日报/周报 | `daily_reports`、`daily_report_revisions`、`daily_report_revision_krs`、`daily_objectives`、`daily_key_results`、`daily_okr_blocks`、`daily_report_comments`、`report_evidence_links`、`report_attachments`、`report_attachment_revisions`、`daily_report_upload_sessions` |
+| 资源与补给 | `resources`、`resource_attachments`、`resource_problems`、`resource_problem_notifications`、`user_notifications` |
 
 ### 1.2 枚举类型（`public.*`）
 
-`app_role`、`classification`、`report_status`、`approval_status`、`kr_measurement_type`、`okr_status`、`kr_metric_type`、`okr_priority`、`kr_assignment_role`、`project_status`、`risk_level`、`resource_category`、`resource_kind`、`attachment_state`、`resource_status`、`resource_problem_type`、`resource_problem_status`、`resource_notification_status`。
+`app_role`、`classification`、`report_status`、`approval_status`、`kr_measurement_type`、`okr_status`、`kr_metric_type`、`okr_priority`、`kr_assignment_role`、`project_status`、`risk_level`、`resource_category`、`resource_kind`、`attachment_state`、`resource_status`、`resource_problem_type`、`resource_problem_status`、`resource_notification_status`、`user_notification_type`。
 
 ### 1.3 数据库函数
 
@@ -60,11 +60,14 @@
 
 `supabase/migrations/` 是唯一迁移清单。文件名前缀决定顺序；部署前用 `npx supabase migration list` 对比本地与远端历史，不在文档中维护容易过期的手工数量或文件副本。
 
-本次日报附件生命周期发布必须按顺序包含以下三个 additive migration：
+本次发布必须按版本顺序包含以下 additive migration；其中前四个为日报附件生命周期，最后两个为资源访问、日报审核与站内通知：
 
 1. `202608230006_daily_upload_sessions_and_locks.sql`：上传 session、服务端终态校验、上海业务日及审核锁定。
 2. `202608230007_daily_attachment_adoption.sql`：同日编辑的历史附件继承、可重试的 session 清理 RPC。
 3. `202608230008_daily_upload_cleanup_session_recovery.sql`：刷新后恢复仍有未关联清理目标的 active session。
+4. `202608230009_daily_upload_review_hardening.sql`：补齐日报审核/上传工作流的权限加固。
+5. `202608240001_resource_access.sql`：所有已批准、active 且有 active 角色的账号可发现/创建资源；创建者默认是负责人，可指定同组织合格负责人，并建立资源负责人通知。
+6. `202608240002_report_review_notifications.sql`：日报详情、受限审核/评论、确认通知与通知中心已读状态。
 
 > 只追加新迁移；**不要**编辑、重命名、回退或重新执行远端已经记录的迁移，也不要手工删表。生产升级只允许本次发布审批过的迁移处于 pending 状态。
 
@@ -127,7 +130,9 @@ where table_schema = 'public'
 order by column_name;
 
 select to_regclass('public.daily_report_upload_sessions') as upload_sessions,
-       to_regclass('public.report_attachment_revisions') as attachment_revisions;
+       to_regclass('public.report_attachment_revisions') as attachment_revisions,
+       to_regclass('public.daily_report_comments') as report_comments,
+       to_regclass('public.user_notifications') as user_notifications;
 
 select to_regprocedure('public.begin_daily_report_upload_session(date,public.report_status,public.classification)') as begin_session_rpc,
        to_regprocedure('public.begin_entry_attachment_upload(uuid,uuid,integer,text,text,integer,public.classification,text)') as begin_upload_rpc,
@@ -139,6 +144,16 @@ select to_regprocedure('public.begin_daily_report_upload_session(date,public.rep
        to_regprocedure('public.abandon_daily_report_upload_session(uuid)') as abandon_session_rpc,
        to_regprocedure('public.soft_delete_attachment(uuid)') as soft_delete_rpc,
        to_regprocedure('public.authorize_attachment_revision_removal(uuid)') as authorize_revision_removal_rpc;
+
+select to_regprocedure('public.list_resources(boolean)') as list_resources_rpc,
+       to_regprocedure('public.list_eligible_resource_owners()') as eligible_resource_owners_rpc,
+       to_regprocedure('public.create_resource(text,public.resource_category,public.resource_kind,text,text,date,text,text,text,text,numeric,text,uuid)') as create_resource_assigned_owner_rpc,
+       to_regprocedure('public.get_daily_report_detail(uuid)') as report_detail_rpc,
+       to_regprocedure('public.comment_daily_report(uuid,text)') as comment_report_rpc,
+       to_regprocedure('public.confirm_daily_report(uuid,integer)') as confirm_report_rpc,
+       to_regprocedure('public.list_my_notifications(integer,timestamp with time zone,uuid)') as notifications_rpc,
+       to_regprocedure('public.mark_notification_read(uuid)') as notification_read_rpc,
+       to_regprocedure('public.mark_all_notifications_read()') as notifications_read_all_rpc;
 
 -- 每行必须是 function_exists=true 且 authenticated_execute=true。
 with expected(signature) as (
@@ -164,6 +179,30 @@ select signature,
          ),
          false
        ) as authenticated_execute
+from expected
+order by signature;
+
+-- 202608240001/002：每行必须是 function_exists=true 且
+-- authenticated_execute=true；anon/public 不得有 EXECUTE。
+with expected(signature) as (
+  values
+    ('public.list_resources(boolean)'),
+    ('public.list_eligible_resource_owners()'),
+    ('public.create_resource(text,public.resource_category,public.resource_kind,text,text,date,text,text,text,text,numeric,text,uuid)'),
+    ('public.archive_resource(uuid)'),
+    ('public.restore_resource(uuid)'),
+    ('public.get_daily_report_detail(uuid)'),
+    ('public.comment_daily_report(uuid,text)'),
+    ('public.confirm_daily_report(uuid,integer)'),
+    ('public.list_my_notifications(integer,timestamp with time zone,uuid)'),
+    ('public.mark_notification_read(uuid)'),
+    ('public.mark_all_notifications_read()')
+)
+select signature,
+       to_regprocedure(signature) is not null as function_exists,
+       coalesce(has_function_privilege('authenticated', to_regprocedure(signature), 'EXECUTE'), false) as authenticated_execute,
+       coalesce(has_function_privilege('anon', to_regprocedure(signature), 'EXECUTE'), false) as anon_execute,
+       coalesce(has_function_privilege('public', to_regprocedure(signature), 'EXECUTE'), false) as public_execute
 from expected
 order by signature;
 
@@ -207,7 +246,18 @@ select pg_notify('pgrst', 'reload schema');
 SQL
 ```
 
-再次确认 `migration list` 的本地/远端版本完全对齐。`pg_notify` 成功只说明通知已发送；还必须从 PostgREST 公网 API 用受控真实账号调用一个新 RPC，确认 schema cache 已更新。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 PostgREST 服务；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据**。
+再次确认 `migration list` 的本地/远端版本完全对齐。`pg_notify` 成功只说明通知已发送；还必须从 PostgREST 公网 API 用受控的、已批准 active QA 账号调用新 RPC，确认 schema cache 已更新。例如（变量只在受控 shell 中注入，命令及输出不得记录 JWT）：
+
+```bash
+curl --fail-with-body --silent --show-error \
+  "$VITE_SUPABASE_URL/rest/v1/rpc/list_resources" \
+  -H "apikey: $VITE_SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $QA_USER_JWT" \
+  -H 'Content-Type: application/json' \
+  --data '{"p_include_archived":false}'
+```
+
+返回 HTTP 200 与 JSON 数组，且同一账号可通过通知中心 RPC 读取自己的通知，才算 PostgREST 已取得 `202608240001/002` 的 schema。若自托管 PostgREST 未监听 `pgrst` 通知，按 ECS 编排流程滚动重启 **PostgREST 服务**；不要重启数据库。全新实例也走同一 `db push` 历史流程，随后运行本地/隔离环境 pgTAP；**不导入任何旧业务数据**。
 
 ---
 
@@ -361,7 +411,7 @@ VITE_SUPABASE_ANON_KEY=<publishable/anon key>
 
 - `.env.production` 已加入 `.gitignore`，真实值只存在于构建服务器/受保护 CI 环境。
 - `build:production` 会先跑 `verify-supabase-config.mjs --production`，拒绝占位值、service-role/secret key、非 HTTPS URL。
-- 构建后用 `rg -a 'https://api\.okr\.trspectra\.com' dist` 确认公开 API 域名已入包，并用 `rg -a -i 'rds\.aliyuncs\.com|rm-[a-z0-9-]+\..*aliyuncs\.com' dist` 确认内部 RDS 主机名为零匹配。任何命中都停止发布。
+- 构建后用 `rg -a 'https://api\.okr\.trspectra\.com' dist` 确认公开 API 域名已入包，并用 `rg -a -i '\.rds\.apsaradb\.com|rds\.aliyuncs\.com|rm-[a-z0-9-]+\..*aliyuncs\.com' dist` 确认内部 RDS 主机名为零匹配。任何命中都停止发布。
 
 ### 8.1 上线后只读验证
 
@@ -391,7 +441,7 @@ where state = 'deleted'
 
 ### 8.2 回滚与紧急止血
 
-这三个数据库迁移是 additive/forward-only，且旧的无 session 写 RPC 已撤销 `authenticated` 权限。**不要** drop 新表/列、删除 migration history，也不要为了回滚前端重新开放旧 RPC；那会恢复残留 pending 和越过锁定的路径。
+本发布所含 migration（包括 `202608240001`、`202608240002`）都是 additive/forward-only，且旧的无 session 写 RPC 已撤销 `authenticated` 权限。**不要** drop 新表/列、删除 migration history，也不要为了回滚前端重新开放旧 RPC；那会恢复残留 pending、绕过锁定或破坏通知审计路径。
 
 - 前端回滚只能回到与 session-aware RPC 签名兼容的已审核构建。
 - 若需要立即止血，先撤销新日报写 RPC 的 `authenticated` 执行权限，使日报暂时只读，再 reload PostgREST。该操作必须有变更审批：
@@ -407,6 +457,11 @@ revoke execute on function public.delete_daily_report_upload_attachment(uuid) fr
 revoke execute on function public.abandon_daily_report_upload_session(uuid) from authenticated;
 revoke execute on function public.soft_delete_attachment(uuid) from authenticated;
 revoke execute on function public.authorize_attachment_revision_removal(uuid) from authenticated;
+revoke execute on function public.create_resource(text, public.resource_category, public.resource_kind, text, text, date, text, text, text, text, numeric, text, uuid) from authenticated;
+revoke execute on function public.archive_resource(uuid) from authenticated;
+revoke execute on function public.restore_resource(uuid) from authenticated;
+revoke execute on function public.comment_daily_report(uuid, text) from authenticated;
+revoke execute on function public.confirm_daily_report(uuid, integer) from authenticated;
 select pg_notify('pgrst', 'reload schema');
 commit;
 ```
@@ -426,6 +481,11 @@ grant execute on function public.delete_daily_report_upload_attachment(uuid) to 
 grant execute on function public.abandon_daily_report_upload_session(uuid) to authenticated;
 grant execute on function public.soft_delete_attachment(uuid) to authenticated;
 grant execute on function public.authorize_attachment_revision_removal(uuid) to authenticated;
+grant execute on function public.create_resource(text, public.resource_category, public.resource_kind, text, text, date, text, text, text, text, numeric, text, uuid) to authenticated;
+grant execute on function public.archive_resource(uuid) to authenticated;
+grant execute on function public.restore_resource(uuid) to authenticated;
+grant execute on function public.comment_daily_report(uuid, text) to authenticated;
+grant execute on function public.confirm_daily_report(uuid, integer) to authenticated;
 select pg_notify('pgrst', 'reload schema');
 commit;
 ```
@@ -449,3 +509,19 @@ commit;
 3. 提交成功后 reload，确认内容、工时、附件及显示名均持久化；在同一上海业务日编辑，保留或删除历史附件后再次提交并 reload 核对。
 4. Management 确认该报告后，Employee reload 必须同步看到已确认/已锁定，编辑入口消失；直接调用任何 save/finalize/abandon/delete RPC 也必须被数据库拒绝。
 5. 使用前一上海业务日的报告重复锁定验证；无论状态是否 confirmed，都不得编辑或新建上传 session。
+
+### 9.1 资源访问、日报审核与通知的隔离账号 QA
+
+仓库目前**没有 Playwright 配置或浏览器 E2E 测试文件**；以下是上线前必须在本地 Supabase 或隔离测试组织使用的浏览器手工门禁，不能以 pgTAP 结果替代。现有 `supabase/tests/resources.test.sql` 与 `supabase/tests/daily_report_review_notifications.test.sql` 是服务端角色矩阵证据（所有角色/RPC/RLS 断言通过），**不是**浏览器 E2E 证据。不要以生产员工账号、真实生产资源或敏感附件执行这份清单。
+
+1. 以 employee 创建资源：先保留自己为负责人，再指定另一位合格 employee；核对 `created_by`、`owner_id` 及负责人通知。
+2. 以被指定 employee 登录，核对红点；点击负责人通知应打开资源详情。跨组织或 inactive 候选不可选；用 API/RPC 伪造参数也必须被服务端拒绝。
+3. employee 提交含小型无敏感附件的日报，核对上传进度布局不会重叠。
+4. 以直属 Project Leader 登录，只看到获授权 blocks，并能查看、下载和评论。
+5. 以非直属 Project Leader 与仅有 administrator 角色的账号登录，均应被拒绝查看、评论和确认。
+6. 回到 employee 账号，核对日报通知红点；点击通知打开详情并标记已读。
+7. 以 Management 查看 Project Leader 日报并确认。
+8. 确认后，核对作者不能编辑，reviewer 仍能评论。
+9. 作者和 reviewer 分别导出 PDF 打印视图与 `.docx`，核对只包含各自可见内容。
+
+记录每一项的账号角色、测试组织、时间、预期/实际结果、截图或非敏感请求 ID。完成前不得声明浏览器 QA 已通过；本仓库当前自动化边界仅为 pgTAP、Vitest、类型检查和生产构建。

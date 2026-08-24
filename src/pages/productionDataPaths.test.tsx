@@ -12,6 +12,9 @@ const repositoryMock = vi.hoisted(() => ({
   mode: 'supabase' as const,
   getDashboardData: vi.fn(),
   setMyLocale: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  listMyNotifications: vi.fn().mockResolvedValue({ ok: true, data: { items: [], unreadCount: 0, nextCursor: null } }),
+  markNotificationRead: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
+  markAllNotificationsRead: vi.fn().mockResolvedValue({ ok: true, data: 0 }),
 }));
 
 vi.mock('../lib/supabase', () => ({
@@ -96,13 +99,21 @@ describe('Supabase production page data paths', () => {
   it.each([
     ['/dashboard', 'RLS 经营目标'],
     ['/projects', 'RLS 项目'],
-    ['/reports', 'RLS 日报正文'],
     ['/reports?tab=weekly', 'RLS 周报摘要'],
     ['/team', 'RLS 团队成员'],
   ])('renders %s from the RLS-backed repository for a real UUID profile', async (path, expectedText) => {
     renderRoute(path);
 
     expect(await screen.findByText(expectedText)).toBeVisible();
+  });
+
+  it('renders a compact daily-report row from the RLS-backed repository without embedding its body', async () => {
+    renderRoute('/reports');
+
+    expect(await screen.findByRole('cell', { name: '2026-08-14' })).toBeVisible();
+    expect(screen.getByRole('cell', { name: '9 小时' })).toBeVisible();
+    expect(screen.getByRole('cell', { name: '1 条日报事项' })).toBeVisible();
+    expect(screen.queryByText('RLS 日报正文')).not.toBeInTheDocument();
   });
 
   it('shows a safe loading state while the RLS read is pending', () => {

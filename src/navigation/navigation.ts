@@ -38,14 +38,14 @@ const usersScope: SystemPermissionScope = {
 };
 
 const okrRoles: readonly Role[] = ['management', 'project_leader', 'employee'];
-export const resourceRoles: readonly Role[] = ['management', 'project_leader', 'administrator'];
+export const resourceRoles: readonly Role[] = ['management', 'project_leader', 'administrator', 'employee', 'hr'];
 const adminRoles: readonly Role[] = ['administrator'];
 
 export const navigationItems: readonly NavigationItem[] = [
   { path: '/dashboard', labelKey: 'navigation.dashboard', icon: LayoutDashboard, action: 'dashboard.view', resource: dashboardScope },
   { path: '/okrs', labelKey: 'navigation.okrs', icon: Target, action: 'dashboard.view', resource: dashboardScope, roles: okrRoles },
   { path: '/projects', labelKey: 'navigation.projects', icon: FolderKanban, action: 'dashboard.view', resource: dashboardScope, roles: okrRoles },
-  { path: '/resources', labelKey: 'navigation.resources', icon: Package, action: 'dashboard.view', resource: dashboardScope, roles: resourceRoles },
+  { path: '/resources', labelKey: 'navigation.resources', icon: Package, action: 'dashboard.view', resource: dashboardScope },
   { path: '/reports', labelKey: 'navigation.reports', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
   { path: '/team', labelKey: 'navigation.team', icon: Users, action: 'dashboard.view', resource: dashboardScope },
   { path: '/users', labelKey: 'navigation.users', icon: UserCog, action: 'user.manage', resource: usersScope, roles: adminRoles },

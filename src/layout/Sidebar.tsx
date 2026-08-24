@@ -11,6 +11,8 @@ import { AccountMenu } from './AccountMenu';
 
 interface SidebarSharedProps {
   onNavigate: () => void;
+  onNotificationsOpen?: () => void;
+  onNotificationsClose?: () => void;
 }
 
 interface DesktopSidebarProps extends SidebarSharedProps {
@@ -117,7 +119,14 @@ export function Sidebar(props: SidebarProps) {
       </nav>
 
       <div className="app-sidebar__utilities">
-        {mode === 'supabase' ? <AccountMenu compact={collapsed} onNavigate={props.onNavigate} /> : null}
+        {mode === 'supabase' ? (
+          <AccountMenu
+            compact={collapsed}
+            onNavigate={props.onNavigate}
+            onNotificationsOpen={props.onNotificationsOpen}
+            onNotificationsClose={props.onNotificationsClose}
+          />
+        ) : null}
         <LanguageSwitcher />
         {props.variant === 'desktop' ? (
           <button

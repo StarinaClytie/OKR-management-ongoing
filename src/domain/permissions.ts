@@ -24,6 +24,9 @@ export type Action =
   | 'company_objective.read'
   | 'task.read'
   | 'project.manage'
+  | 'resource.create'
+  | 'resource.update'
+  | 'resource.archive'
   | 'daily_report.create'
   | 'daily_report.read'
   | 'daily_report.read_body'
@@ -79,6 +82,7 @@ export type ResourceType =
   | 'risk'
   | 'company_objective'
   | 'project_task'
+  | 'resource'
   | 'system';
 
 export interface AccessControlledResource {

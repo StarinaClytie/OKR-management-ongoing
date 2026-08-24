@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
+import { currentBusinessDate } from '../domain/progressStatus';
 import { DailyReportsPage } from './DailyReportsPage';
 
 function UserControls() {
@@ -28,11 +29,12 @@ describe('DailyReportsPage user changes', () => {
     await user.type(screen.getByLabelText(/结果/), '完成并记录数据');
     await user.type(screen.getByLabelText(/记录工时/), '2');
     await user.click(screen.getByRole('button', { name: '提交日报' }));
-    expect(screen.getByText(/只属于原用户的本地日报/)).toBeVisible();
+    expect(screen.getByRole('cell', { name: currentBusinessDate() })).toBeVisible();
+    expect(screen.queryByText(/只属于原用户的本地日报/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '切换为管理层' }));
 
-    expect(screen.queryByText(/只属于原用户的本地日报/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: currentBusinessDate() })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/当日 O/)).not.toBeInTheDocument();
   });
 });

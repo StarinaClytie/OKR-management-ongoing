@@ -193,8 +193,25 @@ describe('ResourceDetailPage', () => {
     expect(screen.queryByRole('button', { name: '重新发送通知' })).not.toBeInTheDocument();
   });
 
-  it('denies resource detail to roles without resource access', async () => {
-    renderDetail({ ...owner, role: 'employee' }, makeRepository());
-    expect(await screen.findByRole('heading', { name: '访问受限' })).toBeVisible();
+  it('lets a non-owner employee view detail without edit or archive controls', async () => {
+    renderDetail({ ...peer, role: 'employee' }, makeRepository());
+
+    expect(await screen.findByRole('heading', { name: 'Vacuum Pump A' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '归档资源' })).not.toBeInTheDocument();
+  });
+
+  it('lets an owner edit but not archive their resource', async () => {
+    renderDetail(owner, makeRepository());
+
+    expect(await screen.findByRole('button', { name: '编辑' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '归档资源' })).not.toBeInTheDocument();
+  });
+
+  it('lets management edit and archive any resource', async () => {
+    renderDetail(management, makeRepository());
+
+    expect(await screen.findByRole('button', { name: '编辑' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '归档资源' })).toBeVisible();
   });
 });

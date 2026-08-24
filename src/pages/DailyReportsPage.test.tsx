@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { createRef } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider } from '../auth/AuthContext';
@@ -7,9 +8,9 @@ import { AppRoutes } from '../app/routes';
 import { LocaleProvider } from '../i18n/LocaleProvider';
 import { mockRepository } from '../mocks/repository';
 import type { DailyReportAttachmentUploadInput, OkrRepository } from '../data/types';
-import type { DailyReport } from '../domain/types';
+import type { DailyReport, DailyReportDetail } from '../domain/types';
 import { currentBusinessDate } from '../domain/progressStatus';
-import { DailyReportsPage } from './DailyReportsPage';
+import { DailyReportsPage, type DailyReportsPageHandle } from './DailyReportsPage';
 
 function renderPageAs(userId: string) {
   return render(
@@ -30,6 +31,23 @@ function editableReport(authorId: string, withRetainedAttachment = false): Daily
     date: currentBusinessDate(), content: '当前目标', dailyObjective: '当前目标', classification: 'internal', hours: 2,
     evidence: attachment.map((item) => item.label), evidenceClassification: 'internal', attachmentIds: attachment.flatMap((item) => item.attachmentId ? [item.attachmentId] : []), status: 'submitted', currentRevision: 1,
     blocks: [{ id: 'block-current', dailyObjective: '当前目标', keyResultId: 'kr-orion-onboarding', workDescription: '当前工作', hours: 2, result: '当前结果', keyResults: [], evidenceItems: attachment }],
+  };
+}
+
+function detailFor(report: DailyReport, overrides: Partial<DailyReportDetail> = {}): DailyReportDetail {
+  return {
+    id: report.id,
+    authorId: report.authorId,
+    authorName: '陈敏',
+    date: report.date,
+    status: report.status,
+    hours: report.hours,
+    currentRevision: report.currentRevision ?? 1,
+    blocks: report.blocks ?? [],
+    comments: [],
+    canComment: false,
+    canConfirm: false,
+    ...overrides,
   };
 }
 
@@ -99,7 +117,7 @@ describe('DailyReportsPage', () => {
     await user.click(screen.getByRole('button', { name: '提交日报' }));
 
     expect(screen.getByText('日报已保存。')).toBeVisible();
-    expect(screen.getByText(/完成实验采集第一阶段/)).toBeVisible();
+    expect(screen.getAllByText('1 条日报事项').length).toBeGreaterThan(0);
   });
 
   it('keeps management out of daily report authoring', () => {
@@ -107,7 +125,7 @@ describe('DailyReportsPage', () => {
     expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
   });
 
-  it('lets an authorized project leader confirm a member report through the dedicated review path', async () => {
+  it('loads a member report on demand and confirms it through the detail review path', async () => {
     const user = userEvent.setup();
     const data = mockRepository.getDashboardData('user-project-leader');
     const memberReport = editableReport('user-employee');
@@ -115,6 +133,7 @@ describe('DailyReportsPage', () => {
     const dataRepository = {
       mode: 'supabase',
       getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [memberReport] } })),
+      getDailyReportDetail: vi.fn(async () => ({ ok: true as const, data: detailFor(memberReport, { canComment: true, canConfirm: true }) })),
       confirmDailyReport,
     } as unknown as OkrRepository;
     const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
@@ -126,19 +145,24 @@ describe('DailyReportsPage', () => {
       </AuthContext.Provider>,
     );
 
-    await user.click(await screen.findByRole('button', { name: '确认成员日报' }));
+    await user.click(await screen.findByRole('button', { name: '查看详情' }));
+    expect(dataRepository.getDailyReportDetail).toHaveBeenCalledWith(memberReport.id);
+    expect(await screen.findByRole('dialog', { name: /日报详情/ })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '确认成员日报' }));
 
     expect(confirmDailyReport).toHaveBeenCalledWith(memberReport.id, memberReport.currentRevision);
     expect(screen.getByText('成员日报已确认。')).toBeVisible();
     expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('table', { name: '项目成员日报' })).getByText('已确认')).toBeVisible();
   });
 
-  it('does not offer review confirmation for an unfinished draft shell', async () => {
+  it('does not infer confirmation authority from the current role or report status', async () => {
     const data = mockRepository.getDashboardData('user-project-leader');
-    const draftReport = { ...editableReport('user-employee'), status: 'draft' as const, currentRevision: 0 };
+    const submittedReport = editableReport('user-employee');
     const dataRepository = {
       mode: 'supabase',
-      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [draftReport] } })),
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [submittedReport] } })),
+      getDailyReportDetail: vi.fn(async () => ({ ok: true as const, data: detailFor(submittedReport, { canComment: false, canConfirm: false }) })),
       confirmDailyReport: vi.fn(async () => ({ ok: true as const, data: undefined })),
     } as unknown as OkrRepository;
     const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
@@ -150,8 +174,106 @@ describe('DailyReportsPage', () => {
       </AuthContext.Provider>,
     );
 
-    await screen.findByRole('table', { name: '项目成员日报' });
+    await userEvent.setup().click(await screen.findByRole('button', { name: '查看详情' }));
+    await screen.findByRole('dialog', { name: /日报详情/ });
     expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
+  });
+
+  it('keeps list summaries compact and restores focus after closing an on-demand detail', async () => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-employee');
+    const report = editableReport(data.currentUser.id);
+    const getDailyReportDetail = vi.fn(async () => ({ ok: true as const, data: detailFor(report) }));
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
+      getDailyReportDetail,
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    expect(await screen.findByText('1 条日报事项')).toBeVisible();
+    expect(screen.queryByText('当前工作')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前结果')).not.toBeInTheDocument();
+
+    const viewButton = screen.getByRole('button', { name: '查看详情' });
+    await user.click(viewButton);
+    expect(getDailyReportDetail).toHaveBeenCalledWith(report.id);
+    expect(await screen.findByText('当前工作')).toBeVisible();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: /日报详情/ })).not.toBeInTheDocument();
+    expect(viewButton).toHaveFocus();
+  });
+
+  it('does not restore a stale row trigger after a later programmatic detail open', async () => {
+    const user = userEvent.setup();
+    const pageRef = createRef<DailyReportsPageHandle>();
+    const data = mockRepository.getDashboardData('user-employee');
+    const report = editableReport(data.currentUser.id);
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [report] } })),
+      getDailyReportDetail: vi.fn(async () => ({ ok: true as const, data: detailFor(report) })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage ref={pageRef} dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    const viewButton = await screen.findByRole('button', { name: '查看详情' });
+    await user.click(viewButton);
+    await screen.findByRole('dialog', { name: /日报详情/ });
+    await user.keyboard('{Escape}');
+    expect(viewButton).toHaveFocus();
+
+    await act(async () => { await pageRef.current!.openReportDetail(report.id); });
+    await screen.findByRole('dialog', { name: /日报详情/ });
+    await user.keyboard('{Escape}');
+
+    expect(viewButton).not.toHaveFocus();
+  });
+
+  it('clears residual report details when a later detail request is denied', async () => {
+    const user = userEvent.setup();
+    const data = mockRepository.getDashboardData('user-project-leader');
+    const first = { ...editableReport('user-employee'), id: 'report-first' };
+    const second = { ...editableReport('user-employee'), id: 'report-second', date: '2026-08-23' };
+    const getDailyReportDetail = vi.fn()
+      .mockResolvedValueOnce({ ok: true, data: detailFor(first) })
+      .mockResolvedValueOnce({ ok: false, error: { code: 'unauthorized', message: 'denied' } });
+    const dataRepository = {
+      mode: 'supabase',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: { ...data, dailyReports: [first, second] } })),
+      getDailyReportDetail,
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    const viewButtons = await screen.findAllByRole('button', { name: '查看详情' });
+    await user.click(viewButtons[0]);
+    expect(await screen.findByText('当前工作')).toBeVisible();
+    await user.keyboard('{Escape}');
+
+    await user.click(viewButtons[1]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('你没有执行此操作的权限。');
+    expect(screen.queryByText('当前工作')).not.toBeInTheDocument();
   });
 
   it('keeps HR on an hours-only view without report bodies', () => {

@@ -1,6 +1,8 @@
 import type {
   Classification,
   CompanyObjective,
+  DailyReportComment,
+  DailyReportDetail,
   DailyReport,
   DocumentRecord,
   KeyResult,
@@ -24,6 +26,7 @@ import type {
   Risk,
   Role,
   User,
+  NotificationPage,
   WeeklyReport,
   WorkloadEntry,
 } from '../domain/types';
@@ -313,6 +316,7 @@ export interface ResourceDetail extends Resource {
 }
 
 export interface CreateResourceInput {
+  ownerId: string;
   name: string;
   category: ResourceCategory;
   resourceKind: ResourceKind;
@@ -429,6 +433,7 @@ export interface OkrRepository {
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>>;
   listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>>;
+  listEligibleResourceOwners(): Promise<RepositoryResult<OrganizationUser[]>>;
   createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>>;
   updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>>;
   setProjectLeader(projectId: string, leaderId: string): Promise<RepositoryResult<void>>;
@@ -466,6 +471,11 @@ export interface OkrRepository {
   abandonDailyReportUploadSession?(sessionId: string): Promise<RepositoryResult<void>>;
   submitDailyReportSession?(input: DailyReportInput, sessionId: string): Promise<RepositoryResult<{ id: string; revision: number }>>;
   confirmDailyReport?(reportId: string, expectedRevision: number): Promise<RepositoryResult<void>>;
+  getDailyReportDetail(reportId: string): Promise<RepositoryResult<DailyReportDetail>>;
+  commentDailyReport(reportId: string, body: string): Promise<RepositoryResult<DailyReportComment>>;
+  listMyNotifications(limit?: number, cursor?: NotificationPage['nextCursor']): Promise<RepositoryResult<NotificationPage>>;
+  markNotificationRead(notificationId: string): Promise<RepositoryResult<void>>;
+  markAllNotificationsRead(): Promise<RepositoryResult<number>>;
   createDailyReport(input: DailyReportInput): Promise<RepositoryResult<{ id: string; revision: number }>>;
   createDailyReportWithAttachments(input: DailyReportInput, attachments: ClassifiedAttachmentInput[]): Promise<RepositoryResult<{ id: string; revision: number }>>;
   updateDailyReport(reportId: string, expectedRevision: number, input: DailyReportInput): Promise<RepositoryResult<{ revision: number }>>;
