@@ -77,8 +77,8 @@ insert into public.user_roles (organization_id, profile_id, role, is_active) val
 insert into public.resources (id, organization_id, name, category, resource_kind, owner_id, location, status, created_by) values
   ('24000000-0000-0000-0000-000000000001', '23000000-0000-0000-0000-000000000001', 'Fixture Lens', 'optics', 'durable', '15000000-0000-0000-0000-000000000004', 'Optics Lab / Cabinet A', 'available', '15000000-0000-0000-0000-000000000004');
 
-insert into public.resource_attachments (id, organization_id, resource_id, uploader_id, file_name, storage_path, mime_type, size_bytes) values
-  ('24000000-0000-0000-0000-000000000002', '23000000-0000-0000-0000-000000000001', '24000000-0000-0000-0000-000000000001', '15000000-0000-0000-0000-000000000004', 'lens-manual.pdf', 'organization/23000000-0000-0000-0000-000000000001/resources/24000000-0000-0000-0000-000000000001/manual.pdf', 'application/pdf', 1024);
+insert into public.resource_attachments (id, organization_id, resource_id, uploader_id, file_name, storage_path, mime_type, size_bytes, object_verified_at) values
+  ('24000000-0000-0000-0000-000000000002', '23000000-0000-0000-0000-000000000001', '24000000-0000-0000-0000-000000000001', '15000000-0000-0000-0000-000000000004', 'lens-manual.pdf', 'organization/23000000-0000-0000-0000-000000000001/resources/24000000-0000-0000-0000-000000000001/manual.pdf', 'application/pdf', 1024, timezone('utc', now()));
 
 set local role authenticated;
 
