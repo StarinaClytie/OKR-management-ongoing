@@ -5,7 +5,7 @@ import { can } from '../auth/permissionService';
 import { ResourceFormModal, type ResourceFormValues } from '../components/ResourceFormModal';
 import { ResourceStatusBadge } from '../components/ResourceStatusBadge';
 import { resourceCategoryKeys, resourceKindKeys, resourceProblemStatusKeys, resourceProblemTypeKeys, resourceProblemTypes } from '../components/resourceLabels';
-import type { OkrRepository, ResourceDetail, ResourceProblem } from '../data/types';
+import type { OkrRepository, ResourceAttachmentUploadUpdate, ResourceDetail, ResourceProblem } from '../data/types';
 import type { ResourceProblemType } from '../domain/types';
 import type { PermissionScope } from '../domain/permissions';
 import { useLocale } from '../i18n/LocaleProvider';
@@ -15,9 +15,33 @@ import { repository, resourceNotificationService } from '../lib/supabase';
 import { AccessDeniedPage } from './AccessDeniedPage';
 
 type LoadState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: ResourceDetail };
+type ResourceUploadStatus = ResourceAttachmentUploadUpdate & { fileName: string } | { state: 'selected'; progress: 0; fileName: string; error?: undefined };
 
 function dateOf(value: string): string {
   return value ? value.slice(0, 10) : '—';
+}
+
+function ResourceAttachmentProgress({ upload }: { upload: ResourceUploadStatus }) {
+  const { t } = useLocale();
+  const label = upload.error
+    ? upload.error
+    : upload.state === 'uploading'
+      ? t('daily.uploadingPercent', { percent: upload.progress })
+      : upload.state === 'verifying'
+        ? t('daily.uploadVerifying')
+        : upload.state === 'uploaded'
+          ? t('daily.uploaded')
+          : upload.state === 'failed'
+            ? t('daily.uploadFailed')
+            : t('daily.uploadSelected');
+  return (
+    <div className="daily-attachment-progress">
+      <span className="daily-attachment-progress__name" title={upload.fileName}>{upload.fileName}</span>
+      <progress aria-label={t('daily.uploadProgress', { name: upload.fileName })} max={100} value={upload.progress} />
+      <span className="daily-attachment-progress__percent" aria-hidden="true">{upload.progress}%</span>
+      <span className="daily-attachment-progress__state" role={upload.state === 'failed' ? 'alert' : undefined}>{label}</span>
+    </div>
+  );
 }
 
 export function ResourceDetailPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
@@ -45,6 +69,7 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
 
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | undefined>(undefined);
+  const [uploadStatus, setUploadStatus] = useState<ResourceUploadStatus | null>(null);
 
   const refresh = useCallback(async () => {
     if (!resourceId) return;
@@ -99,6 +124,7 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
     setResolveFieldError(undefined);
     setUploadError(undefined);
     setUploadFile(null);
+    setUploadStatus(null);
     setSubmitting(false);
   }
 
@@ -232,16 +258,21 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
 
   async function handleUpload(event: FormEvent) {
     event.preventDefault();
-    if (!uploadFile) return;
+    if (submitting || !uploadFile) return;
     setSubmitting(true);
     setUploadError(undefined);
-    const result = await dataRepository.uploadResourceAttachment(detail.id, uploadFile);
+    setUploadStatus({ state: 'uploading', progress: 0, fileName: uploadFile.name });
+    const result = await dataRepository.uploadResourceAttachment(detail.id, uploadFile, (update) => {
+      setUploadStatus({ ...update, fileName: uploadFile.name });
+    });
     setSubmitting(false);
     if (result.ok) {
-      closeModals();
+      setUploadStatus({ state: 'uploaded', progress: 100, fileName: uploadFile.name });
+      setUploadFile(null);
       await refresh();
     } else {
       setUploadError(result.error.message);
+      setUploadStatus((current) => ({ state: 'failed', progress: current?.progress ?? 0, fileName: uploadFile.name, error: result.error.message }));
     }
   }
 
@@ -273,7 +304,7 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
             </button>
           ) : null}
           {canEdit && !isArchived ? <button className="button button--secondary" onClick={() => { setFormError(undefined); setEditOpen(true); }}>{t('resources.edit')}</button> : null}
-          {canEdit && !isArchived ? <button className="button button--secondary" onClick={() => { setUploadFile(null); setUploadError(undefined); setUploadOpen(true); }}>{t('resources.uploadAttachment')}</button> : null}
+          {canEdit && !isArchived ? <button className="button button--secondary" onClick={() => { setUploadFile(null); setUploadError(undefined); setUploadStatus(null); setUploadOpen(true); }}>{t('resources.uploadAttachment')}</button> : null}
           {canArchive ? (
             <button className="button button--secondary" onClick={() => setArchiveConfirm(true)}>
               {isArchived ? t('resources.restore') : t('resources.archive')}
@@ -448,16 +479,21 @@ export function ResourceDetailPage({ dataRepository = repository }: { dataReposi
       ) : null}
 
       {uploadOpen ? (
-        <div className="modal-scrim" onClick={(event) => { if (event.target === event.currentTarget) closeModals(); }}>
+        <div className="modal-scrim" onClick={(event) => { if (event.target === event.currentTarget && !submitting) closeModals(); }}>
           <form className="modal-panel" role="dialog" aria-modal="true" aria-label={t('resources.uploadAttachment')} onSubmit={(event) => void handleUpload(event)} noValidate>
             <h2>{t('resources.uploadAttachment')}</h2>
             <label className="modal-field">
               <span>{t('daily.chooseAttachment')}</span>
-              <input type="file" onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)} />
+              <input type="file" disabled={submitting} onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setUploadFile(file);
+                setUploadStatus(file ? { state: 'selected', progress: 0, fileName: file.name } : null);
+              }} />
             </label>
-            {uploadError ? <p className="form-error" role="alert">{uploadError}</p> : null}
+            {uploadStatus ? <ResourceAttachmentProgress upload={uploadStatus} /> : null}
+            {uploadError && uploadStatus?.error !== uploadError ? <p className="form-error" role="alert">{uploadError}</p> : null}
             <div className="modal-actions">
-              <button type="button" className="button button--secondary" onClick={closeModals}>{t('common.cancel')}</button>
+              <button type="button" className="button button--secondary" disabled={submitting} onClick={closeModals}>{t('common.cancel')}</button>
               <button type="submit" className="button button--primary" disabled={submitting || !uploadFile}>
                 {submitting ? t('common.saving') : t('resources.upload')}
               </button>

@@ -128,6 +128,12 @@ export type DailyReportAttachmentUploadUpdate = {
   error?: string;
 };
 
+export type ResourceAttachmentUploadUpdate = {
+  state: 'uploading' | 'verifying' | 'uploaded' | 'failed';
+  progress: number;
+  error?: string;
+};
+
 export interface DailyReportAttachmentUploadInput extends ClassifiedAttachmentInput {
   session: DailyReportUploadSession;
   entryPosition: number;
@@ -456,7 +462,7 @@ export interface OkrRepository {
   beginResourceAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<ResourceUploadTarget>>;
   finalizeResourceAttachmentUpload(id: string): Promise<RepositoryResult<unknown>>;
   createResourceAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>>;
-  uploadResourceAttachment(resourceId: string, file: File): Promise<RepositoryResult<{ id: string }>>;
+  uploadResourceAttachment(resourceId: string, file: File, onChange?: (update: ResourceAttachmentUploadUpdate) => void): Promise<RepositoryResult<{ id: string }>>;
   approvePendingUser(input: ApprovePendingUserInput): Promise<RepositoryResult<void>>;
   rejectPendingUser(userId: string): Promise<RepositoryResult<void>>;
   createPendingProfile(displayName: string): Promise<RepositoryResult<void>>;

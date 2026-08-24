@@ -8,7 +8,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ResourceFormModal, type ResourceFormValues } from '../components/ResourceFormModal';
 import { ResourceStatusBadge } from '../components/ResourceStatusBadge';
 import { resourceCategories, resourceCategoryKeys, resourceStatusKeys, resourceStatuses } from '../components/resourceLabels';
-import type { OkrRepository, OrganizationUser, Resource } from '../data/types';
+import type { OkrRepository, OrganizationUser, Resource, ResourceAttachmentUploadUpdate } from '../data/types';
 import type { PermissionScope } from '../domain/permissions';
 import type { ResourceCategory, ResourceStatus } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
@@ -16,9 +16,34 @@ import type { MessageKey } from '../i18n/messages';
 import { repositoryErrorKey } from '../i18n/repositoryErrors';
 import { repository } from '../lib/supabase';
 
+type ResourceUploadStatus = ResourceAttachmentUploadUpdate & { fileName: string } | { state: 'selected'; progress: 0; fileName: string; error?: undefined };
+
 function quantityLabel(resource: Resource): string {
   if (resource.quantity === null) return '—';
   return resource.unit ? `${resource.quantity} ${resource.unit}` : String(resource.quantity);
+}
+
+function ResourceAttachmentProgress({ upload }: { upload: ResourceUploadStatus }) {
+  const { t } = useLocale();
+  const label = upload.error
+    ? upload.error
+    : upload.state === 'uploading'
+      ? t('daily.uploadingPercent', { percent: upload.progress })
+      : upload.state === 'verifying'
+        ? t('daily.uploadVerifying')
+        : upload.state === 'uploaded'
+          ? t('daily.uploaded')
+          : upload.state === 'failed'
+            ? t('daily.uploadFailed')
+            : t('daily.uploadSelected');
+  return (
+    <div className="daily-attachment-progress">
+      <span className="daily-attachment-progress__name" title={upload.fileName}>{upload.fileName}</span>
+      <progress aria-label={t('daily.uploadProgress', { name: upload.fileName })} max={100} value={upload.progress} />
+      <span className="daily-attachment-progress__percent" aria-hidden="true">{upload.progress}%</span>
+      <span className="daily-attachment-progress__state" role={upload.state === 'failed' ? 'alert' : undefined}>{label}</span>
+    </div>
+  );
 }
 
 export function ResourcesPage({ dataRepository = repository }: { dataRepository?: OkrRepository }) {
@@ -41,6 +66,7 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
   const [ownersLoading, setOwnersLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | undefined>(undefined);
+  const [attachmentUpload, setAttachmentUpload] = useState<ResourceUploadStatus | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -120,6 +146,7 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
   }
 
   async function handleCreate(values: ResourceFormValues) {
+    if (submitting) return;
     setSubmitting(true);
     setFormError(undefined);
     const created = await dataRepository.createResource({
@@ -147,8 +174,15 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
     // upload failure must never roll it back — it only downgrades the notice.
     let attachmentFailed = false;
     if (values.attachmentFile) {
-      const uploaded = await dataRepository.uploadResourceAttachment(created.data.id, values.attachmentFile);
+      const file = values.attachmentFile;
+      setAttachmentUpload({ state: 'uploading', progress: 0, fileName: file.name });
+      const uploaded = await dataRepository.uploadResourceAttachment(created.data.id, file, (update) => {
+        setAttachmentUpload({ ...update, fileName: file.name });
+      });
       attachmentFailed = !uploaded.ok;
+      if (!uploaded.ok) {
+        setAttachmentUpload((current) => ({ state: 'failed', progress: current?.progress ?? 0, fileName: file.name, error: uploaded.error.message }));
+      }
     }
 
     setSubmitting(false);
@@ -162,9 +196,10 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
       <PageHeader
         title={t('resources.title')}
         description={t('resources.description')}
-        primaryAction={dataRepository.mode === 'supabase' && can(currentUser, 'resource.create', createScope).allowed ? { label: t('resources.create'), onClick: () => { setFormError(undefined); setCreateOpen(true); } } : undefined}
+        primaryAction={dataRepository.mode === 'supabase' && can(currentUser, 'resource.create', createScope).allowed ? { label: t('resources.create'), onClick: () => { setFormError(undefined); setAttachmentUpload(null); setCreateOpen(true); } } : undefined}
       />
       {notice ? <p className="page-notice" role="status">{t(notice)}</p> : null}
+      {attachmentUpload && !createOpen ? <ResourceAttachmentProgress upload={attachmentUpload} /> : null}
 
       <div className="metric-row">
         <MetricCard label={t('resources.summary.total')} value={totals.all} />
@@ -247,8 +282,10 @@ export function ResourcesPage({ dataRepository = repository }: { dataRepository?
           ownersLoading={ownersLoading}
           submitting={submitting}
           error={formError}
+          attachmentProgress={attachmentUpload ? <ResourceAttachmentProgress upload={attachmentUpload} /> : undefined}
+          onAttachmentFileChange={(file) => setAttachmentUpload(file ? { state: 'selected', progress: 0, fileName: file.name } : null)}
           onSubmit={(values) => void handleCreate(values)}
-          onClose={() => { setCreateOpen(false); setFormError(undefined); setSubmitting(false); }}
+          onClose={() => { setCreateOpen(false); setFormError(undefined); setAttachmentUpload(null); setSubmitting(false); }}
         />
       ) : null}
     </section>

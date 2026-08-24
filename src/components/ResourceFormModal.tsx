@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import type { OrganizationUser } from '../data/types';
 import type { ResourceCategory, ResourceKind, ResourceStatus } from '../domain/types';
 import { useLocale } from '../i18n/LocaleProvider';
@@ -32,6 +32,8 @@ export interface ResourceFormModalProps {
   ownersLoading?: boolean;
   submitting?: boolean;
   error?: string;
+  attachmentProgress?: ReactNode;
+  onAttachmentFileChange?: (file: File | null) => void;
   onSubmit: (values: ResourceFormValues) => void;
   onClose: () => void;
 }
@@ -55,6 +57,8 @@ export function ResourceFormModal({
   ownersLoading = false,
   submitting = false,
   error,
+  attachmentProgress,
+  onAttachmentFileChange,
   onSubmit,
   onClose,
 }: ResourceFormModalProps) {
@@ -67,14 +71,14 @@ export function ResourceFormModal({
   useEffect(() => {
     firstFieldRef.current?.focus();
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !submitting) {
         event.preventDefault();
         onClose();
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, submitting]);
 
   function set<K extends keyof ResourceFormValues>(key: K, value: ResourceFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -124,7 +128,7 @@ export function ResourceFormModal({
   const submitDisabled = submitting || !ownerValid || !nameValid || !locationValid || !quantityValid || !manualUrlValid || !referenceValid;
 
   return (
-    <div className="modal-scrim" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="modal-scrim" onClick={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
       <form className="modal-panel" role="dialog" aria-modal="true" aria-label={title} onSubmit={handleSubmit} noValidate>
         <h2>{title}</h2>
 
@@ -221,16 +225,23 @@ export function ResourceFormModal({
         </label>
 
         {isCreate ? (
-          <label className="modal-field">
-            <span>{t('resources.field.attachment')}</span>
-            <input type="file" onChange={(event) => set('attachmentFile', event.target.files?.[0] ?? null)} />
-          </label>
+          <>
+            <label className="modal-field">
+              <span>{t('resources.field.attachment')}</span>
+              <input type="file" disabled={submitting} onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                set('attachmentFile', file);
+                onAttachmentFileChange?.(file);
+              }} />
+            </label>
+            {attachmentProgress}
+          </>
         ) : null}
 
         {error || fieldError ? <p className="form-error" role="alert">{error ?? fieldError}</p> : null}
 
         <div className="modal-actions">
-          <button type="button" className="button button--secondary" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="button" className="button button--secondary" disabled={submitting} onClick={onClose}>{t('common.cancel')}</button>
           <button type="submit" className="button button--primary" disabled={submitDisabled}>
             {submitting ? t('common.saving') : t('projects.save')}
           </button>

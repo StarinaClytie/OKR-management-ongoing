@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -213,5 +213,65 @@ describe('ResourceDetailPage', () => {
 
     expect(await screen.findByRole('button', { name: '编辑' })).toBeVisible();
     expect(screen.getByRole('button', { name: '归档资源' })).toBeVisible();
+  });
+
+  it('shows PUT progress below 100, verification, and completion for an attachment upload', async () => {
+    const user = userEvent.setup();
+    let onChange: ((update: { state: 'uploading' | 'verifying' | 'uploaded' | 'failed'; progress: number; error?: string }) => void) | undefined;
+    let finishUpload: ((result: { ok: true; data: { id: string } }) => void) | undefined;
+    const repo = makeRepository({
+      uploadResourceAttachment: vi.fn((_resourceId: string, _file: File, progressCallback?: typeof onChange) => new Promise((resolve) => {
+        onChange = progressCallback;
+        finishUpload = resolve;
+      })),
+    });
+    renderDetail(owner, repo);
+
+    await user.click(await screen.findByRole('button', { name: '上传附件' }));
+    const dialog = screen.getByRole('dialog', { name: '上传附件' });
+    await user.upload(within(dialog).getByLabelText('选择附件'), new File(['manual'], 'manual.pdf', { type: 'application/pdf' }));
+    await user.click(within(dialog).getByRole('button', { name: '上传' }));
+
+    await waitFor(() => expect(onChange).toBeTypeOf('function'));
+    act(() => { onChange?.({ state: 'uploading', progress: 54 }); });
+    expect(await within(dialog).findByRole('progressbar', { name: 'manual.pdf 上传进度' })).toHaveValue(54);
+    expect(within(dialog).getByText('上传中 54%')).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: '保存中…' })).toBeDisabled();
+
+    act(() => { onChange?.({ state: 'verifying', progress: 99 }); });
+    expect(await within(dialog).findByText('服务器校验中')).toBeVisible();
+    expect(within(dialog).getByRole('progressbar', { name: 'manual.pdf 上传进度' })).toHaveValue(99);
+
+    act(() => { onChange?.({ state: 'uploaded', progress: 100 }); });
+    expect(await within(dialog).findByText('上传完成')).toBeVisible();
+    expect(within(dialog).getByRole('progressbar', { name: 'manual.pdf 上传进度' })).toHaveValue(100);
+
+    act(() => { finishUpload?.({ ok: true, data: { id: 'att-2' } }); });
+  });
+
+  it('keeps a failed attachment upload retryable without duplicate submission while active', async () => {
+    const user = userEvent.setup();
+    let rejectFirstUpload: ((result: { ok: false; error: { code: 'network'; message: string } }) => void) | undefined;
+    const uploadResourceAttachment = vi.fn()
+      .mockImplementationOnce((_resourceId: string, _file: File, _onChange?: unknown) => new Promise((resolve) => { rejectFirstUpload = resolve; }))
+      .mockResolvedValueOnce({ ok: true, data: { id: 'att-retry' } });
+    const repo = makeRepository({ uploadResourceAttachment });
+    renderDetail(owner, repo);
+
+    await user.click(await screen.findByRole('button', { name: '上传附件' }));
+    const dialog = screen.getByRole('dialog', { name: '上传附件' });
+    await user.upload(within(dialog).getByLabelText('选择附件'), new File(['manual'], 'manual.pdf', { type: 'application/pdf' }));
+    const uploadButton = within(dialog).getByRole('button', { name: '上传' });
+    await user.click(uploadButton);
+    expect(uploadButton).toBeDisabled();
+    await user.click(uploadButton);
+    expect(uploadResourceAttachment).toHaveBeenCalledTimes(1);
+
+    act(() => { rejectFirstUpload?.({ ok: false, error: { code: 'network', message: '网络中断' } }); });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('网络中断');
+    expect(uploadButton).toBeEnabled();
+
+    await user.click(uploadButton);
+    await waitFor(() => expect(uploadResourceAttachment).toHaveBeenCalledTimes(2));
   });
 });

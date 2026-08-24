@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -266,7 +266,44 @@ describe('ResourcesPage create with attachment', () => {
     await openDialogAndFill(repo, file);
 
     await waitFor(() => expect(repo.createResource).toHaveBeenCalled());
-    await waitFor(() => expect(repo.uploadResourceAttachment).toHaveBeenCalledWith('new-resource', file));
+    await waitFor(() => expect(repo.uploadResourceAttachment).toHaveBeenCalledWith('new-resource', file, expect.any(Function)));
+  });
+
+  it('shows resource attachment upload and verification progress without a second create', async () => {
+    const user = userEvent.setup();
+    let onChange: ((update: { state: 'uploading' | 'verifying' | 'uploaded' | 'failed'; progress: number; error?: string }) => void) | undefined;
+    let finishUpload: ((result: { ok: true; data: { id: string } }) => void) | undefined;
+    const repo = makeRepository({
+      uploadResourceAttachment: vi.fn((_resourceId: string, _file: File, progressCallback?: typeof onChange) => new Promise((resolve) => {
+        onChange = progressCallback;
+        finishUpload = resolve;
+      })),
+    });
+    renderPage(employee, repo);
+
+    await user.click(await screen.findByRole('button', { name: '添加资源' }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/资源名称/), 'New Lens');
+    await user.type(within(dialog).getByLabelText(/位置/), 'Optics Lab / Cabinet C');
+    await user.upload(within(dialog).getByLabelText(/使用说明附件/), manualFile());
+    await user.click(within(dialog).getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(onChange).toBeTypeOf('function'));
+    act(() => { onChange?.({ state: 'uploading', progress: 62 }); });
+    expect(await within(dialog).findByRole('progressbar', { name: 'manual.pdf 上传进度' })).toHaveValue(62);
+    expect(within(dialog).getByText('上传中 62%')).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: '保存中…' })).toBeDisabled();
+    expect(repo.createResource).toHaveBeenCalledTimes(1);
+
+    act(() => { onChange?.({ state: 'verifying', progress: 99 }); });
+    expect(await within(dialog).findByText('服务器校验中')).toBeVisible();
+    expect(within(dialog).getByRole('progressbar', { name: 'manual.pdf 上传进度' })).toHaveValue(99);
+
+    act(() => { onChange?.({ state: 'uploaded', progress: 100 }); });
+    expect(await within(dialog).findByText('上传完成')).toBeVisible();
+    expect(within(dialog).getByRole('progressbar', { name: 'manual.pdf 上传进度' })).toHaveValue(100);
+
+    act(() => { finishUpload?.({ ok: true, data: { id: 'att-new' } }); });
   });
 
   it('does not upload the attachment when the create fails', async () => {

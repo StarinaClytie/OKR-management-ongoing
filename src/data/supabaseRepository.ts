@@ -1,7 +1,7 @@
 import type { DashboardData } from '../data/types';
 import type { Classification, DailyOkrBlock, DailyReport, DailyReportComment, DailyReportDetail, NotificationPage, ProjectStatus, Role, User, UserNotification } from '../domain/types';
 import type { DailyEvidenceDraft } from '../domain/dailyEntry';
-import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceAttachmentUploadUpdate, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 import { createOssAttachmentTransport, type OssAttachmentTransport } from '../services/ossAttachmentTransport';
 
@@ -1112,21 +1112,34 @@ export class SupabaseOkrRepository implements OkrRepository {
     }
   }
 
-  async uploadResourceAttachment(resourceId: string, file: File): Promise<RepositoryResult<{ id: string }>> {
+  async uploadResourceAttachment(resourceId: string, file: File, onChange?: (update: ResourceAttachmentUploadUpdate) => void): Promise<RepositoryResult<{ id: string }>> {
     const invalid = validateAttachment(file);
     if (invalid) return { ok: false, error: { code: 'validation', message: invalid.message } };
     const pending = await this.beginResourceAttachmentUpload({ p_resource_id: resourceId, p_original_name: sanitizeFilename(file.name), p_mime_type: file.type, p_byte_size: file.size });
     if (!pending.ok) return pending;
+    let progress = 0;
+    onChange?.({ state: 'uploading', progress });
     try {
-      await this.resourceAttachmentTransport.upload(pending.data.id, file, () => undefined, new AbortController().signal);
+      await this.resourceAttachmentTransport.upload(pending.data.id, file, (percent) => {
+        progress = percent;
+        if (percent < 100) onChange?.({ state: 'uploading', progress });
+      }, new AbortController().signal, () => {
+        progress = 99;
+        onChange?.({ state: 'verifying', progress });
+      });
+      onChange?.({ state: 'uploaded', progress: 100 });
       return { ok: true, data: { id: pending.data.id } };
     } catch (uploadError) {
       try {
         await this.resourceAttachmentTransport.remove(pending.data.id);
       } catch (cleanupError) {
-        return storageTransferFailure(cleanupError);
+        const failure = storageTransferFailure(cleanupError);
+        onChange?.({ state: 'failed', progress, error: failure.error.message });
+        return failure;
       }
-      return storageTransferFailure(uploadError);
+      const failure = storageTransferFailure(uploadError);
+      onChange?.({ state: 'failed', progress, error: failure.error.message });
+      return failure;
     }
   }
 

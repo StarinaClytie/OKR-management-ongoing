@@ -874,19 +874,30 @@ describe('SupabaseOkrRepository', () => {
     const rpc = vi.fn(async (name: string) => name === 'begin_resource_attachment_upload'
       ? { data: { id: 'resource-attachment-1', path: 'organization/o/resources/r/resource-attachment-1/manual.pdf' }, error: null }
       : { data: null, error: null });
-    const upload = vi.fn(async (_id: string, _file: File, onProgress: (value: number) => void) => { onProgress(100); });
+    const upload = vi.fn(async (_id: string, _file: File, onProgress: (value: number) => void, _signal: AbortSignal, onVerifying?: () => void) => {
+      onProgress(50);
+      onVerifying?.();
+      onProgress(100);
+    });
     const { client, storageFrom } = createClient();
     client.rpc = rpc;
     const resourceTransport = createAttachmentTransport({ upload });
     const file = new File(['manual'], 'manual.pdf', { type: 'application/pdf' });
 
-    const result = await new SupabaseOkrRepository(client, createAttachmentTransport(), resourceTransport).uploadResourceAttachment('resource-1', file);
+    const updates: Array<{ state: string; progress: number }> = [];
+    const result = await new SupabaseOkrRepository(client, createAttachmentTransport(), resourceTransport).uploadResourceAttachment('resource-1', file, (update) => updates.push(update));
 
     expect(result).toEqual({ ok: true, data: { id: 'resource-attachment-1' } });
     expect(rpc).toHaveBeenCalledWith('begin_resource_attachment_upload', {
       p_resource_id: 'resource-1', p_original_name: 'manual.pdf', p_mime_type: 'application/pdf', p_byte_size: file.size,
     });
-    expect(upload).toHaveBeenCalledWith('resource-attachment-1', file, expect.any(Function), expect.any(AbortSignal));
+    expect(upload).toHaveBeenCalledWith('resource-attachment-1', file, expect.any(Function), expect.any(AbortSignal), expect.any(Function));
+    expect(updates).toEqual([
+      { state: 'uploading', progress: 0 },
+      { state: 'uploading', progress: 50 },
+      { state: 'verifying', progress: 99 },
+      { state: 'uploaded', progress: 100 },
+    ]);
     expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(upload.mock.invocationCallOrder[0]!);
     expect(storageFrom).not.toHaveBeenCalled();
   });

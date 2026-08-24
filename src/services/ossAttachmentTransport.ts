@@ -49,10 +49,11 @@ export function createOssAttachmentTransport(options: OssAttachmentTransportOpti
     return value;
   }
   return {
-    async upload(attachmentId: string, file: File, onProgress: (percent: number) => void, signal: AbortSignal) {
+    async upload(attachmentId: string, file: File, onProgress: (percent: number) => void, signal: AbortSignal, onVerifying?: () => void) {
       const accessToken = await token();
       const signed = await jsonRequest<{ url: string; contentType: string }>(fetchImpl, accessToken, `${attachmentApiBasePath}/${encodeURIComponent(attachmentId)}/upload-url`, 'POST');
       await putFile(createXhr, signed.url, signed.contentType, file, onProgress, signal);
+      onVerifying?.();
       await jsonRequest(fetchImpl, accessToken, `${attachmentApiBasePath}/${encodeURIComponent(attachmentId)}/finalize`, 'POST');
       onProgress(100);
     },
