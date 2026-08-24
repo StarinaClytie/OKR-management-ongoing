@@ -157,6 +157,11 @@ export function NotificationCenter({
             })}
           </ol>
         ) : null}
+        {notifications.hasMore ? (
+          <button type="button" className="button button--secondary" disabled={notifications.loading} onClick={() => void notifications.loadMore()}>
+            {notifications.loading ? t('notifications.loading') : t('notifications.loadMore')}
+          </button>
+        ) : null}
       </div>
     </div>
   );

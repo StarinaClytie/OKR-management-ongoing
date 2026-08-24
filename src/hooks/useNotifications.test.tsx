@@ -47,6 +47,24 @@ function notificationRepository(overrides: Partial<NotificationRepository> = {})
 }
 
 describe('useNotifications', () => {
+  it('loads the next notification page with the returned cursor and appends older items', async () => {
+    const nextCursor = { createdAt: '2026-08-24T09:00:00.000Z', id: 'notification-2' };
+    const olderItem = { id: 'notification-3', type: 'daily_report_comment' as const, reportId: 'report-3', resourceId: null, actorName: '主管', readAt: null, createdAt: '2026-08-23T10:00:00.000Z' };
+    const repository = notificationRepository({
+      listMyNotifications: vi.fn()
+        .mockResolvedValueOnce({ ok: true, data: { ...unreadPage, nextCursor } })
+        .mockResolvedValueOnce({ ok: true, data: { items: [olderItem], unreadCount: 2, nextCursor: null } }),
+    });
+    const { result } = renderHook(() => useNotifications(repository), { wrapper: wrapperFor(firstUser) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => { await result.current.loadMore(); });
+
+    expect(repository.listMyNotifications).toHaveBeenNthCalledWith(2, 20, nextCursor);
+    expect(result.current.items.map((item) => item.id)).toEqual(['notification-1', 'notification-2', 'notification-3']);
+    expect(result.current.hasMore).toBe(false);
+  });
+
   it('refreshes once when a user signs in and does not poll', async () => {
     vi.useFakeTimers();
     const repository = notificationRepository();

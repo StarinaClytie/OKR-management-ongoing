@@ -71,6 +71,21 @@ function renderCenter(options: {
 }
 
 describe('NotificationCenter', () => {
+  it('offers and loads older notifications when another page exists', async () => {
+    const user = userEvent.setup();
+    const olderItem = { id: 'notification-older', type: 'daily_report_comment' as const, reportId: 'report-older', resourceId: null, actorName: '旧主管', readAt: null, createdAt: '2026-08-23T10:00:00.000Z' };
+    const repository = createRepository();
+    repository.listMyNotifications = vi.fn()
+      .mockResolvedValueOnce({ ok: true, data: { ...page, nextCursor: { createdAt: '2026-08-24T10:00:00.000Z', id: 'notification-report' } } })
+      .mockResolvedValueOnce({ ok: true, data: { items: [olderItem], unreadCount: 3, nextCursor: null } });
+    renderCenter({ repository });
+
+    await user.click(await screen.findByRole('button', { name: '加载更多通知' }));
+
+    expect(await screen.findByRole('button', { name: '旧主管评论了日报' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '加载更多通知' })).not.toBeInTheDocument();
+  });
+
   it('renders newest first in an accessible dialog', async () => {
     renderCenter();
 

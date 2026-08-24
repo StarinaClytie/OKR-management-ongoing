@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import type { OkrRepository, RepositoryErrorCode } from '../data/types';
-import type { UserNotification } from '../domain/types';
+import type { NotificationPage, UserNotification } from '../domain/types';
 import { repository } from '../lib/supabase';
 
 export type NotificationRepository = Pick<OkrRepository, 'listMyNotifications' | 'markNotificationRead' | 'markAllNotificationsRead'>;
@@ -10,8 +10,10 @@ export interface NotificationState {
   items: UserNotification[];
   unreadCount: number;
   loading: boolean;
+  hasMore: boolean;
   error?: RepositoryErrorCode;
   refresh(): Promise<void>;
+  loadMore(): Promise<void>;
   markRead(id: string): Promise<boolean>;
   markAllRead(): Promise<boolean>;
 }
@@ -22,6 +24,7 @@ export function useNotifications(dataRepository: NotificationRepository = reposi
   const [items, setItems] = useState<UserNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [nextCursor, setNextCursor] = useState<NotificationPage['nextCursor']>(null);
   const [error, setError] = useState<RepositoryErrorCode>();
   const [stateUserId, setStateUserId] = useState(userId);
   const itemsRef = useRef<UserNotification[]>([]);
@@ -45,12 +48,36 @@ export function useNotifications(dataRepository: NotificationRepository = reposi
     setStateUserId(requestUserId);
     setItems(nextItems);
     setUnreadCount(result.data.unreadCount);
+    setNextCursor(result.data.nextCursor);
   }, [dataRepository, userId]);
 
   const refresh = useCallback(async () => {
     if (!userId) return;
     await load(accountGeneration.current, userId);
   }, [load, userId]);
+
+  const loadMore = useCallback(async () => {
+    if (!userId || !nextCursor || loading) return;
+    const generation = accountGeneration.current;
+    const requestId = requestSequence.current + 1;
+    requestSequence.current = requestId;
+    setLoading(true);
+    setError(undefined);
+    const result = await dataRepository.listMyNotifications(20, nextCursor);
+    if (accountGeneration.current !== generation || requestSequence.current !== requestId) return;
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error.code);
+      return;
+    }
+    const byId = new Map(itemsRef.current.map((item) => [item.id, item]));
+    result.data.items.forEach((item) => byId.set(item.id, item));
+    const nextItems = [...byId.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    itemsRef.current = nextItems;
+    setItems(nextItems);
+    setUnreadCount(result.data.unreadCount);
+    setNextCursor(result.data.nextCursor);
+  }, [dataRepository, loading, nextCursor, userId]);
 
   useEffect(() => {
     accountGeneration.current += 1;
@@ -60,6 +87,7 @@ export function useNotifications(dataRepository: NotificationRepository = reposi
     setStateUserId(userId);
     setItems([]);
     setUnreadCount(0);
+    setNextCursor(null);
     setError(undefined);
     setLoading(Boolean(userId));
     if (userId) void load(generation, userId);
@@ -112,8 +140,10 @@ export function useNotifications(dataRepository: NotificationRepository = reposi
     items: stateBelongsToCurrentUser ? items : [],
     unreadCount: stateBelongsToCurrentUser ? unreadCount : 0,
     loading: stateBelongsToCurrentUser ? loading : Boolean(userId),
+    hasMore: stateBelongsToCurrentUser && nextCursor !== null,
     error: stateBelongsToCurrentUser ? error : undefined,
     refresh,
+    loadMore,
     markRead,
     markAllRead,
   };
