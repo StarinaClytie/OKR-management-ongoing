@@ -5,8 +5,9 @@ class FakeXhr {
   upload = { addEventListener: vi.fn((_name: string, listener: (event: ProgressEvent) => void) => { this.progress = listener; }) };
   status = 200; onload?: () => void; onerror?: () => void; onabort?: () => void;
   progress?: (event: ProgressEvent) => void;
+  progressEvent: ProgressEvent = { loaded: 50, total: 100 } as ProgressEvent;
   open = vi.fn(); setRequestHeader = vi.fn(); abort = vi.fn();
-  send = vi.fn(() => { this.progress?.({ loaded: 50, total: 100 } as ProgressEvent); this.onload?.(); });
+  send = vi.fn(() => { this.progress?.(this.progressEvent); this.onload?.(); });
 }
 
 function response(body: unknown, ok = true, status = 200) {
@@ -36,6 +37,33 @@ describe('OSS attachment transport', () => {
     expect(await transport.downloadUrl('attachment-1')).toBe('https://oss.example/download');
     await transport.remove('attachment-1');
     expect(fetchImpl).toHaveBeenLastCalledWith('/api/attachments/attachment-1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('uses resource attachment routes and holds complete XHR progress at 99 until finalization', async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(response({ url: 'https://oss.example/resource-signed', contentType: 'application/pdf' }))
+      .mockResolvedValueOnce(response({ state: 'uploaded' }))
+      .mockResolvedValueOnce(response({ url: 'https://oss.example/resource-download' }))
+      .mockResolvedValueOnce(response(null, true, 204));
+    const xhr = new FakeXhr();
+    xhr.progressEvent = { loaded: 100, total: 100 } as ProgressEvent;
+    const transport = createOssAttachmentTransport({
+      getAccessToken: async () => 'token',
+      fetchImpl,
+      createXhr: () => xhr as never,
+      attachmentApiBasePath: '/api/resource-attachments',
+    });
+    const progress: number[] = [];
+
+    await transport.upload('resource-attachment-1', new File(['data'], 'manual.pdf', { type: 'application/pdf' }), (value) => progress.push(value), new AbortController().signal);
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/resource-attachments/resource-attachment-1/upload-url', expect.objectContaining({ method: 'POST' }));
+    expect(progress).toEqual([99, 100]);
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, '/api/resource-attachments/resource-attachment-1/finalize', expect.objectContaining({ method: 'POST' }));
+    await expect(transport.downloadUrl('resource-attachment-1')).resolves.toBe('https://oss.example/resource-download');
+    await transport.remove('resource-attachment-1');
+    expect(fetchImpl).toHaveBeenNthCalledWith(3, '/api/resource-attachments/resource-attachment-1/download-url', expect.objectContaining({ method: 'GET' }));
+    expect(fetchImpl).toHaveBeenLastCalledWith('/api/resource-attachments/resource-attachment-1', expect.objectContaining({ method: 'DELETE' }));
   });
   it('rejects signing and finalize failures', async () => {
     const signingFailure = createOssAttachmentTransport({ getAccessToken: async () => 'token', fetchImpl: vi.fn(async () => response({}, false, 403)) });

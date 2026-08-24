@@ -1,5 +1,6 @@
 export interface OssAttachmentTransportOptions {
   getAccessToken(): Promise<string | null>;
+  attachmentApiBasePath?: string;
   fetchImpl?: typeof fetch;
   createXhr?: () => XMLHttpRequest;
 }
@@ -41,6 +42,7 @@ function putFile(createXhr: () => XMLHttpRequest, url: string, contentType: stri
 export function createOssAttachmentTransport(options: OssAttachmentTransportOptions) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const createXhr = options.createXhr ?? (() => new XMLHttpRequest());
+  const attachmentApiBasePath = options.attachmentApiBasePath ?? '/api/attachments';
   async function token() {
     const value = await options.getAccessToken();
     if (!value) throw new Error('Authentication required');
@@ -49,19 +51,19 @@ export function createOssAttachmentTransport(options: OssAttachmentTransportOpti
   return {
     async upload(attachmentId: string, file: File, onProgress: (percent: number) => void, signal: AbortSignal) {
       const accessToken = await token();
-      const signed = await jsonRequest<{ url: string; contentType: string }>(fetchImpl, accessToken, `/api/attachments/${encodeURIComponent(attachmentId)}/upload-url`, 'POST');
+      const signed = await jsonRequest<{ url: string; contentType: string }>(fetchImpl, accessToken, `${attachmentApiBasePath}/${encodeURIComponent(attachmentId)}/upload-url`, 'POST');
       await putFile(createXhr, signed.url, signed.contentType, file, onProgress, signal);
-      await jsonRequest(fetchImpl, accessToken, `/api/attachments/${encodeURIComponent(attachmentId)}/finalize`, 'POST');
+      await jsonRequest(fetchImpl, accessToken, `${attachmentApiBasePath}/${encodeURIComponent(attachmentId)}/finalize`, 'POST');
       onProgress(100);
     },
     async downloadUrl(attachmentId: string) {
       const accessToken = await token();
-      const result = await jsonRequest<{ url: string }>(fetchImpl, accessToken, `/api/attachments/${encodeURIComponent(attachmentId)}/download-url`, 'GET');
+      const result = await jsonRequest<{ url: string }>(fetchImpl, accessToken, `${attachmentApiBasePath}/${encodeURIComponent(attachmentId)}/download-url`, 'GET');
       return result.url;
     },
     async remove(attachmentId: string) {
       const accessToken = await token();
-      await jsonRequest(fetchImpl, accessToken, `/api/attachments/${encodeURIComponent(attachmentId)}`, 'DELETE');
+      await jsonRequest(fetchImpl, accessToken, `${attachmentApiBasePath}/${encodeURIComponent(attachmentId)}`, 'DELETE');
     },
   };
 }

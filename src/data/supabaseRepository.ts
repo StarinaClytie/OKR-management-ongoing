@@ -229,12 +229,16 @@ function riskStatus(probability: number, impact: number, resolved: boolean): 'on
 export class SupabaseOkrRepository implements OkrRepository {
   readonly mode = 'supabase' as const;
   private readonly dailyAttachmentTransport: OssAttachmentTransport;
-  constructor(readonly client: SupabaseClientLike, transport?: OssAttachmentTransport) {
-    this.dailyAttachmentTransport = transport ?? createOssAttachmentTransport({
-      getAccessToken: async () => {
-        const session = await this.client.auth.getSession();
-        return session.error ? null : session.data.session?.access_token ?? null;
-      },
+  private readonly resourceAttachmentTransport: OssAttachmentTransport;
+  constructor(readonly client: SupabaseClientLike, transport?: OssAttachmentTransport, resourceTransport?: OssAttachmentTransport) {
+    const getAccessToken = async () => {
+      const session = await this.client.auth.getSession();
+      return session.error ? null : session.data.session?.access_token ?? null;
+    };
+    this.dailyAttachmentTransport = transport ?? createOssAttachmentTransport({ getAccessToken });
+    this.resourceAttachmentTransport = resourceTransport ?? createOssAttachmentTransport({
+      getAccessToken,
+      attachmentApiBasePath: '/api/resource-attachments',
     });
   }
 
@@ -1096,14 +1100,16 @@ export class SupabaseOkrRepository implements OkrRepository {
   }
 
   async finalizeResourceAttachmentUpload(id: string): Promise<RepositoryResult<unknown>> {
-    return this.callRpc('finalize_resource_attachment_upload', { p_attachment_id: id });
+    void id;
+    return { ok: false, error: { code: 'storage', message: '附件必须通过 OSS 服务验证后完成上传' } };
   }
 
   async createResourceAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>> {
-    const authorized = await this.callRpc<{ bucket: string; path: string; expiresIn: number }>('create_resource_attachment_download', { p_attachment_id: id });
-    if (!authorized.ok) return authorized;
-    const signed = await this.client.storage.from(authorized.data.bucket).createSignedUrl(authorized.data.path, authorized.data.expiresIn);
-    return signed.error || !signed.data ? failure(signed.error) : { ok: true, data: { url: signed.data.signedUrl } };
+    try {
+      return { ok: true, data: { url: await this.resourceAttachmentTransport.downloadUrl(id) } };
+    } catch (error) {
+      return storageTransferFailure(error);
+    }
   }
 
   async uploadResourceAttachment(resourceId: string, file: File): Promise<RepositoryResult<{ id: string }>> {
@@ -1111,10 +1117,12 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (invalid) return { ok: false, error: { code: 'validation', message: invalid.message } };
     const pending = await this.beginResourceAttachmentUpload({ p_resource_id: resourceId, p_original_name: sanitizeFilename(file.name), p_mime_type: file.type, p_byte_size: file.size });
     if (!pending.ok) return pending;
-    const uploaded = await this.client.storage.from(pending.data.bucket).upload(pending.data.path, file, { contentType: file.type, upsert: false });
-    if (uploaded.error) return failure(uploaded.error);
-    const finalized = await this.finalizeResourceAttachmentUpload(pending.data.id);
-    return finalized.ok ? { ok: true, data: { id: pending.data.id } } : (finalized as RepositoryResult<{ id: string }>);
+    try {
+      await this.resourceAttachmentTransport.upload(pending.data.id, file, () => undefined, new AbortController().signal);
+      return { ok: true, data: { id: pending.data.id } };
+    } catch (error) {
+      return storageTransferFailure(error);
+    }
   }
 
   async beginAttachmentUpload(input: Record<string, unknown>): Promise<RepositoryResult<AttachmentUploadTarget>> {

@@ -870,6 +870,39 @@ describe('SupabaseOkrRepository', () => {
     expect(storageFrom).not.toHaveBeenCalled();
   });
 
+  it('creates resource metadata before uploading through the resource OSS transport without Supabase Storage', async () => {
+    const rpc = vi.fn(async (name: string) => name === 'begin_resource_attachment_upload'
+      ? { data: { id: 'resource-attachment-1', path: 'organization/o/resources/r/resource-attachment-1/manual.pdf' }, error: null }
+      : { data: null, error: null });
+    const upload = vi.fn(async (_id: string, _file: File, onProgress: (value: number) => void) => { onProgress(100); });
+    const { client, storageFrom } = createClient();
+    client.rpc = rpc;
+    const resourceTransport = createAttachmentTransport({ upload });
+    const file = new File(['manual'], 'manual.pdf', { type: 'application/pdf' });
+
+    const result = await new SupabaseOkrRepository(client, createAttachmentTransport(), resourceTransport).uploadResourceAttachment('resource-1', file);
+
+    expect(result).toEqual({ ok: true, data: { id: 'resource-attachment-1' } });
+    expect(rpc).toHaveBeenCalledWith('begin_resource_attachment_upload', {
+      p_resource_id: 'resource-1', p_original_name: 'manual.pdf', p_mime_type: 'application/pdf', p_byte_size: file.size,
+    });
+    expect(upload).toHaveBeenCalledWith('resource-attachment-1', file, expect.any(Function), expect.any(AbortSignal));
+    expect(rpc.mock.invocationCallOrder[0]).toBeLessThan(upload.mock.invocationCallOrder[0]!);
+    expect(storageFrom).not.toHaveBeenCalled();
+  });
+
+  it('gets resource download URLs through the resource OSS transport without Supabase Storage', async () => {
+    const { client, storageFrom } = createClient();
+    const downloadUrl = vi.fn(async () => 'https://oss.example/resource-download');
+    const resourceTransport = createAttachmentTransport({ downloadUrl });
+
+    await expect(new SupabaseOkrRepository(client, createAttachmentTransport(), resourceTransport).createResourceAttachmentDownload('resource-attachment-1'))
+      .resolves.toEqual({ ok: true, data: { url: 'https://oss.example/resource-download' } });
+
+    expect(downloadUrl).toHaveBeenCalledWith('resource-attachment-1');
+    expect(storageFrom).not.toHaveBeenCalled();
+  });
+
   it('authorizes a revision detach without soft-deleting immutable evidence', async () => {
     const { client, rpc } = createClient({ rpcData: null });
     const result = await new SupabaseOkrRepository(client).removeAttachment('attachment-1', { preserveRevisionHistory: true });
