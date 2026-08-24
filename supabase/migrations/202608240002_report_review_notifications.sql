@@ -377,7 +377,7 @@ begin
   if not found or not private.can_review_daily_report(p_report_id, auth.uid()) then
     raise exception 'Only an authorized daily report reviewer can confirm this report' using errcode = '42501';
   end if;
-  if target_report.current_revision <> p_expected_revision then
+  if target_report.current_revision is distinct from p_expected_revision then
     raise exception 'Daily report revision conflict' using errcode = '40001';
   end if;
   if target_report.status = 'confirmed' then

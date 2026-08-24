@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(95);
+select plan(98);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -103,7 +103,8 @@ insert into public.report_attachment_revisions (
 
 create temporary table review_notification_ids (
   own_id uuid,
-  foreign_id uuid
+  foreign_id uuid,
+  mismatched_organization_id uuid
 );
 grant select, insert, update on review_notification_ids to authenticated;
 
@@ -296,6 +297,16 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000005', true);
 select throws_ok(
+  $$select public.confirm_daily_report('86000000-0000-0000-0000-000000000001', null)$$,
+  '40001', 'Daily report revision conflict',
+  'confirmation rejects a missing optimistic revision token'
+);
+-- Keep this regression isolated when run against the intentionally buggy RED implementation.
+set local role postgres;
+update public.daily_reports set status = 'submitted' where id = '86000000-0000-0000-0000-000000000001';
+delete from public.user_notifications where notification_type = 'daily_report_confirmed';
+set local role authenticated;
+select throws_ok(
   $$select public.confirm_daily_report('86000000-0000-0000-0000-000000000001', 2)$$,
   '40001', 'Daily report revision conflict',
   'confirmation preserves optimistic revision checking'
@@ -372,10 +383,24 @@ insert into public.user_notifications (
   '81000000-0000-0000-0000-000000000002', 'resource_owner_assigned',
   '8a000000-0000-0000-0000-000000000001', timestamptz '2031-01-01 00:00:00+00'
 );
-insert into review_notification_ids (own_id, foreign_id)
+insert into public.user_notifications (
+  id, organization_id, recipient_id, actor_id, notification_type,
+  report_id, comment_id, created_at
+) values (
+  '8b000000-0000-0000-0000-000000000001',
+  '82000000-0000-0000-0000-000000000002',
+  '81000000-0000-0000-0000-000000000001',
+  '81000000-0000-0000-0000-000000000008',
+  'daily_report_comment',
+  '86000000-0000-0000-0000-000000000001',
+  (select id from public.daily_report_comments order by created_at, id limit 1),
+  timestamptz '2032-01-01 00:00:00+00'
+);
+insert into review_notification_ids (own_id, foreign_id, mismatched_organization_id)
 select
   (select id from public.user_notifications where recipient_id = '81000000-0000-0000-0000-000000000001' order by created_at, id limit 1),
-  (select id from public.user_notifications where recipient_id = '81000000-0000-0000-0000-000000000005' order by created_at, id limit 1);
+  (select id from public.user_notifications where recipient_id = '81000000-0000-0000-0000-000000000005' order by created_at, id limit 1),
+  '8b000000-0000-0000-0000-000000000001';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '81000000-0000-0000-0000-000000000001', true);
@@ -385,7 +410,7 @@ select is(
   'notification page has the fixed JSON shape'
 );
 select is(jsonb_array_length(public.list_my_notifications(2, null, null)->'items'), 2, 'notification list respects the requested page limit');
-select is((public.list_my_notifications(2, null, null)->>'unreadCount')::integer, 55, 'notification page reports the recipient total unread count');
+select is((public.list_my_notifications(2, null, null)->>'unreadCount')::integer, 55, 'notification list excludes an own-recipient row forged into another organization');
 select ok(public.list_my_notifications(2, null, null)->'nextCursor' <> 'null'::jsonb, 'notification page returns a cursor when more rows exist');
 select is(
   (select array_agg(key order by key) from jsonb_object_keys(public.list_my_notifications(2, null, null)->'items'->0) key),
@@ -429,6 +454,13 @@ set local role postgres;
 select ok((select read_at is null from public.user_notifications where id = (select foreign_id from review_notification_ids)), 'another recipient notification remains unread');
 set local role authenticated;
 select lives_ok(
+  $$select public.mark_notification_read((select mismatched_organization_id from review_notification_ids))$$,
+  'marking an own-recipient notification from another organization is a safe no-op'
+);
+set local role postgres;
+select ok((select read_at is null from public.user_notifications where id = (select mismatched_organization_id from review_notification_ids)), 'organization mismatch prevents the own-recipient notification from being marked read');
+set local role authenticated;
+select lives_ok(
   $$select public.mark_notification_read((select own_id from review_notification_ids))$$,
   'recipient marks one own notification read'
 );
@@ -441,7 +473,7 @@ select lives_ok(
 );
 select is(public.mark_all_notifications_read(), 54, 'bulk mark returns the number of newly read own notifications');
 set local role postgres;
-select is((select count(*) from public.user_notifications where recipient_id = '81000000-0000-0000-0000-000000000001' and read_at is null), 0::bigint, 'bulk mark reads every notification for the current recipient');
+select is((select count(*) from public.user_notifications where organization_id = '82000000-0000-0000-0000-000000000001' and recipient_id = '81000000-0000-0000-0000-000000000001' and read_at is null), 0::bigint, 'bulk mark reads every notification for the current recipient and organization');
 select is((select count(*) from public.user_notifications where recipient_id = '81000000-0000-0000-0000-000000000005' and read_at is null), 1::bigint, 'bulk mark leaves another recipient notification unchanged');
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000099', true);
