@@ -1,6 +1,25 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
+
+create or replace function pg_temp.confirm_test_upload(
+  p_attachment_id uuid,
+  p_checksum text,
+  p_byte_size bigint default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target public.report_attachments%rowtype;
+begin
+  select * into target from public.report_attachments where id = p_attachment_id;
+  return public.confirm_attachment_object_upload(
+    target.id, p_checksum, target.mime_type, coalesce(p_byte_size, target.byte_size::bigint)
+  );
+end;
+$$;
 select plan(22);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -60,7 +79,7 @@ select lives_ok(
 insert into storage.objects (bucket_id, name, owner_id, metadata)
 select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size)
 from public.report_attachments where state = 'pending';
-select public.finalize_attachment_upload(id, 'sha256:first')
+select pg_temp.confirm_test_upload(id, 'sha256:first')
 from public.report_attachments where state = 'pending';
 
 select lives_ok(

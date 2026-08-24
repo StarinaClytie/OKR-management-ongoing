@@ -13,10 +13,10 @@ describe('attachment validation', () => {
     expect(validateAttachment(new File(['x'], 'payload.exe', { type: 'application/x-msdownload' }))?.code).toBe('unsupported_type');
     expect(validateAttachment(new File(['x'], 'photo.png', { type: 'application/pdf' }))?.code).toBe('type_mismatch');
   });
-  it('accepts exactly 10 MB and rejects zero or 10 MB plus one byte', () => {
-    expect(validateAttachment(new File([new Uint8Array(10 * 1024 * 1024)], 'a.pdf', { type: 'application/pdf' }))).toBeNull();
+  it('accepts exactly 100 MB and rejects zero or 100 MB plus one byte', () => {
+    expect(validateAttachment(new File([new Uint8Array(100 * 1024 * 1024)], 'a.pdf', { type: 'application/pdf' }))).toBeNull();
     expect(validateAttachment(new File([], 'a.pdf', { type: 'application/pdf' }))?.code).toBe('empty');
-    expect(validateAttachment(new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'a.pdf', { type: 'application/pdf' }))?.code).toBe('too_large');
+    expect(validateAttachment(new File([new Uint8Array(100 * 1024 * 1024 + 1)], 'a.pdf', { type: 'application/pdf' }))?.message).toBe('文件不能超过 100 MB');
   });
   it('requires HTTPS links and sanitizes path-bearing filenames', () => {
     expect(validateEvidenceLink('https://example.com/evidence')).toBeNull();
@@ -37,7 +37,7 @@ it('runs selected → pending → uploading → uploaded and reports progress', 
   const result = await service.uploadAttachment('report-1', new File(['x'], 'evidence.pdf', { type: 'application/pdf' }), 'confidential', (state) => states.push(`${state.state}:${state.progress}`));
   expect(result.state).toBe('uploaded');
   expect(states).toEqual(expect.arrayContaining(['pending:0', 'uploading:50', 'uploading:100', 'uploaded:100']));
-  expect(upload).toHaveBeenCalledWith('server/path.pdf', expect.any(File), expect.any(Function), expect.any(AbortSignal));
+  expect(upload).toHaveBeenCalledWith('a-1', expect.any(File), expect.any(Function), expect.any(AbortSignal));
 });
 
 it('supports retry, replacement, removal and authorized signed downloads', async () => {
@@ -53,7 +53,7 @@ it('supports retry, replacement, removal and authorized signed downloads', async
   const failed = { localId: 'local', file: new File(['x'], 'a.pdf', { type: 'application/pdf' }), classification: 'internal' as const, state: 'failed' as const, progress: 0 };
   expect((await service.retryAttachment('report-1', failed, vi.fn())).state).toBe('uploaded');
   expect((await service.replaceAttachment('a-old', failed.file, 'confidential', vi.fn())).attachmentId).toBe('a-new');
-  expect(await service.removeAttachment('a-new', 'new.pdf')).toEqual({ ok: true, data: undefined });
+  expect(await service.removeAttachment('a-new')).toEqual({ ok: true, data: undefined });
   expect(await service.createDownloadUrl('a-new')).toEqual({ ok: true, data: { url: 'https://storage.example/signed' } });
-  expect(storage.remove).toHaveBeenCalledWith('new.pdf');
+  expect(storage.remove).toHaveBeenCalledWith('a-new');
 });

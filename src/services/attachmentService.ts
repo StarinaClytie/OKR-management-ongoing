@@ -1,7 +1,7 @@
 import type { Classification } from '../domain/types';
-import type { OkrRepository, SupabaseClientLike } from '../data/types';
+import type { OkrRepository } from '../data/types';
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = 100 * 1024 * 1024;
 const allowedTypes: Record<string, string> = {
   pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv',
@@ -15,7 +15,7 @@ export function sanitizeFilename(name: string): string {
 }
 export function validateAttachment(file: File): ValidationError | null {
   if (file.size === 0) return { code: 'empty', message: '文件不能为空' };
-  if (file.size > MAX_BYTES) return { code: 'too_large', message: '文件不能超过 10 MB' };
+  if (file.size > MAX_BYTES) return { code: 'too_large', message: '文件不能超过 100 MB' };
   const extension = file.name.split('.').at(-1)?.toLowerCase() ?? '';
   const expected = allowedTypes[extension];
   if (!expected) return { code: 'unsupported_type', message: '不支持此文件类型' };
@@ -30,26 +30,9 @@ export function validateEvidenceLink(value: string): ValidationError | null {
 export type UploadState = 'selected' | 'pending' | 'uploading' | 'uploaded' | 'failed' | 'deleting';
 export interface AttachmentUploadState { localId: string; attachmentId?: string; file: File; classification: Classification; state: UploadState; progress: number; error?: string }
 export interface StorageTransport {
-  upload(path: string, file: File, onProgress: (percent: number) => void, signal: AbortSignal): Promise<{ ok: boolean; error?: string }>;
-  remove?(path: string): Promise<{ ok: boolean; error?: string }>;
-}
-
-export function createSupabaseStorageTransport(client: SupabaseClientLike): StorageTransport {
-  return {
-    async upload(path, file, onProgress, signal) {
-      if (signal.aborted) return { ok: false, error: '上传已取消' };
-      onProgress(10);
-      const result = await client.storage.from('report-attachments').upload(path, file, { contentType: file.type, upsert: false });
-      if (signal.aborted) return { ok: false, error: '上传已取消' };
-      if (result.error) return { ok: false, error: result.error.message };
-      onProgress(100);
-      return { ok: true };
-    },
-    async remove(path) {
-      const result = await client.storage.from('report-attachments').remove([path]);
-      return result.error ? { ok: false, error: result.error.message } : { ok: true };
-    },
-  };
+  upload(attachmentId: string, file: File, onProgress: (percent: number) => void, signal: AbortSignal): Promise<{ ok: boolean; error?: string }>;
+  remove?(attachmentId: string): Promise<{ ok: boolean; error?: string }>;
+  downloadUrl?(attachmentId: string): Promise<string>;
 }
 
 export class AttachmentService {
@@ -64,10 +47,8 @@ export class AttachmentService {
     if (!pending.ok) { emit({ state: 'failed', error: pending.error.message }); return state; }
     const metadata = pending.data;
     emit({ attachmentId: metadata.id, state: 'uploading' });
-    const uploaded = await this.storage.upload(metadata.path, file, (progress) => emit({ state: 'uploading', progress }), signal);
+    const uploaded = await this.storage.upload(metadata.id, file, (progress) => emit({ state: 'uploading', progress }), signal);
     if (!uploaded.ok) { await this.repository.removeAttachment(metadata.id); emit({ state: 'failed', error: uploaded.error ?? '上传失败' }); return state; }
-    const finalized = await this.repository.finalizeAttachmentUpload(metadata.id);
-    if (!finalized.ok) { emit({ state: 'failed', error: finalized.error.message }); return state; }
     emit({ state: 'uploaded', progress: 100 });
     return state;
   }
@@ -86,23 +67,24 @@ export class AttachmentService {
     if (!pending.ok) { emit({ state: 'failed', error: pending.error.message }); return state; }
     const metadata = pending.data as { id: string; path: string };
     emit({ attachmentId: metadata.id, state: 'uploading' });
-    const uploaded = await this.storage.upload(metadata.path, file, (progress) => emit({ progress }), signal);
+    const uploaded = await this.storage.upload(metadata.id, file, (progress) => emit({ progress }), signal);
     if (!uploaded.ok) { await this.repository.removeAttachment(metadata.id); emit({ state: 'failed', error: uploaded.error ?? '上传失败' }); return state; }
-    const finalized = await this.repository.finalizeAttachmentUpload(metadata.id);
-    if (!finalized.ok) { emit({ state: 'failed', error: finalized.error.message }); return state; }
     emit({ state: 'uploaded', progress: 100 });
     return state;
   }
 
-  async removeAttachment(attachmentId: string, storagePath?: string) {
-    const removed = await this.repository.removeAttachment(attachmentId);
-    if (!removed.ok) return removed;
-    if (storagePath && this.storage.remove) {
-      const object = await this.storage.remove(storagePath);
+  async removeAttachment(attachmentId: string) {
+    if (this.storage.remove) {
+      const object = await this.storage.remove(attachmentId);
       if (!object.ok) return { ok: false as const, error: { code: 'unknown' as const, message: object.error ?? '附件对象删除失败' } };
+      return { ok: true as const, data: undefined };
     }
-    return removed;
+    return this.repository.removeAttachment(attachmentId);
   }
 
-  createDownloadUrl(attachmentId: string) { return this.repository.createAttachmentDownload(attachmentId); }
+  async createDownloadUrl(attachmentId: string) {
+    if (!this.storage.downloadUrl) return this.repository.createAttachmentDownload(attachmentId);
+    try { return { ok: true as const, data: { url: await this.storage.downloadUrl(attachmentId) } }; }
+    catch { return { ok: false as const, error: { code: 'storage' as const, message: '请求未完成，请稍后重试' } }; }
+  }
 }

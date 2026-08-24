@@ -3,6 +3,7 @@ import type { Classification, DailyOkrBlock, DailyReport, DailyReportComment, Da
 import type { DailyEvidenceDraft } from '../domain/dailyEntry';
 import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
+import { createOssAttachmentTransport, type OssAttachmentTransport } from '../services/ossAttachmentTransport';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
 interface ProfileQuery {
@@ -227,7 +228,15 @@ function riskStatus(probability: number, impact: number, resolved: boolean): 'on
 
 export class SupabaseOkrRepository implements OkrRepository {
   readonly mode = 'supabase' as const;
-  constructor(readonly client: SupabaseClientLike) {}
+  private readonly dailyAttachmentTransport: OssAttachmentTransport;
+  constructor(readonly client: SupabaseClientLike, transport?: OssAttachmentTransport) {
+    this.dailyAttachmentTransport = transport ?? createOssAttachmentTransport({
+      getAccessToken: async () => {
+        const session = await this.client.auth.getSession();
+        return session.error ? null : session.data.session?.access_token ?? null;
+      },
+    });
+  }
 
   async getCurrentProfile(): Promise<RepositoryResult<AuthProfileState>> {
     const session = await this.client.auth.getSession();
@@ -635,30 +644,13 @@ export class SupabaseOkrRepository implements OkrRepository {
 
     const attachmentId = pending.data.id;
     input.onChange({ state: 'uploading', progress: 0, attachmentId });
-    const session = await this.client.auth.getSession();
-    if (session.error || !session.data.session?.access_token) {
-      const cleanup = await this.cleanupUploadAttempt([pending.data]);
-      const result: { ok: false; error: { code: RepositoryErrorCode; message: string } } = !cleanup.ok
-        ? cleanup
-        : session.error
-          ? failure<{ attachmentId: string }>(session.error)
-          : { ok: false, error: { code: 'unauthorized', message: '无权访问请求的资源' } };
-      input.onChange({ state: 'failed', progress: 0, attachmentId: undefined, errorCode: result.error.code, error: result.error.message });
-      return result;
-    }
-
     try {
-      // Load the transport only at call time. Its public endpoint configuration
-      // lives in lib/supabase, which also constructs this repository.
-      const { uploadStorageObject } = await import('../services/supabaseStorageUpload');
-      await uploadStorageObject({
-        bucket: pending.data.bucket,
-        path: pending.data.path,
-        file: input.file,
-        accessToken: session.data.session.access_token,
-        signal: input.signal,
-        onProgress: (progress) => input.onChange({ state: 'uploading', progress, attachmentId }),
-      });
+      await this.dailyAttachmentTransport.upload(
+        attachmentId,
+        input.file,
+        (progress) => input.onChange({ state: progress === 100 ? 'verifying' : 'uploading', progress, attachmentId }),
+        input.signal ?? new AbortController().signal,
+      );
     } catch (error) {
       const cleanup = await this.cleanupUploadAttempt([pending.data]);
       const result = cleanup.ok
@@ -668,14 +660,6 @@ export class SupabaseOkrRepository implements OkrRepository {
       return result;
     }
 
-    input.onChange({ state: 'verifying', progress: 100, attachmentId });
-    const finalized = await this.finalizeAttachmentUpload(attachmentId);
-    if (!finalized.ok) {
-      const cleanup = await this.cleanupUploadAttempt([pending.data]);
-      const result = cleanup.ok ? finalized : cleanup;
-      input.onChange({ state: 'failed', progress: 100, attachmentId: undefined, errorCode: result.error.code, error: result.error.message });
-      return result as RepositoryResult<{ attachmentId: string }>;
-    }
     input.onChange({ state: 'uploaded', progress: 100, attachmentId });
     return { ok: true, data: { attachmentId } };
   }
@@ -749,15 +733,16 @@ export class SupabaseOkrRepository implements OkrRepository {
         return pending;
       }
       started.push(pending.data);
-      const uploaded = await this.client.storage.from(pending.data.bucket).upload(pending.data.path, attachment.file, { contentType: attachment.file.type, upsert: false });
-      if (uploaded.error) {
+      try {
+        await this.dailyAttachmentTransport.upload(
+          pending.data.id,
+          attachment.file,
+          () => undefined,
+          new AbortController().signal,
+        );
+      } catch (error) {
         await this.cleanupUploadAttempt(started);
-        return failure(uploaded.error);
-      }
-      const finalized = await this.finalizeAttachmentUpload(pending.data.id);
-      if (!finalized.ok) {
-        await this.cleanupUploadAttempt(started);
-        return finalized as RepositoryResult<AttachmentUploadTarget[]>;
+        return storageTransferFailure(error);
       }
     }
     return { ok: true, data: started };
@@ -1136,7 +1121,9 @@ export class SupabaseOkrRepository implements OkrRepository {
     return this.callRpc<AttachmentUploadTarget>('begin_attachment_upload', input);
   }
   async finalizeAttachmentUpload(id: string, checksum?: string): Promise<RepositoryResult<unknown>> {
-    return this.callRpc('finalize_attachment_upload', { p_attachment_id: id, p_checksum: checksum ?? null });
+    void id;
+    void checksum;
+    return { ok: false, error: { code: 'storage', message: '附件必须通过 OSS 服务验证后完成上传' } };
   }
   async replaceAttachment(id: string, input: Record<string, unknown>): Promise<RepositoryResult<unknown>> {
     return this.callRpc('replace_attachment', { p_attachment_id: id, ...input });
@@ -1146,15 +1133,18 @@ export class SupabaseOkrRepository implements OkrRepository {
       const authorized = await this.callRpc<null>('authorize_attachment_revision_removal', { p_attachment_id: id });
       return authorized.ok ? { ok: true, data: undefined } : authorized;
     }
-    const deleted = await this.callRpc<AttachmentUploadTarget>('delete_daily_report_upload_attachment', { p_attachment_id: id });
-    if (!deleted.ok) return deleted;
-    const removed = await this.client.storage.from(deleted.data.bucket).remove([deleted.data.path]);
-    return removed.error ? failure(removed.error) : { ok: true, data: undefined };
+    try {
+      await this.dailyAttachmentTransport.remove(id);
+      return { ok: true, data: undefined };
+    } catch (error) {
+      return storageTransferFailure(error);
+    }
   }
   async createAttachmentDownload(id: string): Promise<RepositoryResult<{ url: string }>> {
-    const authorized = await this.callRpc<{ bucket: string; path: string; expiresIn: number }>('create_attachment_download', { p_attachment_id: id });
-    if (!authorized.ok) return authorized;
-    const signed = await this.client.storage.from(authorized.data.bucket).createSignedUrl(authorized.data.path, authorized.data.expiresIn);
-    return signed.error || !signed.data ? failure(signed.error) : { ok: true, data: { url: signed.data.signedUrl } };
+    try {
+      return { ok: true, data: { url: await this.dailyAttachmentTransport.downloadUrl(id) } };
+    } catch (error) {
+      return storageTransferFailure(error);
+    }
   }
 }

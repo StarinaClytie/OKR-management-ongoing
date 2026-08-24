@@ -1,6 +1,25 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
+
+create or replace function pg_temp.confirm_test_upload(
+  p_attachment_id uuid,
+  p_checksum text,
+  p_byte_size bigint default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target public.report_attachments%rowtype;
+begin
+  select * into target from public.report_attachments where id = p_attachment_id;
+  return public.confirm_attachment_object_upload(
+    target.id, p_checksum, target.mime_type, coalesce(p_byte_size, target.byte_size::bigint)
+  );
+end;
+$$;
 select plan(19);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -64,11 +83,11 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'empty.pdf', 'application/pdf', 0, 'internal', 'Empty')$$,
-  '22023', 'Attachment size must be between 1 and 10485760 bytes', 'zero-byte upload is rejected'
+  '22023', 'Attachment size must be between 1 and 104857600 bytes', 'zero-byte upload is rejected'
 );
 select throws_ok(
-  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'large.pdf', 'application/pdf', 10485761, 'internal', 'Large')$$,
-  '22023', 'Attachment size must be between 1 and 10485760 bytes', '10 MB plus one byte is rejected'
+  $$select public.begin_entry_attachment_upload('75000000-0000-0000-0000-000000000001', (select id from storage_upload_session), 1, 'large.pdf', 'application/pdf', 104857601, 'internal', 'Large')$$,
+  '22023', 'Attachment size must be between 1 and 104857600 bytes', '100 MB plus one byte is rejected'
 );
 
 select ok(
@@ -83,7 +102,7 @@ insert into storage.objects (bucket_id, name, owner_id, metadata)
 select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size)
 from public.report_attachments where state = 'pending';
 select lives_ok(
-  $$select public.finalize_attachment_upload((select id from public.report_attachments where state = 'pending'), 'sha256:first')$$,
+  $$select pg_temp.confirm_test_upload((select id from public.report_attachments where state = 'pending'), 'sha256:first')$$,
   'owner finalizes an uploaded object'
 );
 select is((select state::text from public.report_attachments where original_name = 'evidence.pdf'), 'uploaded', 'finalize marks metadata uploaded');
@@ -108,7 +127,7 @@ insert into storage.objects (bucket_id, name, owner_id, metadata)
 select 'report-attachments', storage_path, auth.uid()::text, jsonb_build_object('mimetype', mime_type, 'size', byte_size - 1)
 from public.report_attachments where original_name = 'mismatch.pdf';
 select throws_ok(
-  $$select public.finalize_attachment_upload((select id from public.report_attachments where original_name = 'mismatch.pdf'), 'sha256:mismatch')$$,
+  $$select pg_temp.confirm_test_upload((select id from public.report_attachments where original_name = 'mismatch.pdf'), 'sha256:mismatch', 127)$$,
   '22023', 'Uploaded object metadata does not match attachment',
   'finalization still rejects an object whose MIME type or byte size differs from its server-issued metadata'
 );

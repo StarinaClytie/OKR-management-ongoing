@@ -1,6 +1,32 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
+
+create or replace function pg_temp.confirm_test_upload(
+  p_attachment_id uuid,
+  p_checksum text,
+  p_byte_size bigint default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare target public.report_attachments%rowtype;
+begin
+  select * into target from public.report_attachments where id = p_attachment_id;
+  return public.confirm_attachment_object_upload(
+    target.id, p_checksum, target.mime_type, coalesce(p_byte_size, target.byte_size::bigint)
+  );
+end;
+$$;
+
+create or replace function pg_temp.confirm_test_deletion(p_attachment_id uuid)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$ select public.confirm_attachment_object_deletion(p_attachment_id) $$;
 select plan(71);
 
 insert into auth.users (
@@ -95,6 +121,13 @@ select lives_ok(
   'owner creates a pending attachment in the session that will be abandoned'
 );
 
+select public.request_attachment_object_deletion(
+  (select id from public.report_attachments where original_name = 'stale.pdf')
+);
+select pg_temp.confirm_test_deletion(
+  (select id from public.report_attachments where original_name = 'stale.pdf')
+);
+
 select lives_ok(
   $$select public.abandon_daily_report_upload_session((select abandoned_session_id from upload_lifecycle_ids where abandoned_session_id is not null))$$,
   'owner abandons only their active upload session'
@@ -156,6 +189,9 @@ select throws_ok(
   'a pending attachment cannot enter a report revision'
 );
 select public.delete_daily_report_upload_attachment(
+  (select unfinalized_attachment_id from upload_lifecycle_ids where unfinalized_attachment_id is not null)
+);
+select pg_temp.confirm_test_deletion(
   (select unfinalized_attachment_id from upload_lifecycle_ids where unfinalized_attachment_id is not null)
 );
 select public.abandon_daily_report_upload_session(
@@ -247,6 +283,12 @@ select is(
   'resuming a session preserves its incomplete attachment for checked cleanup'
 );
 set local role authenticated;
+select public.request_attachment_object_deletion(
+  (select id from public.report_attachments where original_name = 'retired.pdf')
+);
+select pg_temp.confirm_test_deletion(
+  (select id from public.report_attachments where original_name = 'retired.pdf')
+);
 select public.abandon_daily_report_upload_session(
   (select retired_session_id from upload_lifecycle_ids where retired_session_id is not null)
 );
@@ -276,7 +318,7 @@ select 'report-attachments', over_clearance_path, auth.uid()::text,
   jsonb_build_object('mimetype', 'application/pdf', 'size', 128)
 from upload_lifecycle_ids where over_clearance_attachment_id is not null;
 select lives_ok(
-  $$select public.finalize_attachment_upload(
+  $$select pg_temp.confirm_test_upload(
     (select over_clearance_attachment_id from upload_lifecycle_ids where over_clearance_attachment_id is not null),
     'sha256:over-clearance'
   )$$,
@@ -307,6 +349,9 @@ select throws_ok(
 select public.delete_daily_report_upload_attachment(
   (select over_clearance_attachment_id from upload_lifecycle_ids where over_clearance_attachment_id is not null)
 );
+select pg_temp.confirm_test_deletion(
+  (select over_clearance_attachment_id from upload_lifecycle_ids where over_clearance_attachment_id is not null)
+);
 set local role postgres;
 select set_config('storage.allow_delete_query', 'true', true);
 delete from storage.objects
@@ -332,7 +377,7 @@ insert into storage.objects (bucket_id, name, owner_id, metadata)
 select 'report-attachments', associated_path, auth.uid()::text,
   jsonb_build_object('mimetype', 'application/pdf', 'size', 128)
 from upload_lifecycle_ids where associated_attachment_id is not null;
-select public.finalize_attachment_upload(
+select pg_temp.confirm_test_upload(
   (select associated_attachment_id from upload_lifecycle_ids where associated_attachment_id is not null),
   'sha256:associated'
 );
@@ -437,7 +482,7 @@ select 'report-attachments', cleanup_path, auth.uid()::text,
   jsonb_build_object('mimetype', 'application/pdf', 'size', 128)
 from upload_lifecycle_ids where cleanup_attachment_id is not null;
 select lives_ok(
-  $$select public.finalize_attachment_upload(
+  $$select pg_temp.confirm_test_upload(
     (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null),
     'sha256:cancel-cleanup'
   )$$,
@@ -510,6 +555,9 @@ delete from storage.objects
 where bucket_id = 'report-attachments'
   and name = (select cleanup_path from upload_lifecycle_ids where cleanup_path is not null);
 set local role authenticated;
+select pg_temp.confirm_test_deletion(
+  (select cleanup_attachment_id from upload_lifecycle_ids where cleanup_attachment_id is not null)
+);
 select lives_ok(
   $$select public.abandon_daily_report_upload_session(
     (select cancel_session_id from upload_lifecycle_ids where cancel_session_id is not null)
@@ -632,6 +680,9 @@ select lives_ok(
   $$select public.delete_daily_report_upload_attachment((select orphan_attachment_id from upload_lifecycle_ids where orphan_attachment_id is not null))$$,
   'the orphan metadata can be safely marked for deletion'
 );
+select pg_temp.confirm_test_deletion(
+  (select orphan_attachment_id from upload_lifecycle_ids where orphan_attachment_id is not null)
+);
 select lives_ok(
   $$select public.abandon_daily_report_upload_session((select orphan_session_id from upload_lifecycle_ids where orphan_session_id is not null))$$,
   'the cleaned orphan session can be abandoned'
@@ -691,7 +742,7 @@ update public.daily_reports set status = 'confirmed'
 where id = '96000000-0000-0000-0000-000000000001';
 set local role authenticated;
 select throws_ok(
-  $$select public.finalize_attachment_upload(
+  $$select pg_temp.confirm_test_upload(
     (select locked_attachment_id from upload_lifecycle_ids where locked_attachment_id is not null),
     'sha256:locked'
   )$$,
@@ -729,6 +780,9 @@ select is(
 select lives_ok(
   $$select public.delete_daily_report_upload_attachment((select locked_attachment_id from upload_lifecycle_ids where locked_attachment_id is not null))$$,
   'a locked report still permits safe deletion of its unassociated temporary attachment'
+);
+select pg_temp.confirm_test_deletion(
+  (select locked_attachment_id from upload_lifecycle_ids where locked_attachment_id is not null)
 );
 select lives_ok(
   $$select public.abandon_daily_report_upload_session((select locked_session_id from upload_lifecycle_ids where locked_session_id is not null))$$,
