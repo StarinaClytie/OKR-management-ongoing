@@ -108,6 +108,15 @@ export function AppShell() {
     setMobileOpen(false);
   }
 
+  function handOffMobileDrawerToNotifications() {
+    restoreMenuFocus.current = false;
+    setMobileOpen(false);
+  }
+
+  function restoreMobileNotificationFocus() {
+    menuButtonRef.current?.focus();
+  }
+
   function changeDesktopCollapsed(next: boolean) {
     setDesktopCollapsed(next);
     storeSidebarCollapsed(next);
@@ -181,6 +190,8 @@ export function AppShell() {
           mobileOpen={mobileOpen}
           onNavigate={closeMobileDrawer}
           onClose={closeMobileDrawer}
+          onNotificationsOpen={handOffMobileDrawerToNotifications}
+          onNotificationsClose={restoreMobileNotificationFocus}
           drawerRef={drawerRef}
         />
       ) : null}

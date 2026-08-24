@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -47,8 +47,10 @@ function renderCenter(options: {
   const repository = options.repository ?? createRepository();
   const openReport = options.openReport ?? vi.fn(async () => undefined);
   const openResource = options.openResource ?? vi.fn();
+  let currentNotifications!: ReturnType<typeof useNotifications>;
   function Harness() {
     const notifications = useNotifications(repository);
+    currentNotifications = notifications;
     return (
       <NotificationCenter
         notifications={notifications}
@@ -65,7 +67,7 @@ function renderCenter(options: {
       </LocaleProvider>
     </AuthContext.Provider>,
   );
-  return { repository, openReport, openResource };
+  return { repository, openReport, openResource, getNotifications: () => currentNotifications };
 }
 
 describe('NotificationCenter', () => {
@@ -77,6 +79,16 @@ describe('NotificationCenter', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(items[0]).toHaveTextContent('管理员将你设为资源负责人');
     expect(items[1]).toHaveTextContent('主管评论了日报');
+  });
+
+  it('does not move focus back to Close when notification state rerenders', async () => {
+    const { getNotifications } = renderCenter();
+    const itemButton = await screen.findByRole('button', { name: '主管评论了日报' });
+    itemButton.focus();
+
+    await act(async () => { await getNotifications().refresh(); });
+
+    expect(itemButton).toHaveFocus();
   });
 
   it('marks a single unread notification and updates the visible unread count', async () => {

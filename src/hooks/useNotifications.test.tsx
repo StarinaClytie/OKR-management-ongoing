@@ -131,4 +131,52 @@ describe('useNotifications', () => {
     expect(result.current.items.every((item) => item.readAt !== null)).toBe(true);
     expect(result.current.unreadCount).toBe(0);
   });
+
+  it('does not let a pre-mutation refresh resurrect a notification after markRead', async () => {
+    let resolveRefresh!: (result: RepositoryResult<NotificationPage>) => void;
+    const staleRefresh = new Promise<RepositoryResult<NotificationPage>>((resolve) => { resolveRefresh = resolve; });
+    const repository = notificationRepository({
+      listMyNotifications: vi.fn()
+        .mockResolvedValueOnce({ ok: true, data: unreadPage })
+        .mockImplementationOnce(() => staleRefresh),
+    });
+    const { result } = renderHook(() => useNotifications(repository), { wrapper: wrapperFor(firstUser) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let refreshPromise!: Promise<void>;
+    act(() => { refreshPromise = result.current.refresh(); });
+    await act(async () => { await result.current.markRead('notification-1'); });
+    expect(result.current.unreadCount).toBe(0);
+
+    await act(async () => {
+      resolveRefresh({ ok: true, data: unreadPage });
+      await refreshPromise;
+    });
+    expect(result.current.items[0].readAt).not.toBeNull();
+    expect(result.current.unreadCount).toBe(0);
+  });
+
+  it('does not let a pre-mutation refresh resurrect unread state after markAllRead', async () => {
+    let resolveRefresh!: (result: RepositoryResult<NotificationPage>) => void;
+    const staleRefresh = new Promise<RepositoryResult<NotificationPage>>((resolve) => { resolveRefresh = resolve; });
+    const repository = notificationRepository({
+      listMyNotifications: vi.fn()
+        .mockResolvedValueOnce({ ok: true, data: unreadPage })
+        .mockImplementationOnce(() => staleRefresh),
+    });
+    const { result } = renderHook(() => useNotifications(repository), { wrapper: wrapperFor(firstUser) });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let refreshPromise!: Promise<void>;
+    act(() => { refreshPromise = result.current.refresh(); });
+    await act(async () => { await result.current.markAllRead(); });
+    expect(result.current.unreadCount).toBe(0);
+
+    await act(async () => {
+      resolveRefresh({ ok: true, data: unreadPage });
+      await refreshPromise;
+    });
+    expect(result.current.items.every((item) => item.readAt !== null)).toBe(true);
+    expect(result.current.unreadCount).toBe(0);
+  });
 });

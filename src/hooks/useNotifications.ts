@@ -75,6 +75,8 @@ export function useNotifications(dataRepository: NotificationRepository = reposi
       setError(result.error.code);
       return false;
     }
+    requestSequence.current += 1;
+    setLoading(false);
     const wasUnread = itemsRef.current.some((item) => item.id === id && item.readAt === null);
     const nextItems = itemsRef.current.map((item) => item.id === id && item.readAt === null
       ? { ...item, readAt: new Date().toISOString() }
@@ -95,6 +97,8 @@ export function useNotifications(dataRepository: NotificationRepository = reposi
       setError(result.error.code);
       return false;
     }
+    requestSequence.current += 1;
+    setLoading(false);
     const readAt = new Date().toISOString();
     const nextItems = itemsRef.current.map((item) => item.readAt === null ? { ...item, readAt } : item);
     itemsRef.current = nextItems;

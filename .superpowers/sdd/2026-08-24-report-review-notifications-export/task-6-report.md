@@ -49,3 +49,17 @@ An older production-data test used an incomplete repository fixture; the full ru
 ## Concerns
 
 None outstanding.
+
+## Fix Round 1
+
+Addressed the three review findings with focused RED→GREEN regressions:
+
+1. **Exclusive mobile modal ownership:** opening notifications from the mobile account menu now suspends the drawer without restoring focus to its hidden trigger. The notification dialog exclusively owns Tab and Escape handling, and closing it returns focus to the visible topbar menu button.
+2. **Mutation invalidation:** successful `markRead` and `markAllRead` mutations now invalidate any list refresh that began before the mutation, preventing a late stale response from restoring unread state. Invalidated loading state is also cleared.
+3. **Stable dialog focus:** NotificationCenter stores the latest close callback in a ref while its initial focus and Escape listener effect mounts once. Notification-state rerenders no longer move focus back to Close.
+
+Fix-round verification:
+
+- Focused plus accessibility: 5 files, 41 tests passed.
+- TypeScript typecheck: passed.
+- Full frontend suite: 64 files, 548 tests passed with no unhandled errors.

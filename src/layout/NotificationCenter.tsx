@@ -44,18 +44,20 @@ export function NotificationCenter({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
   const [actionError, setActionError] = useState<MessageKey>();
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     closeButtonRef.current?.focus();
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
       event.preventDefault();
-      onClose();
+      onCloseRef.current();
     }
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
+  }, []);
 
   function trapFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'Tab') return;

@@ -208,6 +208,30 @@ describe('application shell', () => {
     expect(screen.queryByRole('dialog', { name: '移动端主导航' })).not.toBeInTheDocument();
     expect(menuButton).toHaveFocus();
   });
+
+  it('hands mobile modal focus exclusively to the notification center', async () => {
+    mockResponsiveViewport(true);
+    const user = userEvent.setup();
+    renderSupabaseShell();
+
+    const menuButton = screen.getByRole('button', { name: '打开导航' });
+    await user.click(menuButton);
+    await user.click(screen.getByRole('button', { name: /^打开账户菜单/ }));
+    await user.click(await screen.findByRole('menuitem', { name: '消息通知 1' }));
+
+    const notificationDialog = await screen.findByRole('dialog', { name: '消息通知' });
+    expect(screen.getAllByRole('dialog')).toEqual([notificationDialog]);
+    expect(screen.getByLabelText('移动端主导航')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('button', { name: '关闭消息通知' })).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: /标为已读：管理员将你设为资源负责人/ })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: '消息通知' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('移动端主导航')).toHaveAttribute('aria-hidden', 'true');
+    expect(menuButton).toHaveFocus();
+  });
 });
 
 describe('report notification opener registry', () => {

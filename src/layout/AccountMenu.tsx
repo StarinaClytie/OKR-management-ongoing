@@ -9,9 +9,11 @@ import { NotificationCenter, NotificationCenterContext } from './NotificationCen
 export interface AccountMenuProps {
   compact?: boolean;
   onNavigate?: () => void;
+  onNotificationsOpen?: () => void;
+  onNotificationsClose?: () => void;
 }
 
-export function AccountMenu({ compact = false, onNavigate }: AccountMenuProps) {
+export function AccountMenu({ compact = false, onNavigate, onNotificationsOpen, onNotificationsClose }: AccountMenuProps) {
   const { t } = useLocale();
   const { currentUser, email, signOut } = useAuth();
   const [open, setOpen] = useState(false);
@@ -68,6 +70,7 @@ export function AccountMenu({ compact = false, onNavigate }: AccountMenuProps) {
 
   function openNotifications() {
     close();
+    onNotificationsOpen?.();
     setNotificationsOpen(true);
     void notificationCenter?.notifications.refresh();
   }
@@ -134,7 +137,8 @@ export function AccountMenu({ compact = false, onNavigate }: AccountMenuProps) {
           notifications={notificationCenter.notifications}
           onClose={() => {
             setNotificationsOpen(false);
-            triggerRef.current?.focus();
+            if (onNotificationsClose) onNotificationsClose();
+            else triggerRef.current?.focus();
           }}
           openReportFromNotification={notificationCenter.openReportFromNotification}
           openResourceFromNotification={notificationCenter.openResourceFromNotification}
