@@ -95,8 +95,17 @@ function printDocument(title: string, body: string) {
   </style></head><body>${body}</body></html>`;
 }
 
+/**
+ * Keep the popup same-origin and blank so its document can be written and no
+ * external page can receive an opener reference. `noopener`/`noreferrer`
+ * would disown the handle needed by the print workflow in some browsers.
+ */
+export function openDailyReportPrintWindow(opener: Pick<Window, 'open'> = window): Window | null {
+  return opener.open('', '_blank');
+}
+
 export function printDailyReportPdf(detail: DailyReportDetail): void {
-  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  const popup = openDailyReportPrintWindow();
   if (!popup) throw new DailyReportExportError('popup_blocked');
 
   const title = `日报-${safeFilenamePart(detail.authorName)}-${detail.date}`;

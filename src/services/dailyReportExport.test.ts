@@ -1,6 +1,6 @@
 import { Packer } from 'docx';
 import type { DailyReportDetail } from '../domain/types';
-import { exportDailyReportWord, printDailyReportPdf } from './dailyReportExport';
+import { exportDailyReportWord, openDailyReportPrintWindow, printDailyReportPdf } from './dailyReportExport';
 
 const toBlob = vi.mocked(Packer.toBlob);
 
@@ -85,6 +85,26 @@ describe('daily report exports', () => {
     expect(exportedContent).toContain('验收记录.pdf');
     expect(exportedContent).not.toContain('storage.example');
     expect(exportedContent).not.toContain('download-token');
+  });
+
+  it('opens a same-origin blank print window without disowning its usable handle', () => {
+    const popup = { document: {} } as Window;
+    let requestedUrl: string | URL | undefined;
+    let requestedTarget: string | undefined;
+    let requestedFeatures: string | undefined;
+    const opener: Pick<Window, 'open'> = {
+      open: (url, target, features) => {
+        requestedUrl = url;
+        requestedTarget = target;
+        requestedFeatures = features;
+        return popup;
+      },
+    };
+
+    expect(openDailyReportPrintWindow(opener)).toBe(popup);
+    expect(requestedUrl).toBe('');
+    expect(requestedTarget).toBe('_blank');
+    expect(requestedFeatures).toBeUndefined();
   });
 
   it('writes escaped authorized content into a correctly titled PDF print view', () => {
