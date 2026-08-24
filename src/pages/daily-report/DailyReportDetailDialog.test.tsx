@@ -4,6 +4,19 @@ import type { OkrRepository } from '../../data/types';
 import type { DailyReportDetail } from '../../domain/types';
 import { DailyReportDetailDialog } from './DailyReportDetailDialog';
 
+const { exportDailyReportWord, printDailyReportPdf } = vi.hoisted(() => ({
+  exportDailyReportWord: vi.fn(),
+  printDailyReportPdf: vi.fn(),
+}));
+
+vi.mock('../../services/dailyReportExport', () => ({
+  DailyReportExportError: class DailyReportExportError extends Error {
+    code = 'popup_blocked';
+  },
+  exportDailyReportWord,
+  printDailyReportPdf,
+}));
+
 function reportDetail(overrides: Partial<DailyReportDetail> = {}): DailyReportDetail {
   return {
     id: 'report-member',
@@ -49,6 +62,11 @@ function repository(methods: Partial<OkrRepository> = {}) {
 }
 
 describe('DailyReportDetailDialog', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    exportDailyReportWord.mockResolvedValue(undefined);
+  });
+
   it('shows the full report and existing comments without review controls for a read-only author', () => {
     render(
       <DailyReportDetailDialog
@@ -149,6 +167,50 @@ describe('DailyReportDetailDialog', () => {
     anchorClick.mockRestore();
   });
 
+  it('exports the already authorized detail without loading it again and prevents duplicate Word exports', async () => {
+    let completeExport: (() => void) | undefined;
+    exportDailyReportWord.mockImplementationOnce(() => new Promise<void>((resolve) => { completeExport = resolve; }));
+    const user = userEvent.setup();
+    const detail = reportDetail();
+    render(
+      <DailyReportDetailDialog
+        detail={detail}
+        repository={repository()}
+        onClose={vi.fn()}
+        onConfirmed={vi.fn()}
+      />,
+    );
+
+    const wordButton = screen.getByRole('button', { name: '导出 Word' });
+    expect(screen.getByRole('button', { name: '导出 PDF' })).toBeEnabled();
+    await user.click(wordButton);
+    await user.click(wordButton);
+
+    expect(exportDailyReportWord).toHaveBeenCalledTimes(1);
+    expect(exportDailyReportWord).toHaveBeenCalledWith(detail);
+    expect(wordButton).toBeDisabled();
+    completeExport?.();
+    expect(await screen.findByRole('button', { name: '导出 Word' })).toBeEnabled();
+  });
+
+  it('keeps the dialog open and presents a typed PDF popup error', async () => {
+    const user = userEvent.setup();
+    printDailyReportPdf.mockImplementationOnce(() => { throw { code: 'popup_blocked' }; });
+    render(
+      <DailyReportDetailDialog
+        detail={reportDetail()}
+        repository={repository()}
+        onClose={vi.fn()}
+        onConfirmed={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: '导出 PDF' }));
+
+    expect(screen.getByRole('dialog', { name: /日报详情/ })).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('浏览器阻止了打印窗口，请允许弹窗后重试。');
+  });
+
   it('focuses the close control, traps backward focus, and closes on Escape', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -165,7 +227,7 @@ describe('DailyReportDetailDialog', () => {
     expect(closeButton).toHaveFocus();
 
     await user.tab({ shift: true });
-    expect(screen.getByRole('button', { name: '确认成员日报' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: '导出 PDF' })).toHaveFocus();
 
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledOnce();

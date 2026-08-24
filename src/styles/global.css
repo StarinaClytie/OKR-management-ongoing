@@ -2118,6 +2118,13 @@ select {
   margin: 0;
 }
 
+.daily-report-detail__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
 .daily-report-detail__header p {
   margin-top: var(--space-1);
   color: #64748b;
@@ -2198,6 +2205,10 @@ select {
   .daily-report-detail__attachments {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .daily-report-detail__header-actions {
+    justify-content: stretch;
   }
 
   .daily-report-detail__meta {

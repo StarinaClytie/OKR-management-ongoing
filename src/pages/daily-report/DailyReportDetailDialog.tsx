@@ -5,6 +5,7 @@ import { repositoryErrorKey } from '../../i18n/repositoryErrors';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { MessageKey } from '../../i18n/messages';
 import { StatusBadge } from '../../components/StatusBadge';
+import { DailyReportExportError, exportDailyReportWord, printDailyReportPdf } from '../../services/dailyReportExport';
 
 export interface DailyReportDetailDialogProps {
   detail?: DailyReportDetail;
@@ -42,6 +43,8 @@ export function DailyReportDetailDialog({
   const [commentBody, setCommentBody] = useState('');
   const [commenting, setCommenting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [exportingWord, setExportingWord] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [actionError, setActionError] = useState<MessageKey>();
 
   useEffect(() => {
@@ -125,6 +128,34 @@ export function DailyReportDetailDialog({
     anchor.remove();
   }
 
+  async function exportWord() {
+    if (!currentDetail || exportingWord || exportingPdf) return;
+    setExportingWord(true);
+    setActionError(undefined);
+    try {
+      await exportDailyReportWord(currentDetail);
+    } catch {
+      setActionError('daily.exportFailed');
+    } finally {
+      setExportingWord(false);
+    }
+  }
+
+  function exportPdf() {
+    if (!currentDetail || exportingWord || exportingPdf) return;
+    setExportingPdf(true);
+    setActionError(undefined);
+    try {
+      printDailyReportPdf(currentDetail);
+    } catch (error) {
+      setActionError(error instanceof DailyReportExportError || (typeof error === 'object' && error !== null && 'code' in error && error.code === 'popup_blocked')
+        ? 'daily.exportPopupBlocked'
+        : 'daily.exportFailed');
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   return (
     <div className="modal-scrim daily-report-detail__scrim" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div
@@ -140,7 +171,19 @@ export function DailyReportDetailDialog({
             <h2 id={titleId}>{t('daily.detailTitle')}</h2>
             {currentDetail ? <p>{t('daily.detailSubtitle', { author: currentDetail.authorName, date: currentDetail.date })}</p> : null}
           </div>
-          <button ref={closeButtonRef} type="button" className="button button--secondary" onClick={onClose}>{t('daily.closeDetail')}</button>
+          <div className="daily-report-detail__header-actions">
+            {currentDetail ? (
+              <>
+                <button type="button" className="button button--secondary" disabled={exportingWord || exportingPdf} onClick={() => void exportWord()}>
+                  {exportingWord ? t('daily.exporting') : t('daily.exportWord')}
+                </button>
+                <button type="button" className="button button--secondary" disabled={exportingWord || exportingPdf} onClick={exportPdf}>
+                  {exportingPdf ? t('daily.exporting') : t('daily.exportPdf')}
+                </button>
+              </>
+            ) : null}
+            <button ref={closeButtonRef} type="button" className="button button--secondary" onClick={onClose}>{t('daily.closeDetail')}</button>
+          </div>
         </header>
 
         {loading ? <p role="status">{t('daily.detailLoading')}</p> : null}

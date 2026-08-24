@@ -16,6 +16,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "@vitejs/plugin-react": "latest",
+    "docx": "^9.7.1",
     "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
