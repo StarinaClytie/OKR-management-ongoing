@@ -1,9 +1,13 @@
+export type AttachmentKind = 'daily' | 'resource';
+export type AttachmentOperation = 'upload' | 'download' | 'delete';
+
 export interface AuthorizedAttachment {
   id: string;
   path: string;
   mimeType: string;
   byteSize: number;
   originalName?: string;
+  fileName?: string;
   expiresIn?: number;
   alreadyDeleted?: boolean;
 }
