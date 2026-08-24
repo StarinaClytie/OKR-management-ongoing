@@ -116,7 +116,7 @@ export interface SupabaseClientLike {
 }
 
 export interface AttachmentUploadTarget { id: string; path: string; bucket: 'report-attachments' }
-export interface ResourceUploadTarget { id: string; path: string; bucket: 'resource-documents' }
+export interface ResourceUploadTarget { id: string; path: string }
 
 export interface DailyReportUploadSession { reportId: string; sessionId: string }
 

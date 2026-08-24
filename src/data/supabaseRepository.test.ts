@@ -891,6 +891,69 @@ describe('SupabaseOkrRepository', () => {
     expect(storageFrom).not.toHaveBeenCalled();
   });
 
+  it('removes the resource attachment after its OSS PUT fails', async () => {
+    const rpc = vi.fn(async () => ({ data: { id: 'resource-attachment-1', path: 'organization/o/resources/r/resource-attachment-1/manual.pdf' }, error: null }));
+    const upload = vi.fn(async () => { throw new Error('OSS upload failed (HTTP 503)'); });
+    const remove = vi.fn(async () => undefined);
+    const { client } = createClient();
+    client.rpc = rpc;
+
+    await expect(new SupabaseOkrRepository(client, createAttachmentTransport(), createAttachmentTransport({ upload, remove }))
+      .uploadResourceAttachment('resource-1', new File(['manual'], 'manual.pdf', { type: 'application/pdf' })))
+      .resolves.toEqual({ ok: false, error: { code: 'storage', message: '请求未完成，请稍后重试' } });
+
+    expect(remove).toHaveBeenCalledWith('resource-attachment-1');
+    expect(upload.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0]!);
+  });
+
+  it('removes the resource attachment after OSS finalization fails', async () => {
+    const rpc = vi.fn(async () => ({ data: { id: 'resource-attachment-1', path: 'organization/o/resources/r/resource-attachment-1/manual.pdf' }, error: null }));
+    const upload = vi.fn(async () => { throw new Error('Attachment API failed (HTTP 502)'); });
+    const remove = vi.fn(async () => undefined);
+    const { client } = createClient();
+    client.rpc = rpc;
+
+    await new SupabaseOkrRepository(client, createAttachmentTransport(), createAttachmentTransport({ upload, remove }))
+      .uploadResourceAttachment('resource-1', new File(['manual'], 'manual.pdf', { type: 'application/pdf' }));
+
+    expect(remove).toHaveBeenCalledWith('resource-attachment-1');
+  });
+
+  it('allocates a clean attachment ID when retrying after an OSS upload failure', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { id: 'resource-attachment-failed', path: 'organization/o/resources/r/resource-attachment-failed/manual.pdf' }, error: null })
+      .mockResolvedValueOnce({ data: { id: 'resource-attachment-retry', path: 'organization/o/resources/r/resource-attachment-retry/manual.pdf' }, error: null });
+    const upload = vi.fn()
+      .mockRejectedValueOnce(new Error('OSS upload failed (HTTP 503)'))
+      .mockResolvedValueOnce(undefined);
+    const remove = vi.fn(async () => undefined);
+    const { client } = createClient();
+    client.rpc = rpc;
+    const repository = new SupabaseOkrRepository(client, createAttachmentTransport(), createAttachmentTransport({ upload, remove }));
+    const file = new File(['manual'], 'manual.pdf', { type: 'application/pdf' });
+
+    await expect(repository.uploadResourceAttachment('resource-1', file)).resolves.toEqual({ ok: false, error: { code: 'storage', message: '请求未完成，请稍后重试' } });
+    await expect(repository.uploadResourceAttachment('resource-1', file)).resolves.toEqual({ ok: true, data: { id: 'resource-attachment-retry' } });
+
+    expect(upload.mock.calls.map(([id]) => id)).toEqual(['resource-attachment-failed', 'resource-attachment-retry']);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith('resource-attachment-failed');
+  });
+
+  it('returns the resource cleanup error when cleanup cannot remove a failed upload', async () => {
+    const rpc = vi.fn(async () => ({ data: { id: 'resource-attachment-1', path: 'organization/o/resources/r/resource-attachment-1/manual.pdf' }, error: null }));
+    const upload = vi.fn(async () => { throw new Error('OSS upload failed (HTTP 503)'); });
+    const remove = vi.fn(async () => { throw new Error('OSS deletion network error'); });
+    const { client } = createClient();
+    client.rpc = rpc;
+
+    await expect(new SupabaseOkrRepository(client, createAttachmentTransport(), createAttachmentTransport({ upload, remove }))
+      .uploadResourceAttachment('resource-1', new File(['manual'], 'manual.pdf', { type: 'application/pdf' })))
+      .resolves.toEqual({ ok: false, error: { code: 'network', message: '请求未完成，请稍后重试' } });
+
+    expect(remove).toHaveBeenCalledWith('resource-attachment-1');
+  });
+
   it('gets resource download URLs through the resource OSS transport without Supabase Storage', async () => {
     const { client, storageFrom } = createClient();
     const downloadUrl = vi.fn(async () => 'https://oss.example/resource-download');

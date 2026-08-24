@@ -1120,8 +1120,13 @@ export class SupabaseOkrRepository implements OkrRepository {
     try {
       await this.resourceAttachmentTransport.upload(pending.data.id, file, () => undefined, new AbortController().signal);
       return { ok: true, data: { id: pending.data.id } };
-    } catch (error) {
-      return storageTransferFailure(error);
+    } catch (uploadError) {
+      try {
+        await this.resourceAttachmentTransport.remove(pending.data.id);
+      } catch (cleanupError) {
+        return storageTransferFailure(cleanupError);
+      }
+      return storageTransferFailure(uploadError);
     }
   }
 
