@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(105);
+select plan(112);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: org A (admin/management/leader/employee owner/employee peer/HR/
@@ -600,6 +600,36 @@ select is(
   )),
   0::bigint,
   'eligible-owner list excludes inactive, pending, cross-org, and roleless profiles'
+);
+
+-- An approved, active profile without an active role is not operational and
+-- cannot enter any resource read/create/report path.
+select set_config('request.jwt.claim.sub', '15000000-0000-0000-0000-000000000011', true);
+select is((select count(*) from public.resources), 0::bigint, 'roleless profile cannot read resources through RLS');
+select throws_ok(
+  $$select public.list_resources(false)$$,
+  '42501', 'Resources are not viewable by the current user', 'roleless profile cannot list resources through RPC'
+);
+select is(
+  public.get_resource_detail('24000000-0000-0000-0000-000000000001'),
+  null,
+  'roleless profile cannot read resource detail'
+);
+select throws_ok(
+  $$select public.list_eligible_resource_owners()$$,
+  '42501', 'Resource owners are not viewable by the current user', 'roleless profile cannot list eligible owners'
+);
+select throws_ok(
+  $$select public.create_resource('Roleless Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set')$$,
+  '42501', 'Resources are not writable by the current user', 'roleless profile cannot use compatibility create'
+);
+select throws_ok(
+  $$select public.create_resource('Roleless Assigned Tool', 'tools', 'durable', '', 'Workshop', null, null, null, '', null, 1, 'set', '15000000-0000-0000-0000-000000000004')$$,
+  '42501', 'Resources are not writable by the current user', 'roleless profile cannot create for an eligible owner'
+);
+select throws_ok(
+  $$select public.report_resource_problem('24000000-0000-0000-0000-000000000001', 'missing', 'Roleless report')$$,
+  '42501', 'Resource problem is not reportable by the current user', 'roleless profile cannot report a problem'
 );
 
 reset role;

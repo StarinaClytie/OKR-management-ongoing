@@ -38,6 +38,34 @@ alter table public.user_notifications enable row level security;
 alter table public.user_notifications force row level security;
 revoke all on public.user_notifications from public, anon, authenticated;
 
+-- The approval lifecycle and active-role assignment are both required for an
+-- operational account. Resource RLS and every resource RPC share this boundary.
+create or replace function private.is_operational()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.is_active
+      and p.approval_status = 'approved'
+      and exists (
+        select 1
+        from public.user_roles ur
+        where ur.profile_id = p.id
+          and ur.organization_id = p.organization_id
+          and ur.is_active
+      )
+  )
+$$;
+
+revoke all on function private.is_operational() from public, anon;
+grant execute on function private.is_operational() to authenticated;
+
 create or replace function public.list_resources(p_include_archived boolean default false)
 returns jsonb
 language plpgsql
