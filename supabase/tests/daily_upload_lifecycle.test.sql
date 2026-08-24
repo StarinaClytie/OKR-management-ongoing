@@ -36,7 +36,7 @@ insert into public.projects (id, organization_id, name, leader_id, classificatio
 values ('93000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', 'Upload Lifecycle Project', '91000000-0000-0000-0000-000000000002', 'internal', current_date - 1, current_date + 1);
 
 insert into public.objectives (id, organization_id, project_id, owner_id, title, classification, start_date, due_date)
-values ('94000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', '93000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'Upload Lifecycle Objective', 'internal', current_date - 1, current_date + 1);
+values ('94000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', '93000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000002', 'Upload Lifecycle Objective', 'internal', current_date - 1, current_date + 1);
 
 insert into public.key_results (id, organization_id, objective_id, project_id, owner_id, title, measurement_type, target_value, classification, start_date, due_date)
 values ('95000000-0000-0000-0000-000000000001', '92000000-0000-0000-0000-000000000001', '94000000-0000-0000-0000-000000000001', '93000000-0000-0000-0000-000000000001', '91000000-0000-0000-0000-000000000001', 'Upload Lifecycle KR', 'percentage', 100, 'internal', current_date - 1, current_date + 1);
