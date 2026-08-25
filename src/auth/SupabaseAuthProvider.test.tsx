@@ -138,6 +138,27 @@ describe('SupabaseAuthProvider', () => {
     expect(rpc).toHaveBeenCalledWith('create_pending_profile', { p_display_name: '新员工' });
   });
 
+  it('shows the email-verification screen when signup returns no session', async () => {
+    const user = userEvent.setup();
+    const { client, signUp, rpc } = createClient(null);
+    // Email confirmation is enabled: signUp returns no session and no session is
+    // established afterwards, so no pending profile is created.
+    signUp.mockImplementation(async () => ({ data: { session: null }, error: null }));
+    const repository = repositoryWithProfile(active);
+    render(<SupabaseAuthProvider client={client} repository={repository}><StateProbe /></SupabaseAuthProvider>);
+
+    await user.click(await screen.findByRole('button', { name: '还没有账号？注册' }));
+    await user.type(screen.getByLabelText('姓名'), '新员工');
+    await user.type(screen.getByLabelText('邮箱'), 'new@example.com');
+    await user.type(screen.getByLabelText('密码'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '注册' }));
+
+    expect(await screen.findByRole('heading', { name: '请查收验证邮件' })).toBeVisible();
+    expect(screen.getByText(/new@example\.com/)).toBeVisible();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it('renders the pending-approval screen for a pending profile', async () => {
     const { client } = createClient({ user: { id: 'u-new', email: 'new@example.com' } });
     render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(pending)}><StateProbe /></SupabaseAuthProvider>);

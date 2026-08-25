@@ -25,11 +25,16 @@ enabled = true
 site_url = "http://127.0.0.1:5173"
 additional_redirect_urls = ["http://localhost:5173"]
 jwt_expiry = 3600
-# Northstar OKR now uses public self-registration followed by administrator
-# approval. Self-registered accounts start `approval_status = 'pending'` with no
-# role and gain access only after an administrator approves them. Must match the
-# Authentication > Providers > Email setting in the Supabase Dashboard for the
-# linked project (enable email/password signup, disable email confirmation).
+# Northstar OKR uses public self-registration followed by administrator approval.
+# Self-registered accounts start `approval_status = 'pending'` with no role and
+# gain access only after an administrator approves them.
+#
+# Email confirmation is now REQUIRED. The Email provider must be configured as:
+#   - enable email/password signup = true
+#   - confirm email = true (GoTrue: GOTRUE_MAILER_AUTOCONFIRM=false)
+# Production (Alibaba self-hosted GoTrue) sends the verification email through
+# Aliyun DirectMail SMTP (GOTRUE_SMTP_* / GOTRUE_MAILER_URLPATHS_*). Those secrets
+# live only in the ECS GoTrue environment, never in this repository.
 enable_signup = true
 
 [storage]

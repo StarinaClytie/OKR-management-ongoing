@@ -6,6 +6,7 @@ import { AuthContext, type AuthContextValue, type SignUpResult } from './AuthCon
 import { LoginForm } from './LoginForm';
 import { RegisterForm } from './RegisterForm';
 import { PendingApproval } from './PendingApproval';
+import { EmailVerificationPending } from './EmailVerificationPending';
 import { readStoredLocale, storeLocale } from '../i18n/LocaleProvider';
 import { translate, type Locale } from '../i18n/messages';
 
@@ -118,7 +119,14 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
     if (sessionResult.data.session) {
       await (client.rpc('create_pending_profile', { p_display_name: displayName }) as Promise<unknown>);
       await loadSessionRef.current(sessionResult.data.session);
+      return { error: null };
     }
+
+    // Email confirmation is enabled: signUp returns no session. The profile is
+    // NOT created here — it is created lazily on first sign-in (missing →
+    // create_pending_profile). Show the verification prompt instead.
+    setEmail(emailValue);
+    setStatus('email_verification_pending');
     return { error: null };
   };
 
@@ -174,6 +182,20 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
             onRegister={() => setView('register')}
           />
         )}
+      </>
+    );
+  } else if (status === 'email_verification_pending') {
+    content = (
+      <>
+        {languageSwitcher}
+        <EmailVerificationPending
+          locale={locale}
+          email={email}
+          onBack={() => {
+            setStatus('signed_out');
+            setView('login');
+          }}
+        />
       </>
     );
   } else if (status === 'pending_approval') {
