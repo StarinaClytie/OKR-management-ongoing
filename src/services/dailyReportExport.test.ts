@@ -24,8 +24,15 @@ function detail(overrides: Partial<DailyReportDetail> = {}): DailyReportDetail {
     blocks: [{
       id: 'block-1',
       dailyObjective: '完成导出功能',
-      keyResultId: 'kr-1',
-      keyResults: [{ id: 'kr-1', title: '提升交付效率' }],
+      keyResultId: 'a8f1c0de-2f6b-4f3f-9d1a-6c2b0a4e77b1',
+      keyResult: {
+        id: 'a8f1c0de-2f6b-4f3f-9d1a-6c2b0a4e77b1',
+        title: '提升交付效率',
+        description: '季度交付周期缩短 20%',
+        ownerId: 'owner-1',
+        ownerName: '周敏',
+      },
+      keyResults: [],
       workDescription: '实现 Word 导出',
       result: '通过验收',
       hours: 7.5,
@@ -78,6 +85,10 @@ describe('daily report exports', () => {
     const exportedContent = serialisedText(toBlob.mock.calls[0][0]);
     expect(exportedContent).toContain('完成导出功能');
     expect(exportedContent).toContain('提升交付效率');
+    expect(exportedContent).toContain('季度交付周期缩短 20%');
+    expect(exportedContent).toContain('周敏');
+    // The linked KR's uuid is a database key, not exportable content.
+    expect(exportedContent).not.toContain('a8f1c0de-2f6b-4f3f-9d1a-6c2b0a4e77b1');
     expect(exportedContent).toContain('实现 Word 导出');
     expect(exportedContent).toContain('通过验收');
     expect(exportedContent).toContain('7.5');

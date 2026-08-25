@@ -1,7 +1,10 @@
+import { formatLinkedKeyResult } from '../domain/dailyReportKeyResult';
 import type { DailyReportDetail, ReportStatus } from '../domain/types';
 import { renderDailyReportPrintView } from '../pages/daily-report/DailyReportPrintView';
 
 type DocxModule = typeof import('docx');
+
+const keyResultLabels = { unavailable: '关联 KR 已不可用', owner: '负责人' } as const;
 
 const statusLabels: Record<ReportStatus, string> = {
   draft: '草稿',
@@ -49,7 +52,7 @@ function documentChildren(docx: DocxModule, detail: DailyReportDetail) {
     ...detail.blocks.flatMap((block, index) => [
       new docx.Paragraph({ text: `事项 ${index + 1}`, heading: docx.HeadingLevel.HEADING_3 }),
       new docx.Paragraph(`当日 O：${block.dailyObjective}`),
-      new docx.Paragraph(`关联季度 KR：${block.keyResults.map((keyResult) => keyResult.title).join('、') || block.keyResultId}`),
+      new docx.Paragraph(`关联季度 KR：${formatLinkedKeyResult(block, keyResultLabels)}`),
       ...(block.workDescription ? [new docx.Paragraph(`工作描述：${block.workDescription}`)] : []),
       new docx.Paragraph(`结果 / 数据：${block.result}`),
       new docx.Paragraph(`工时：${block.hours} 小时`),

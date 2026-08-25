@@ -1,5 +1,6 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { SupabaseOkrRepository } from './supabaseRepository';
+import { configurePermissionSource, getPermissionSource } from '../auth/permissionService';
 import { dailyReportToDraft } from './dailyReportMapper';
 import type { SupabaseClientLike } from './types';
 import type { OssAttachmentTransport } from '../services/ossAttachmentTransport';
@@ -73,6 +74,10 @@ function createDashboardClient(
 }
 
 describe('SupabaseOkrRepository', () => {
+  // getDashboardData rewrites the evaluator's global relationship source.
+  const demoPermissionSource = getPermissionSource();
+  afterEach(() => configurePermissionSource(demoPermissionSource));
+
   it.each([
     ['first.pdf', 1],
     ['second.pdf', 2],
@@ -162,6 +167,7 @@ describe('SupabaseOkrRepository', () => {
       id: 'report-1', authorId: 'author-1', authorName: '日报作者', date: '2026-08-24', status: 'submitted', hours: 8, currentRevision: 2,
       blocks: [{
         id: 'block-1', dailyObjective: '完成光学测试', keyResultId: 'kr-1', workDescription: '完成测试和记录', hours: 8, result: '通过',
+        keyResult: { id: 'kr-1', title: '提升产品交付效率', description: '交付周期缩短 20%', ownerId: 'leader-1', ownerName: '直属负责人' },
         keyResults: [{ id: 'daily-kr-1', title: '记录测试结果' }],
         attachments: [{ attachmentId: 'attachment-1', displayName: 'test-results.pdf', classification: 'internal' }],
       }],
@@ -175,6 +181,7 @@ describe('SupabaseOkrRepository', () => {
         id: 'report-1', authorId: 'author-1', authorName: '日报作者', date: '2026-08-24', status: 'submitted', hours: 8, currentRevision: 2,
         blocks: [{
           id: 'block-1', dailyObjective: '完成光学测试', keyResultId: 'kr-1', workDescription: '完成测试和记录', hours: 8, result: '通过',
+          keyResult: { id: 'kr-1', title: '提升产品交付效率', description: '交付周期缩短 20%', ownerId: 'leader-1', ownerName: '直属负责人' },
           keyResults: [{ id: 'daily-kr-1', title: '记录测试结果' }],
           evidenceItems: [{ id: 'attachment-attachment-1', attachmentId: 'attachment-1', label: 'test-results.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100 }],
         }],
@@ -183,6 +190,19 @@ describe('SupabaseOkrRepository', () => {
       },
     });
     expect(rpc).toHaveBeenCalledWith('get_daily_report_detail', { p_report_id: 'report-1' });
+  });
+
+  it('leaves the linked KR undefined when the server could not resolve it', async () => {
+    const { client } = createClient({ rpcData: {
+      id: 'report-1', authorId: 'author-1', authorName: '日报作者', date: '2026-08-24', status: 'draft', hours: 8, currentRevision: 1,
+      blocks: [{ id: 'block-1', dailyObjective: '完成光学测试', keyResultId: 'kr-1', workDescription: '完成测试和记录', hours: 8, result: '通过', keyResult: null, keyResults: [], attachments: [] }],
+      comments: [], canComment: false, canConfirm: false,
+    } });
+
+    const result = await new SupabaseOkrRepository(client).getDailyReportDetail('report-1');
+
+    if (!result.ok) throw new Error('Expected report detail');
+    expect(result.data.blocks[0].keyResult).toBeUndefined();
   });
 
   it('maps a posted daily report comment through the reviewer RPC', async () => {
@@ -825,6 +845,43 @@ describe('SupabaseOkrRepository', () => {
     ]);
     if (!result.ok) throw new Error('Expected dashboard data');
     expectTypeOf(result.data.risks[0]).toMatchTypeOf<{ keyResultId?: string; objectiveId?: string; resolved: boolean } | undefined>();
+  });
+
+  it('hands the disclosed project memberships to the client permission evaluator', async () => {
+    // Without this the evaluator sees no relationships at all and every
+    // project-scoped grant denies — the reason project leaders lost their
+    // members' daily reports in Supabase mode.
+    const { client } = createDashboardClient({
+      profiles: [{ id: 'leader-1', display_name: '负责人', clearance: 'internal', user_roles: [{ role: 'project_leader' }], project_members: [{ project_id: 'project-1' }] }],
+      projects: [{ id: 'project-1', name: '项目一', description: '描述', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'leader-1' }, { profile_id: 'member-1' }] }],
+      objectives: [], key_results: [], progress_baselines: [], milestones: [], risks: [], progress_snapshots: [],
+    });
+    client.auth.getSession = vi.fn(async () => ({ data: { session: { user: { id: 'leader-1' } } }, error: null })) as never;
+
+    await new SupabaseOkrRepository(client).getDashboardData('leader-1');
+
+    expect(getPermissionSource().projectMemberships).toEqual([
+      { id: 'project-1:leader-1', projectId: 'project-1', userId: 'leader-1', membershipRole: 'leader' },
+      { id: 'project-1:member-1', projectId: 'project-1', userId: 'member-1', membershipRole: 'member' },
+    ]);
+  });
+
+  it('derives a report project from its linked KR when the legacy column is null', async () => {
+    const { client } = createDashboardClient({
+      profiles: [{ id: 'profile-1', display_name: '员工一', clearance: 'internal', user_roles: [{ role: 'employee' }], project_members: [{ project_id: 'project-1' }] }],
+      projects: [{ id: 'project-1', name: '项目一', description: '描述', leader_id: 'leader-1', classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31', project_members: [{ profile_id: 'profile-1' }] }],
+      objectives: [{ id: 'objective-1', project_id: 'project-1', owner_id: 'leader-1', title: '目标', description: '', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      key_results: [{ id: 'kr-1', objective_id: 'objective-1', project_id: 'project-1', owner_id: 'profile-1', title: '关键结果', progress: 0, classification: 'internal', start_date: '2026-08-01', due_date: '2026-08-31' }],
+      progress_baselines: [], milestones: [], risks: [], progress_snapshots: [],
+      daily_reports: [{ id: 'report-1', author_id: 'profile-1', project_id: null, objective_id: null, report_date: '2026-08-24', status: 'submitted', classification: 'internal', total_hours: 8, current_revision: 1, updated_at: '2026-08-24T09:00:00.000Z' }],
+      daily_report_revisions: [{ id: 'revision-1', report_id: 'report-1', revision_number: 1 }],
+      daily_okr_blocks: [{ id: 'block-1', report_id: 'report-1', revision_id: 'revision-1', position: 1, daily_objective: '今日目标', linked_key_result_id: 'kr-1', work_description: '工作', hours: 8, result: '完成', key_results: [], evidence_links: [] }],
+    });
+
+    const result = await new SupabaseOkrRepository(client).getDashboardData('profile-1');
+
+    if (!result.ok) throw new Error('Expected dashboard data');
+    expect(result.data.dailyReports[0].projectId).toBe('project-1');
   });
 
   it('joins administrator-assigned clearance from profiles when directory rows omit it', async () => {

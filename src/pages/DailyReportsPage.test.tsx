@@ -7,8 +7,10 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import { AppRoutes } from '../app/routes';
 import { LocaleProvider } from '../i18n/LocaleProvider';
 import { mockRepository } from '../mocks/repository';
-import type { DailyReportAttachmentUploadInput, OkrRepository } from '../data/types';
-import type { DailyReport, DailyReportDetail } from '../domain/types';
+import { buildPermissionSource } from '../data/permissionSource';
+import { configurePermissionSource, getPermissionSource } from '../auth/permissionService';
+import type { DailyReportAttachmentUploadInput, DashboardData, OkrRepository } from '../data/types';
+import type { DailyReport, DailyReportDetail, User } from '../domain/types';
 import { currentBusinessDate } from '../domain/progressStatus';
 import { DailyReportsPage, type DailyReportsPageHandle } from './DailyReportsPage';
 
@@ -518,5 +520,141 @@ describe('DailyReportsPage', () => {
 
     expect(await screen.findByText(expectedMessage)).toBeVisible();
     if (stage === 'adoption') expect(submitDailyReportSession).not.toHaveBeenCalled();
+  });
+
+  describe('project-scoped visibility without demo relationship data', () => {
+    // Supabase mode has no demo seed: the only relationships the evaluator ever
+    // sees are the ones the dashboard payload carries. Every assertion below
+    // runs against that source, so a regression to the empty default fails here
+    // instead of shipping.
+    const demoPermissionSource = getPermissionSource();
+    afterEach(() => configurePermissionSource(demoPermissionSource));
+
+    const leader: User = { id: 'alice', name: 'Alice', role: 'project_leader', clearance: 'internal', title: '负责人', department: '交付部', projectIds: ['project-a'] };
+    const member: User = { id: 'bob', name: 'Bob', role: 'employee', clearance: 'internal', title: '工程师', department: '交付部', projectIds: ['project-a'] };
+    const outsider: User = { id: 'dana', name: 'Dana', role: 'employee', clearance: 'internal', title: '工程师', department: '研究部', projectIds: ['project-b'] };
+
+    function scopedReport(id: string, authorId: string, projectId: string, status: DailyReport['status']): DailyReport {
+      return {
+        id, authorId, projectId, objectiveId: 'objective-1', keyResultIds: ['kr-1'], date: '2026-08-24',
+        content: `${id} 目标`, dailyObjective: `${id} 目标`, classification: 'internal', hours: 4,
+        evidence: [], evidenceClassification: 'public', attachmentIds: [], status, currentRevision: 1,
+        blocks: [{ id: `${id}-block`, dailyObjective: `${id} 目标`, keyResultId: 'kr-1', workDescription: '工作', hours: 4, result: '完成', keyResults: [] }],
+      };
+    }
+
+    const leaderReport = scopedReport('report-alice', leader.id, 'project-a', 'draft');
+    const memberDraft = scopedReport('report-bob-draft', member.id, 'project-a', 'draft');
+    const memberConfirmed = scopedReport('report-bob-confirmed', member.id, 'project-a', 'confirmed');
+    const memberReturned = scopedReport('report-bob-returned', member.id, 'project-a', 'returned');
+    const outsiderReport = scopedReport('report-dana', outsider.id, 'project-b', 'submitted');
+
+    function scopedDashboard(currentUser: User): DashboardData {
+      return {
+        currentUser,
+        users: [leader, member, outsider],
+        dailyReports: [leaderReport, memberDraft, memberConfirmed, memberReturned, outsiderReport],
+        projects: [
+          { id: 'project-a', name: 'Project A', description: '', leaderId: leader.id, memberIds: [leader.id, member.id], classification: 'internal', startDate: '2026-08-01', dueDate: '2026-09-30', status: 'on_track' },
+          { id: 'project-b', name: 'Project B', description: '', leaderId: 'erin', memberIds: ['erin', outsider.id], classification: 'internal', startDate: '2026-08-01', dueDate: '2026-09-30', status: 'on_track' },
+        ],
+        objectives: [], keyResults: [], krAssignments: [], krProgressUpdates: [], milestones: [], risks: [],
+        progressSnapshots: [], workloads: [], attachments: [], companyObjectives: [], projectTasks: [],
+      };
+    }
+
+    function renderScopedPage(currentUser: User, overrides: Partial<OkrRepository> = {}) {
+      const data = scopedDashboard(currentUser);
+      const dataRepository = {
+        mode: 'supabase',
+        // Mirrors SupabaseOkrRepository.getDashboardData, which publishes the
+        // relationships RLS just disclosed to the client evaluator.
+        getDashboardData: vi.fn(async () => {
+          configurePermissionSource(buildPermissionSource(data));
+          return { ok: true as const, data };
+        }),
+        getDailyReportDetail: vi.fn(async (reportId: string) => ({
+          ok: true as const,
+          data: detailFor(data.dailyReports.find((report) => report.id === reportId)!),
+        })),
+        ...overrides,
+      } as unknown as OkrRepository;
+      const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+      render(
+        <AuthContext.Provider value={auth}>
+          <LocaleProvider repository={dataRepository}>
+            <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+          </LocaleProvider>
+        </AuthContext.Provider>,
+      );
+      return dataRepository;
+    }
+
+    beforeEach(() => {
+      configurePermissionSource({ projectMemberships: [], organizationRelations: [], activeShares: [], collaborationRelations: [], workloads: [], objectives: [] });
+    });
+
+    it('shows a project leader their own report plus every member report in their project', async () => {
+      renderScopedPage(leader);
+
+      const memberTable = within(await screen.findByRole('table', { name: '项目成员日报' }));
+      expect(memberTable.getAllByText('Bob')).toHaveLength(3);
+      expect(memberTable.queryByText('Dana')).not.toBeInTheDocument();
+      expect(memberTable.queryByText('Alice')).not.toBeInTheDocument();
+      expect(within(screen.getByRole('table', { name: '我的日报' })).getByText('Alice')).toBeVisible();
+    });
+
+    it('opens the detail dialog for a member report in any status', async () => {
+      const user = userEvent.setup();
+      const dataRepository = renderScopedPage(leader);
+
+      const memberTable = within(await screen.findByRole('table', { name: '项目成员日报' }));
+      const rows = memberTable.getAllByRole('row').slice(1);
+      for (const row of rows) {
+        await user.click(within(row).getByRole('button', { name: '查看详情' }));
+        expect(await screen.findByRole('dialog', { name: /日报详情/ })).toBeVisible();
+        await user.click(screen.getByRole('button', { name: '关闭日报详情' }));
+      }
+
+      expect(dataRepository.getDailyReportDetail).toHaveBeenCalledWith(memberDraft.id);
+      expect(dataRepository.getDailyReportDetail).toHaveBeenCalledWith(memberConfirmed.id);
+      expect(dataRepository.getDailyReportDetail).toHaveBeenCalledWith(memberReturned.id);
+    });
+
+    it('shows management every report across projects', async () => {
+      const executive: User = { id: 'mona', name: 'Mona', role: 'management', clearance: 'confidential', title: '管理层', department: '经营部', projectIds: [] };
+      renderScopedPage(executive);
+
+      const memberTable = within(await screen.findByRole('table', { name: '项目成员日报' }));
+      expect(memberTable.getByText('Alice')).toBeVisible();
+      expect(memberTable.getAllByText('Bob')).toHaveLength(3);
+      expect(memberTable.getByText('Dana')).toBeVisible();
+    });
+
+    it('leaves an employee with their own report and no member table at all', async () => {
+      renderScopedPage(member);
+
+      const myTable = within(await screen.findByRole('table', { name: '我的日报' }));
+      expect(myTable.getAllByText('Bob')).toHaveLength(3);
+      expect(myTable.queryByText('Alice')).not.toBeInTheDocument();
+      expect(screen.queryByRole('table', { name: '项目成员日报' })).not.toBeInTheDocument();
+    });
+
+    it('opens the detail dialog for an employee\'s own report in any status', async () => {
+      const user = userEvent.setup();
+      const dataRepository = renderScopedPage(member);
+
+      const myTable = within(await screen.findByRole('table', { name: '我的日报' }));
+      const rows = myTable.getAllByRole('row').slice(1);
+      for (const row of rows) {
+        await user.click(within(row).getByRole('button', { name: '查看详情' }));
+        expect(await screen.findByRole('dialog', { name: /日报详情/ })).toBeVisible();
+        await user.click(screen.getByRole('button', { name: '关闭日报详情' }));
+      }
+
+      expect(dataRepository.getDailyReportDetail).toHaveBeenCalledWith(memberDraft.id);
+      expect(dataRepository.getDailyReportDetail).toHaveBeenCalledWith(memberConfirmed.id);
+      expect(dataRepository.getDailyReportDetail).toHaveBeenCalledWith(memberReturned.id);
+    });
   });
 });

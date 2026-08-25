@@ -159,11 +159,27 @@ export interface KrProgressUpdate {
   createdAt: string;
 }
 
+/** Readable identity of the quarterly Key Result a daily entry is linked to. */
+export interface DailyReportKeyResultRef {
+  id: string;
+  title: string;
+  description: string;
+  ownerId: string;
+  ownerName: string;
+}
+
 export interface DailyOkrBlock {
   id: string;
   dailyObjective: string;
   /** The linked quarterly Key Result (an assigned KR the author owns). */
   keyResultId: string;
+  /**
+   * `keyResultId` resolved to readable KR content. Present on report details
+   * loaded from the server; absent for locally-composed drafts and for KRs
+   * deleted after the report was written. Never render `keyResultId` in its
+   * place — a raw UUID is not user-facing content.
+   */
+  keyResult?: DailyReportKeyResultRef;
   workDescription?: string;
   hours: number;
   result: string;

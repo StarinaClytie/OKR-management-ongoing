@@ -9,8 +9,14 @@ export type { Action, PermissionDecision, PermissionResource } from '../domain/p
  * Relationship/reference data the client-side permission evaluator needs that is
  * NOT carried on the resource itself (project membership roles, manager
  * reporting lines, explicit shares, collaboration relations, workloads, and the
- * objective→project lookup). In demo mode this is populated from the demo seed;
- * in Supabase mode the server (RLS) is authoritative and this stays empty.
+ * objective→project lookup).
+ *
+ * Demo mode populates this from the demo seed; Supabase mode derives it from
+ * each dashboard payload (see `data/permissionSource.ts`), mirroring only the
+ * relationships RLS already disclosed. The server stays authoritative — this
+ * evaluator can narrow what a caller sees but never widen it. Leaving it empty
+ * is not a safe default: it makes every project-scoped grant deny, which is how
+ * project leaders lost sight of their members' daily reports.
  */
 export interface PermissionDataSource {
   projectMemberships: readonly ProjectMembership[];

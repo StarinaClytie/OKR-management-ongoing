@@ -1,9 +1,11 @@
 import type { DashboardData } from '../data/types';
-import type { Classification, DailyOkrBlock, DailyReport, DailyReportComment, DailyReportDetail, NotificationPage, ProjectStatus, Role, User, UserNotification } from '../domain/types';
+import type { Classification, DailyOkrBlock, DailyReport, DailyReportComment, DailyReportDetail, DailyReportKeyResultRef, NotificationPage, ProjectStatus, Role, User, UserNotification } from '../domain/types';
 import type { DailyEvidenceDraft } from '../domain/dailyEntry';
 import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceAttachmentUploadUpdate, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 import { createOssAttachmentTransport, type OssAttachmentTransport } from '../services/ossAttachmentTransport';
+import { configurePermissionSource } from '../auth/permissionService';
+import { buildPermissionSource } from './permissionSource';
 
 interface QueryResponse<T> { data: T | null; error: { code?: string; message: string } | null }
 interface ProfileQuery {
@@ -121,6 +123,24 @@ function mapDailyReportComment(row: Record<string, unknown>): DailyReportComment
   return { id: row.id, reportId: row.reportId, authorId: row.authorId, authorName: row.authorName, body: row.body, createdAt: row.createdAt };
 }
 
+/**
+ * The linked quarterly Key Result, resolved server-side from
+ * `daily_okr_blocks.linked_key_result_id`. Absent only when the KR row was
+ * deleted after the report was written (the FK is `on delete set null`).
+ */
+function mapLinkedKeyResult(value: unknown): DailyReportKeyResultRef | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== 'string' || typeof row.title !== 'string' || row.title.trim() === '') return undefined;
+  return {
+    id: row.id,
+    title: row.title,
+    description: typeof row.description === 'string' ? row.description : '',
+    ownerId: typeof row.ownerId === 'string' ? row.ownerId : '',
+    ownerName: typeof row.ownerName === 'string' ? row.ownerName : '',
+  };
+}
+
 function mapDailyReportDetailBlock(row: Record<string, unknown>): DailyOkrBlock | null {
   if (typeof row.id !== 'string' || typeof row.dailyObjective !== 'string' || typeof row.keyResultId !== 'string'
     || typeof row.result !== 'string') return null;
@@ -142,6 +162,7 @@ function mapDailyReportDetailBlock(row: Record<string, unknown>): DailyOkrBlock 
     id: row.id,
     dailyObjective: row.dailyObjective,
     keyResultId: row.keyResultId,
+    keyResult: mapLinkedKeyResult(row.keyResult),
     workDescription: typeof row.workDescription === 'string' ? row.workDescription : undefined,
     hours: numberValue(row.hours),
     result: row.result,
@@ -496,10 +517,14 @@ export class SupabaseOkrRepository implements OkrRepository {
       }
       const evidenceItems = blocks.length > 0 ? blocks.flatMap((block) => block.evidenceItems ?? []) : legacyAttachments;
       const attachmentIds = evidenceItems.flatMap((item) => item.attachmentId ? [item.attachmentId] : []);
+      // `daily_reports.project_id` is nullable since the blocks model landed and
+      // is only backfilled on save. Derive it from the first linked quarterly KR
+      // so project-scoped permission checks still have a project to match on.
+      const linkedProjectId = blocks.flatMap((block) => block.keyResultId ? [projectIdForKeyResult(block.keyResultId)] : []).find(Boolean) ?? '';
       return {
         id: String(row.id),
         authorId: String(row.author_id),
-        projectId: typeof row.project_id === 'string' ? row.project_id : '',
+        projectId: typeof row.project_id === 'string' ? row.project_id : linkedProjectId,
         objectiveId: typeof row.objective_id === 'string' ? row.objective_id : '',
         keyResultIds: blocks.map((block) => block.keyResultId),
         date: dateValue(row.report_date),
@@ -521,7 +546,12 @@ export class SupabaseOkrRepository implements OkrRepository {
       };
     });
 
-    return { ok: true, data: { currentUser, users, dailyReports, projects, objectives, keyResults, krAssignments, krProgressUpdates, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] } };
+    const dashboardData: DashboardData = { currentUser, users, dailyReports, projects, objectives, keyResults, krAssignments, krProgressUpdates, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] };
+    // The client evaluator needs the project membership roles RLS just disclosed.
+    // Without this a project leader reads as unaffiliated and every
+    // project-scoped decision denies. See buildPermissionSource for the rationale.
+    configurePermissionSource(buildPermissionSource(dashboardData));
+    return { ok: true, data: dashboardData };
   }
   async listDailyReports(): Promise<RepositoryResult<DailyReport[]>> { return failure(null); }
 

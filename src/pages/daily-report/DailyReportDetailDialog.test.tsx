@@ -29,11 +29,18 @@ function reportDetail(overrides: Partial<DailyReportDetail> = {}): DailyReportDe
     blocks: [{
       id: 'block-1',
       dailyObjective: '完成登录实验',
-      keyResultId: 'kr-login',
+      keyResultId: '88dcac9b-bcca-4e99-96c1-f4b660a8a605',
+      keyResult: {
+        id: '88dcac9b-bcca-4e99-96c1-f4b660a8a605',
+        title: '提升产品交付效率',
+        description: '完成 OKR 系统核心功能开发',
+        ownerId: 'user-leader',
+        ownerName: '周敏',
+      },
       workDescription: '分析首轮数据',
       hours: 3,
       result: '转化率提高 8%',
-      keyResults: [{ id: 'kr-login', title: '提升激活率' }],
+      keyResults: [],
       evidenceItems: [{
         id: 'evidence-1',
         attachmentId: 'attachment-1',
@@ -82,6 +89,37 @@ describe('DailyReportDetailDialog', () => {
     expect(screen.getByText('数据很清楚。')).toBeVisible();
     expect(screen.queryByRole('textbox', { name: '评论内容' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '确认成员日报' })).not.toBeInTheDocument();
+  });
+
+  it('renders the linked quarterly KR as readable content instead of its uuid', () => {
+    render(
+      <DailyReportDetailDialog
+        detail={reportDetail()}
+        repository={repository()}
+        onClose={vi.fn()}
+        onConfirmed={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('提升产品交付效率')).toBeVisible();
+    expect(screen.getByText('完成 OKR 系统核心功能开发')).toBeVisible();
+    expect(screen.getByText('周敏')).toBeVisible();
+    expect(screen.queryByText(/88dcac9b-bcca-4e99-96c1-f4b660a8a605/)).not.toBeInTheDocument();
+  });
+
+  it('states that the linked KR is unavailable rather than falling back to its uuid', () => {
+    const detail = reportDetail();
+    render(
+      <DailyReportDetailDialog
+        detail={{ ...detail, blocks: [{ ...detail.blocks[0], keyResult: undefined }] }}
+        repository={repository()}
+        onClose={vi.fn()}
+        onConfirmed={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('关联 KR 已不可用')).toBeVisible();
+    expect(screen.queryByText(/88dcac9b-bcca-4e99-96c1-f4b660a8a605/)).not.toBeInTheDocument();
   });
 
   it('retains a typed comment after failure, then appends the server comment and clears the field', async () => {

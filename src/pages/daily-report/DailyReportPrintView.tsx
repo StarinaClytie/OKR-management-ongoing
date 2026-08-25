@@ -1,4 +1,7 @@
+import { formatLinkedKeyResult } from '../../domain/dailyReportKeyResult';
 import type { DailyReportDetail } from '../../domain/types';
+
+const keyResultLabels = { unavailable: '关联 KR 已不可用', owner: '负责人' } as const;
 
 const statusLabels = {
   draft: '草稿',
@@ -23,7 +26,7 @@ function attachmentMetadata(kind: string, classification: string, uploadState: s
 
 export function renderDailyReportPrintView(detail: DailyReportDetail) {
   const entries = detail.blocks.map((block, index) => {
-    const keyResults = block.keyResults.map((keyResult) => keyResult.title).join('、') || block.keyResultId;
+    const keyResults = formatLinkedKeyResult(block, keyResultLabels);
     const attachments = block.evidenceItems?.length
       ? `<ul>${block.evidenceItems.map((item) => `<li>${escapeHtml(item.label)}（${escapeHtml(attachmentMetadata(item.kind, item.classification, item.uploadState ?? 'unknown'))}）</li>`).join('')}</ul>`
       : '';

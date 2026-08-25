@@ -5,6 +5,7 @@ import { repositoryErrorKey } from '../../i18n/repositoryErrors';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { MessageKey } from '../../i18n/messages';
 import { StatusBadge } from '../../components/StatusBadge';
+import { linkedKeyResult } from '../../domain/dailyReportKeyResult';
 import { DailyReportExportError, exportDailyReportWord, printDailyReportPdf } from '../../services/dailyReportExport';
 
 export interface DailyReportDetailDialogProps {
@@ -205,7 +206,19 @@ export function DailyReportDetailDialog({
                   <article className="daily-report-detail__entry" key={block.id}>
                     <h4>{t('daily.entryNumber', { number: index + 1 })}</h4>
                     <p><strong>{t('daily.objective')}：</strong>{block.dailyObjective}</p>
-                    <p><strong>{t('daily.linkedQuarterlyKr')}：</strong>{block.keyResults[0]?.title ?? block.keyResultId}</p>
+                    {(() => {
+                      // Render the resolved KR only. `block.keyResultId` is a raw
+                      // UUID and must never reach the screen.
+                      const keyResult = linkedKeyResult(block);
+                      if (!keyResult) return <p><strong>{t('daily.linkedQuarterlyKr')}：</strong>{t('daily.krUnavailable')}</p>;
+                      return (
+                        <>
+                          <p><strong>{t('daily.linkedQuarterlyKr')}：</strong>{keyResult.title}</p>
+                          {keyResult.description.trim() ? <p className="daily-report-detail__kr-description">{keyResult.description}</p> : null}
+                          {keyResult.ownerName.trim() ? <p><strong>{t('daily.krOwner')}：</strong>{keyResult.ownerName}</p> : null}
+                        </>
+                      );
+                    })()}
                     {block.workDescription ? <p><strong>{t('daily.workDescription')}：</strong>{block.workDescription}</p> : null}
                     <p><strong>{t('daily.result')}：</strong>{block.result}</p>
                     {block.evidenceItems?.length ? (
