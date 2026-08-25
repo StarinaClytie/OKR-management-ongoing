@@ -8,6 +8,7 @@ export interface SignInResult {
 export interface LoginFormProps {
   signIn: (email: string, password: string) => Promise<SignInResult>;
   onRegister?: () => void;
+  onForgotPassword?: () => void;
   locale?: Locale;
 }
 
@@ -22,7 +23,7 @@ function authErrorMessage(error: { message: string }, t: (key: MessageKey) => st
   return t('auth.failed');
 }
 
-export function LoginForm({ signIn, onRegister, locale = 'zh-CN' }: LoginFormProps) {
+export function LoginForm({ signIn, onRegister, onForgotPassword, locale = 'zh-CN' }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -81,6 +82,11 @@ export function LoginForm({ signIn, onRegister, locale = 'zh-CN' }: LoginFormPro
           {submitting ? t('auth.submitting') : t('auth.submit')}
         </button>
       </form>
+      {onForgotPassword ? (
+        <p className="auth-login__register">
+          <button type="button" className="text-button" onClick={onForgotPassword}>{t('auth.forgotPassword')}</button>
+        </p>
+      ) : null}
       {onRegister ? (
         <p className="auth-login__register">
           <button type="button" className="text-button" onClick={onRegister}>{t('auth.noAccount')}</button>

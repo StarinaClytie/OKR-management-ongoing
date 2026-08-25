@@ -43,6 +43,18 @@ describe('application routes', () => {
     expect(screen.getByRole('heading', { name: '我的工作概览' })).toBeVisible();
   });
 
+  it('redirects a manual /auth/reset-password visit to the dashboard', () => {
+    render(
+      <AuthProvider initialUserId="user-employee">
+        <MemoryRouter initialEntries={['/auth/reset-password']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AuthProvider>,
+    );
+
+    expect(screen.getByRole('heading', { name: '我的工作概览' })).toBeVisible();
+  });
+
   it('shows only generic access-denied content when the access-denied URL is opened directly', () => {
     render(
       <AuthProvider initialUserId="user-employee">

@@ -7,6 +7,8 @@ import { LoginForm } from './LoginForm';
 import { RegisterForm } from './RegisterForm';
 import { PendingApproval } from './PendingApproval';
 import { EmailVerificationPending } from './EmailVerificationPending';
+import { ForgotPassword } from './ForgotPassword';
+import { ResetPassword } from './ResetPassword';
 import { readStoredLocale, storeLocale } from '../i18n/LocaleProvider';
 import { translate, type Locale } from '../i18n/messages';
 
@@ -19,8 +21,9 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
   const [status, setStatus] = useState<AuthContextValue['status']>('loading');
   const [currentUser, setCurrentUser] = useState<User>();
   const [email, setEmail] = useState<string | undefined>();
-  const [view, setView] = useState<'login' | 'register'>('login');
+  const [view, setView] = useState<'login' | 'register' | 'forgot'>('login');
   const requestVersion = useRef(0);
+  const recoveryRef = useRef(false);
   const loadSessionRef = useRef<(session: SessionLike | null) => Promise<void>>(async () => {});
   const [locale, setLocale] = useState<Locale>(readStoredLocale);
 
@@ -70,8 +73,18 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
 
     const { data } = client.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
+        recoveryRef.current = false;
         setView('login');
         void loadSession(null);
+        return;
+      }
+      if (event === 'PASSWORD_RECOVERY') {
+        // The recovery session is a restricted token, not a full sign-in: do NOT
+        // resolve the profile here. ResetPassword owns the UI until the user sets
+        // a new password (resetPassword clears recoveryRef).
+        recoveryRef.current = true;
+        setEmail(session?.user.email);
+        setStatus('recovery');
         return;
       }
       void loadSession(session);
@@ -91,6 +104,10 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
           // getSession() below decides the authoritative session.
         }
         if (!mounted) return;
+        // A PASSWORD_RECOVERY callback sets recoveryRef during initialize();
+        // skip the normal session→profile resolution so the recovery screen is
+        // not clobbered by getCurrentProfile (the recovery token cannot authorize it).
+        if (recoveryRef.current) return;
         const { data: sessionData, error: sessionError } = await client.auth.getSession();
         if (!mounted) return;
         void loadSession(sessionError ? null : sessionData.session);
@@ -135,6 +152,25 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
     await loadSessionRef.current(sessionError ? null : sessionData.session);
   };
 
+  const forgotPassword = async (emailValue: string): Promise<{ error: { message: string } | null }> => {
+    // Build the redirect from the current origin so it stays correct in local
+    // dev (http://localhost:5173) and production (https://okr.trspectra.com).
+    const redirectTo = `${window.location.origin}/auth/reset-password`;
+    const { error } = await client.auth.resetPasswordForEmail(emailValue, { redirectTo });
+    return { error };
+  };
+
+  const resetPassword = async (password: string): Promise<{ error: { message: string } | null }> => {
+    const { error } = await client.auth.updateUser({ password });
+    if (error) return { error };
+    // The recovery session is now a full session. Clear the guard and resolve the
+    // profile so the provider transitions to ready (and the router, mounted only
+    // in ready, lands on /dashboard via the /auth/reset-password route).
+    recoveryRef.current = false;
+    await refreshProfile();
+    return { error: null };
+  };
+
   const value = useMemo<AuthContextValue>(() => ({
     status,
     mode: 'supabase',
@@ -172,6 +208,12 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
             onSubmit={signUp}
             onBack={() => setView('login')}
           />
+        ) : view === 'forgot' ? (
+          <ForgotPassword
+            locale={locale}
+            onSubmit={forgotPassword}
+            onBack={() => setView('login')}
+          />
         ) : (
           <LoginForm
             locale={locale}
@@ -180,8 +222,20 @@ export function SupabaseAuthProvider({ children, client, repository }: SupabaseA
               return { error };
             }}
             onRegister={() => setView('register')}
+            onForgotPassword={() => setView('forgot')}
           />
         )}
+      </>
+    );
+  } else if (status === 'recovery') {
+    content = (
+      <>
+        {languageSwitcher}
+        <ResetPassword
+          locale={locale}
+          onSubmit={resetPassword}
+          onBack={() => { void value.signOut(); }}
+        />
       </>
     );
   } else if (status === 'email_verification_pending') {

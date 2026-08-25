@@ -44,6 +44,12 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/auth/invite" element={<Navigate to="/dashboard" replace />} />
+      {/* Post-recovery landing: AppRoutes mounts only once the auth provider
+          reaches `ready`, so this Navigate fires only after the new password is
+          set — never while the reset form (rendered by the provider, outside the
+          router) is showing, and never before initialize() consumes the recovery
+          hash. */}
+      <Route path="/auth/reset-password" element={<Navigate to="/dashboard" replace />} />
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         {navigationItems.map((item) => (

@@ -31,6 +31,8 @@ function createClient(initialSession: SessionLike | null) {
   let listener: ((event: string, session: SessionLike | null) => void) | undefined;
   const signInWithPassword = vi.fn(async (): Promise<{ data: { session: SessionLike | null }; error: { message: string } | null }> => ({ data: { session: null }, error: null }));
   const signUp = vi.fn(async (): Promise<{ data: { session: SessionLike | null }; error: { message: string } | null }> => ({ data: { session: null }, error: null }));
+  const resetPasswordForEmail = vi.fn(async (): Promise<{ data: {} | null; error: { message: string } | null }> => ({ data: {}, error: null }));
+  const updateUser = vi.fn(async (): Promise<{ data: { user: SessionLike['user'] | null }; error: { message: string } | null }> => ({ data: { user: null }, error: null }));
   const rpc = vi.fn(async (): Promise<{ data: unknown; error: { message: string } | null }> => ({ data: null, error: null }));
   const initialize = vi.fn(async () => ({ error: null }));
   const getSession = vi.fn(async () => ({ data: { session: initialSession }, error: null }));
@@ -45,7 +47,8 @@ function createClient(initialSession: SessionLike | null) {
       onAuthStateChange,
       signInWithPassword,
       signUp,
-      updateUser: vi.fn(async () => ({ data: { user: null }, error: null })),
+      resetPasswordForEmail,
+      updateUser,
       signOut: vi.fn(async () => ({ error: null })),
     },
     from: vi.fn() as never,
@@ -56,6 +59,8 @@ function createClient(initialSession: SessionLike | null) {
     client,
     signInWithPassword,
     signUp,
+    resetPasswordForEmail,
+    updateUser,
     rpc,
     getSession,
     onAuthStateChange,
@@ -213,5 +218,50 @@ describe('SupabaseAuthProvider', () => {
     const { client } = createClient({ user: { id: 'user-one' } });
     render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(active)}><RoleSwitcher /></SupabaseAuthProvider>);
     await waitFor(() => expect(screen.queryByLabelText('演示角色')).not.toBeInTheDocument());
+  });
+
+  it('renders the reset form on PASSWORD_RECOVERY without resolving the profile', async () => {
+    const { client, emit } = createClient(null);
+    const repository = repositoryWithProfile(active);
+    render(<SupabaseAuthProvider client={client} repository={repository}><StateProbe /></SupabaseAuthProvider>);
+
+    emit({ user: { id: 'user-one', email: 'one@example.com' } }, 'PASSWORD_RECOVERY');
+
+    expect(await screen.findByRole('heading', { name: '设置新密码' })).toBeVisible();
+    expect(repository.getCurrentProfile).not.toHaveBeenCalled();
+  });
+
+  it('sends a password reset email from the forgot-password screen', async () => {
+    const user = userEvent.setup();
+    const { client, resetPasswordForEmail } = createClient(null);
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(active)}><StateProbe /></SupabaseAuthProvider>);
+
+    await user.click(await screen.findByRole('button', { name: '忘记密码？' }));
+    await user.type(screen.getByLabelText('邮箱'), 'member@example.com');
+    await user.click(screen.getByRole('button', { name: '发送重置链接' }));
+
+    expect(resetPasswordForEmail).toHaveBeenCalledWith('member@example.com', {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    expect(await screen.findByRole('heading', { name: '重置链接已发送' })).toBeVisible();
+  });
+
+  it('resets the password and transitions to the signed-in state', async () => {
+    const user = userEvent.setup();
+    const { client, emit, updateUser, getSession } = createClient(null);
+    render(<SupabaseAuthProvider client={client} repository={repositoryWithProfile(active)}><StateProbe /></SupabaseAuthProvider>);
+
+    emit({ user: { id: 'user-one', email: 'one@example.com' } }, 'PASSWORD_RECOVERY');
+    await screen.findByRole('heading', { name: '设置新密码' });
+
+    updateUser.mockResolvedValue({ data: { user: { id: 'user-one', email: 'one@example.com' } }, error: null });
+    getSession.mockResolvedValue({ data: { session: { user: { id: 'user-one', email: 'one@example.com' } } }, error: null });
+
+    await user.type(screen.getByLabelText('新密码'), 'secret123');
+    await user.type(screen.getByLabelText('确认密码'), 'secret123');
+    await user.click(screen.getByRole('button', { name: '重置密码' }));
+
+    expect(updateUser).toHaveBeenCalledWith({ password: 'secret123' });
+    expect(await screen.findByText('ready:user-one:one@example.com')).toBeVisible();
   });
 });

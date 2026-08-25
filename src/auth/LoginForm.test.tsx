@@ -48,4 +48,14 @@ describe('LoginForm', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('邮箱或密码错误');
     expect(screen.getByRole('button', { name: '登录' })).toBeEnabled();
   });
+
+  it('offers the forgot-password flow when a handler is provided', async () => {
+    const onForgotPassword = vi.fn();
+    const user = userEvent.setup();
+    render(<LoginForm signIn={vi.fn(async (): Promise<SignInResult> => ({ error: null }))} onForgotPassword={onForgotPassword} />);
+
+    await user.click(screen.getByRole('button', { name: '忘记密码？' }));
+
+    expect(onForgotPassword).toHaveBeenCalledTimes(1);
+  });
 });

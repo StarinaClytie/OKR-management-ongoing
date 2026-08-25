@@ -22,7 +22,7 @@ export interface SignUpResult {
 }
 
 export interface AuthContextValue {
-  status: 'loading' | 'signed_out' | 'pending_approval' | 'inactive' | 'account_error' | 'email_verification_pending' | 'ready';
+  status: 'loading' | 'signed_out' | 'pending_approval' | 'inactive' | 'account_error' | 'email_verification_pending' | 'recovery' | 'ready';
   mode: AppMode;
   currentUser: User | undefined;
   email?: string;

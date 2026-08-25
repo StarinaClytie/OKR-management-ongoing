@@ -95,6 +95,10 @@ export interface SupabaseClientLike {
       data: { session: SessionLike | null };
       error: { message: string } | null;
     }>;
+    resetPasswordForEmail(email: string, options?: { redirectTo?: string; captchaToken?: string }): Promise<{
+      data: {} | null;
+      error: { message: string } | null;
+    }>;
     updateUser(attributes: { password: string }): Promise<{
       data: { user: SessionLike['user'] | null };
       error: { message: string } | null;
