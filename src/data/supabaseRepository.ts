@@ -161,6 +161,7 @@ function mapDailyReportDetailBlock(row: Record<string, unknown>): DailyOkrBlock 
   return {
     id: row.id,
     dailyObjective: row.dailyObjective,
+    projectId: typeof row.projectId === 'string' ? row.projectId : '',
     keyResultId: row.keyResultId,
     keyResult: mapLinkedKeyResult(row.keyResult),
     workDescription: typeof row.workDescription === 'string' ? row.workDescription : undefined,
@@ -320,7 +321,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       this.selectRows('kr_progress_updates', 'id,kr_id,author_id,previous_progress,new_progress,summary,blocker,reason,next_action,evidence,created_at'),
       this.selectRows('daily_reports', 'id,author_id,project_id,objective_id,report_date,status,classification,total_hours,current_revision,updated_at'),
       this.selectRows('daily_report_revisions', 'id,report_id,revision_number'),
-      this.selectRows('daily_okr_blocks', 'id,report_id,revision_id,position,daily_objective,linked_key_result_id,work_description,hours,result,key_results,evidence_links'),
+      this.selectRows('daily_okr_blocks', 'id,report_id,revision_id,position,daily_objective,project_id,linked_key_result_id,work_description,hours,result,key_results,evidence_links'),
       this.selectRows('report_attachments', 'id,report_id,revision_id,daily_okr_block_id,original_name,display_name,classification,state'),
       this.selectRows('report_attachment_revisions', 'report_id,revision_id,daily_okr_block_id,attachment_id,display_name,classification'),
       this.selectRows('objective_owners', 'id,objective_id,profile_id,role_type'),
@@ -508,6 +509,7 @@ export class SupabaseOkrRepository implements OkrRepository {
           return {
             id: blockId,
             dailyObjective: String(block.daily_objective ?? ''),
+            projectId: typeof block.project_id === 'string' ? block.project_id : '',
             keyResultId: typeof block.linked_key_result_id === 'string' ? block.linked_key_result_id : '',
             workDescription: String(block.work_description ?? ''),
             hours: numberValue(block.hours),

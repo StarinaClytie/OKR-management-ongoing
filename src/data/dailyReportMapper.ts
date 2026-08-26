@@ -6,6 +6,7 @@ export function dailyReportToDraft(report: DailyReport): DailyReportDraft {
     id: block.id || `block-${index + 1}`,
     dailyObjective: block.dailyObjective,
     linkedKeyResultId: block.keyResultId,
+    projectId: block.projectId ?? '',
     workDescription: block.workDescription ?? block.keyResults[0]?.title ?? '',
     hours: block.hours,
     result: block.result,
