@@ -20,7 +20,8 @@ from (values
   ('c1000000-0000-0000-0000-000000000002'::uuid, 'pl@hr.test'),
   ('c1000000-0000-0000-0000-000000000003'::uuid, 'hr1@hr.test'),
   ('c1000000-0000-0000-0000-000000000004'::uuid, 'hr2@hr.test'),
-  ('c1000000-0000-0000-0000-000000000005'::uuid, 'emp@hr.test')
+  ('c1000000-0000-0000-0000-000000000005'::uuid, 'emp@hr.test'),
+  ('c1000000-0000-0000-0000-000000000006'::uuid, 'hr3@hr.test')
 ) users(id, email);
 
 insert into public.organizations (id, name) values ('c2000000-0000-0000-0000-000000000001', 'HR Test Organization');
@@ -30,7 +31,8 @@ insert into public.profiles (id, organization_id, display_name, clearance) value
   ('c1000000-0000-0000-0000-000000000002', 'c2000000-0000-0000-0000-000000000001', 'Project Leader', 'confidential'),
   ('c1000000-0000-0000-0000-000000000003', 'c2000000-0000-0000-0000-000000000001', 'HR One', 'confidential'),
   ('c1000000-0000-0000-0000-000000000004', 'c2000000-0000-0000-0000-000000000001', 'HR Two', 'confidential'),
-  ('c1000000-0000-0000-0000-000000000005', 'c2000000-0000-0000-0000-000000000001', 'Employee', 'confidential');
+  ('c1000000-0000-0000-0000-000000000005', 'c2000000-0000-0000-0000-000000000001', 'Employee', 'confidential'),
+  ('c1000000-0000-0000-0000-000000000006', 'c2000000-0000-0000-0000-000000000001', 'HR Three', 'confidential');
 
 update public.profiles set approval_status = 'approved';
 
@@ -39,7 +41,8 @@ insert into public.user_roles (organization_id, profile_id, role) values
   ('c2000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000002', 'project_leader'),
   ('c2000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000003', 'hr'),
   ('c2000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000004', 'hr'),
-  ('c2000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000005', 'employee');
+  ('c2000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000005', 'employee'),
+  ('c2000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000006', 'hr');
 
 set local role authenticated;
 
@@ -88,12 +91,12 @@ select is(
   'the HR owner is stored as the KR owner'
 );
 
-select set_config('request.jwt.claim.sub', 'c1000000-0000-0000-0000-000000000004', true);
+select set_config('request.jwt.claim.sub', 'c1000000-0000-0000-0000-000000000006', true);
 
 select throws_ok(
   $$select public.create_key_result(
     (select id from public.objectives where title = 'HR Objective'),
-    'KR HR Forbidden', array['c1000000-0000-0000-0000-000000000004']::uuid[],
+    'KR HR Forbidden', array['c1000000-0000-0000-0000-000000000006']::uuid[],
     current_date + 60, 'milestone', null, null, '', '', null, 'medium', 'confidential')$$,
   '42501', 'Only an assigned HR owner can create key results for HR objectives', 'non-owner HR cannot create a KR'
 );
@@ -164,7 +167,7 @@ select set_config('request.jwt.claim.sub', 'c1000000-0000-0000-0000-000000000003
 
 select is(
   jsonb_array_length(public.get_hr_work_hours(current_date, current_date)),
-  1::bigint,
+  1::integer,
   'HR work-hours returns one effort row for the seeded block'
 );
 
