@@ -275,6 +275,20 @@ as $$
             and project.id = block.project_id
             and project.leader_id = reviewer.id
         )
+        or exists (
+          select 1
+          from public.key_results key_result
+          join public.objectives objective
+            on objective.organization_id = key_result.organization_id
+           and objective.id = key_result.objective_id
+          join public.projects project
+            on project.organization_id = key_result.organization_id
+           and project.id = key_result.project_id
+          where block.project_id is null
+            and key_result.organization_id = report.organization_id
+            and key_result.id = block.linked_key_result_id
+            and objective.owner_id = reviewer.id
+        )
       )
   )
 $$;
