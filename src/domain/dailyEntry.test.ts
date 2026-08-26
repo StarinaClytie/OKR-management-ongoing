@@ -12,6 +12,7 @@ function block(overrides: Partial<DailyOkrBlockDraft> = {}): DailyOkrBlockDraft 
     id: 'block-1',
     dailyObjective: '完成实验数据采集第一阶段',
     linkedKeyResultId: 'kr-linked',
+    projectId: '',
     workDescription: '执行实验与数据整理',
     hours: 3.5,
     result: '采集到样本数据',
@@ -39,6 +40,25 @@ function draft(overrides: Partial<DailyReportDraft> = {}): DailyReportDraft {
 }
 
 describe('daily OKR block validation', () => {
+  it('requires a project when the block is not linked to a KR', () => {
+    const issues = validateDailyReportDraft(draft({
+      blocks: [block({ linkedKeyResultId: '', projectId: '' })],
+    }));
+
+    expect(issues).toContainEqual({
+      field: 'blocks.0.projectId',
+      message: '请选择所属项目',
+    });
+  });
+
+  it('accepts an eligible project for an unlinked block', () => {
+    const issues = validateDailyReportDraft(draft({
+      blocks: [block({ linkedKeyResultId: '', projectId: 'project-1' })],
+    }));
+
+    expect(issues.some((issue) => issue.field === 'blocks.0.projectId')).toBe(false);
+  });
+
   it('requires a Daily O and finite non-negative hours per block, but not a linked KR', () => {
     const issues = validateDailyReportDraft(draft({
       blocks: [block({ dailyObjective: ' ', linkedKeyResultId: '', hours: Number.NaN })],
@@ -140,6 +160,20 @@ describe('daily OKR block conversion', () => {
       ],
       status: 'submitted',
     } });
+  });
+
+  it('derives a linked block project and preserves an unlinked block project', () => {
+    const result = toLocalDailyReport(draft({
+      blocks: [
+        block({ projectId: '' }),
+        block({ id: 'block-2', linkedKeyResultId: '', projectId: 'project-2' }),
+      ],
+    }), conversionContext());
+
+    expect(result).toMatchObject({ ok: true, report: { blocks: [
+      expect.objectContaining({ projectId: 'project-1' }),
+      expect.objectContaining({ projectId: 'project-2' }),
+    ] } });
   });
 
   it('creates stable distinct ids for multiple local submissions on the same day', () => {

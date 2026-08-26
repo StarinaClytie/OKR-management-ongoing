@@ -152,6 +152,7 @@ export interface DailyReportAttachmentUploadInput extends ClassifiedAttachmentIn
 export interface DailyOkrBlockInput {
   dailyObjective: string;
   linkedKeyResultId: string;
+  projectId: string;
   workDescription: string;
   hours: number;
   result: string;
