@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { dailyEvidenceIsUploaded, dailyReportUploadsComplete, validateDailyReportDraft, type DailyEvidenceDraft, type DailyOkrBlockDraft, type DailyReportDraft } from '../../domain/dailyEntry';
-import type { Classification, KeyResult, Objective } from '../../domain/types';
+import type { Classification, KeyResult, Objective, Project } from '../../domain/types';
 import { DailyReportEvidence } from './DailyReportEvidence';
 import { useLocale, type LocaleContextValue } from '../../i18n/LocaleProvider';
 import type { LocalizedMessage, MessageKey } from '../../i18n/messages';
@@ -17,6 +17,7 @@ interface DailyReportFormProps {
   initialDraft?: DailyReportDraft;
   ownedKeyResults: readonly KeyResult[];
   objectives: readonly Objective[];
+  projects?: readonly Project[];
   onCancel: () => void;
   onSubmit: (draft: DailyReportDraft, uploadSession?: DailyReportUploadSession) => DailyReportSubmitResult | Promise<DailyReportSubmitResult>;
   onDownloadAttachment?: (attachmentId: string) => void | Promise<void>;
@@ -46,6 +47,7 @@ const validationKeys: Record<string, MessageKey> = {
   '请至少添加一组 Daily OKR': 'validation.blockRequired',
   '请填写当日 O': 'validation.objectiveRequired',
   '请选择关联的季度 KR': 'validation.linkedKrRequired',
+  '请选择所属项目': 'validation.projectRequired',
   '工时需填写有限且不小于 0 的数值': 'validation.hoursInvalid',
   '请至少添加一个当日 KR': 'validation.krRequired',
   '请填写 KR 内容': 'validation.krContentRequired',
@@ -73,6 +75,7 @@ function newBlock(id: string, linkedKeyResultId = ''): DailyOkrBlockDraft {
     id,
     dailyObjective: '',
     linkedKeyResultId,
+    projectId: '',
     workDescription: '',
     hours: 0,
     result: '',
@@ -80,7 +83,7 @@ function newBlock(id: string, linkedKeyResultId = ''): DailyOkrBlockDraft {
   };
 }
 
-export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults, objectives, onCancel, onSubmit, onDownloadAttachment, onRemoveAttachment, clearance = 'restricted', reportDate, uploadSession, uploadRepository }: DailyReportFormProps) {
+export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults, objectives, projects = [], onCancel, onSubmit, onDownloadAttachment, onRemoveAttachment, clearance = 'restricted', reportDate, uploadSession, uploadRepository }: DailyReportFormProps) {
   const { t } = useLocale();
   const [draft, setDraft] = useState<DailyReportDraft>(() => initialDraft
     ? cloneDraft(initialDraft)
@@ -106,6 +109,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
     : {}, [draft, showSubmitErrors, t, validationOptions]);
 
   const objectiveById = useMemo(() => new Map(objectives.map((objective) => [objective.id, objective])), [objectives]);
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
 
   const totalHours = draft.blocks.reduce((sum, block) => sum + (Number.isFinite(block.hours) ? block.hours : 0), 0);
 
@@ -348,7 +352,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                   id={`${block.id}-linked-key-result`}
                   ref={(element) => registerField(`${prefix}.linkedKeyResultId`, element)}
                   value={block.linkedKeyResultId}
-                  onChange={(event) => updateBlock(block.id, { linkedKeyResultId: event.target.value })}
+                  onChange={(event) => updateBlock(block.id, { linkedKeyResultId: event.target.value, projectId: '' })}
                 >
                   <option value="">{t('daily.unlinked')}</option>
                   {ownedKeyResults.map((keyResult) => {
@@ -362,6 +366,26 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                 </select>
                 {errorFor('linkedKeyResultId') && <span id={errorId('linkedKeyResultId')} role="alert" className="field-error">{errorFor('linkedKeyResultId')}</span>}
               </label>
+
+              {!block.linkedKeyResultId ? (
+                <label className="modal-field">
+                  <span>{t('daily.project')} *</span>
+                  <select
+                    id={`${block.id}-project`}
+                    ref={(element) => registerField(`${prefix}.projectId`, element)}
+                    value={block.projectId}
+                    required
+                    aria-invalid={Boolean(errorFor('projectId'))}
+                    aria-describedby={errorFor('projectId') ? errorId('projectId') : undefined}
+                    onChange={(event) => updateBlock(block.id, { projectId: event.target.value })}
+                  >
+                    <option value="">{t('daily.selectProject')}</option>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                  {projects.length === 0 ? <span className="field-help">{t('daily.noEligibleProjects')}</span> : null}
+                  {errorFor('projectId') && <span id={errorId('projectId')} role="alert" className="field-error">{errorFor('projectId')}</span>}
+                </label>
+              ) : null}
 
               <label className="modal-field">
                 <span>{t('daily.objective')} *</span>
@@ -377,7 +401,10 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
                 {errorFor('dailyObjective') && <span id={errorId('dailyObjective')} role="alert" className="field-error">{errorFor('dailyObjective')}</span>}
               </label>
 
-              {block.linkedKeyResultId ? <p className="modal-field"><span>{t('alignment.companyO')}</span><strong>{objectiveById.get(ownedKeyResults.find((keyResult) => keyResult.id === block.linkedKeyResultId)?.objectiveId ?? '')?.title ?? '—'}</strong></p> : null}
+              {block.linkedKeyResultId ? (() => {
+                const objective = objectiveById.get(ownedKeyResults.find((keyResult) => keyResult.id === block.linkedKeyResultId)?.objectiveId ?? '');
+                return <p className="modal-field"><span>{t('alignment.companyO')}</span><strong>{objective?.title ?? '—'}{objective ? ` / ${projectById.get(objective.projectId)?.name ?? '—'}` : ''}</strong></p>;
+              })() : null}
 
               <label className="modal-field">
                 <span>{t('daily.workDescription')} *</span>
@@ -436,7 +463,8 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
           );
         })}
 
-        {lastBlockComplete ? <button type="button" className="button button--secondary" onClick={addBlock}>{t('daily.addBlock')}</button> : null}
+        <button type="button" className="button button--secondary" onClick={addBlock} disabled={!lastBlockComplete}>{t('daily.addBlock')}</button>
+        {!lastBlockComplete ? <p className="daily-form-actions__hint">{t('daily.completeCurrentBlock')}</p> : null}
 
         <p className="daily-total-hours">{t('daily.totalHours', { count: totalHours })}</p>
 

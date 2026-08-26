@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { DailyReportDraft } from '../../domain/dailyEntry';
-import type { KeyResult, Objective } from '../../domain/types';
+import type { KeyResult, Objective, Project } from '../../domain/types';
 import type { DailyReportAttachmentUploadInput, OkrRepository } from '../../data/types';
 import { DailyReportForm } from './DailyReportForm';
 
@@ -13,10 +13,15 @@ const ownedKeyResults: KeyResult[] = [
   { id: 'kr-1', objectiveId: 'objective-1', title: '完成控制软件 v1.0', ownerId: 'emp', progress: 0, status: 'on_track', startDate: '', dueDate: '', classification: 'internal' },
 ];
 
+const projects: Project[] = [
+  { id: 'project-1', name: '下一代光谱仪', description: '', leaderId: 'leader', memberIds: ['emp'], classification: 'internal', startDate: '', dueDate: '', status: 'on_track' },
+  { id: 'project-2', name: '自动化项目', description: '', leaderId: 'leader', memberIds: ['emp'], classification: 'internal', startDate: '', dueDate: '', status: 'on_track' },
+];
+
 function renderForm(onSubmit?: (draft: DailyReportDraft) => { ok: true }) {
   const onCancel = vi.fn();
   const handleSubmit = vi.fn((draft: DailyReportDraft) => (onSubmit ? onSubmit(draft) : { ok: true as const }));
-  render(<DailyReportForm ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={onCancel} onSubmit={handleSubmit} />);
+  render(<DailyReportForm ownedKeyResults={ownedKeyResults} objectives={objectives} projects={projects} onCancel={onCancel} onSubmit={handleSubmit} />);
   return { onCancel, handleSubmit };
 }
 
@@ -24,7 +29,7 @@ function completeDraft(uploadState?: NonNullable<DailyReportDraft['blocks'][numb
   return {
     classification: 'internal',
     blocks: [{
-      id: 'block-1', dailyObjective: '目标', linkedKeyResultId: 'kr-1', workDescription: '执行', hours: 2, result: '完成',
+      id: 'block-1', dailyObjective: '目标', linkedKeyResultId: 'kr-1', projectId: '', workDescription: '执行', hours: 2, result: '完成',
       evidence: uploadState ? [{ id: 'file-1', label: 'proof.pdf', kind: 'file', classification: 'internal', file: new File(['proof'], 'proof.pdf', { type: 'application/pdf' }), attachmentId: uploadState === 'uploaded' ? 'attachment-1' : undefined, uploadState, uploadProgress: uploadState === 'uploaded' ? 100 : 0 }] : [],
     }],
   };
@@ -44,6 +49,37 @@ function uploadRepository(overrides: Partial<UploadRepository> = {}): UploadRepo
 }
 
 describe('DailyReportForm', () => {
+  it('shows a required project selector only for unlinked work', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    expect(screen.getByRole('option', { name: '不关联 KR' })).toBeInTheDocument();
+    expect(screen.getByLabelText('所属项目 *')).toBeVisible();
+    await user.selectOptions(screen.getByLabelText('所属项目 *'), 'project-2');
+    await user.selectOptions(screen.getByLabelText('关联季度 KR'), 'kr-1');
+
+    expect(screen.queryByLabelText('所属项目 *')).not.toBeInTheDocument();
+    expect(screen.getByText(/下一代光谱仪研发 \/ 下一代光谱仪/)).toBeVisible();
+  });
+
+  it('keeps the add-block button visible and enables it after the current block is complete', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const addButton = screen.getByRole('button', { name: '添加另一组 Daily OKR' });
+
+    expect(addButton).toBeDisabled();
+    expect(screen.getByText('请先完成当前组必填内容')).toBeVisible();
+
+    await user.selectOptions(screen.getByLabelText('关联季度 KR'), 'kr-1');
+    await user.type(screen.getByLabelText('当日 O *'), '目标');
+    await user.type(screen.getByLabelText('工作描述 *'), '执行');
+    await user.type(screen.getByLabelText('结果 / 数据 *'), '完成');
+    await user.type(screen.getByLabelText('记录工时 *'), '2');
+
+    expect(addButton).toBeEnabled();
+    await user.click(addButton);
+    expect(screen.getByRole('heading', { name: 'Daily OKR #2' })).toBeVisible();
+  });
   it.each(['selected', 'pending', 'uploading', 'verifying', 'failed', 'deleting'] as const)('disables submission while attachment state is %s', (uploadState) => {
     render(<DailyReportForm initialDraft={completeDraft(uploadState)} ownedKeyResults={ownedKeyResults} objectives={objectives} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
     expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
@@ -59,9 +95,9 @@ describe('DailyReportForm', () => {
     const handleSubmit = vi.fn().mockReturnValue({ ok: true });
     const draft: DailyReportDraft = {
       classification: 'internal',
-      blocks: [{ id: 'block-1', dailyObjective: '目标', linkedKeyResultId: '', workDescription: '执行', hours: 2, result: '完成', evidence: [] }],
+      blocks: [{ id: 'block-1', dailyObjective: '目标', linkedKeyResultId: '', projectId: 'project-1', workDescription: '执行', hours: 2, result: '完成', evidence: [] }],
     };
-    render(<DailyReportForm initialDraft={draft} ownedKeyResults={[]} objectives={objectives} onCancel={vi.fn()} onSubmit={handleSubmit} />);
+    render(<DailyReportForm initialDraft={draft} ownedKeyResults={[]} objectives={objectives} projects={projects} onCancel={vi.fn()} onSubmit={handleSubmit} />);
 
     await user.click(screen.getByRole('button', { name: '提交日报' }));
 
@@ -459,7 +495,7 @@ describe('DailyReportForm', () => {
   it('cleans finalized evidence before removing its Daily OKR block', async () => {
     const user = userEvent.setup();
     const initialDraft = completeDraft('uploaded');
-    initialDraft.blocks.push({ id: 'block-2', dailyObjective: '第二目标', linkedKeyResultId: 'kr-1', workDescription: '第二执行', hours: 1, result: '完成', evidence: [] });
+    initialDraft.blocks.push({ id: 'block-2', dailyObjective: '第二目标', linkedKeyResultId: 'kr-1', projectId: '', workDescription: '第二执行', hours: 1, result: '完成', evidence: [] });
     const onRemoveAttachment = vi.fn(async () => true);
     render(<DailyReportForm initialDraft={initialDraft} ownedKeyResults={ownedKeyResults} objectives={objectives} onRemoveAttachment={onRemoveAttachment} onCancel={vi.fn()} onSubmit={vi.fn().mockReturnValue({ ok: true })} />);
 
@@ -476,7 +512,7 @@ describe('DailyReportForm', () => {
       id: 'file-2', label: 'second.pdf', kind: 'file', classification: 'internal',
       attachmentId: 'attachment-2', uploadState: 'uploaded', uploadProgress: 100,
     });
-    initialDraft.blocks.push({ id: 'block-2', dailyObjective: '第二目标', linkedKeyResultId: 'kr-1', workDescription: '第二执行', hours: 1, result: '完成', evidence: [] });
+    initialDraft.blocks.push({ id: 'block-2', dailyObjective: '第二目标', linkedKeyResultId: 'kr-1', projectId: '', workDescription: '第二执行', hours: 1, result: '完成', evidence: [] });
     const onRemoveAttachment = vi.fn()
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false)
@@ -499,7 +535,7 @@ describe('DailyReportForm', () => {
     expect(screen.getByRole('heading', { name: 'Daily OKR #1' })).toBeVisible();
     expect(screen.getByLabelText(/关联季度 KR/)).toBeVisible();
     expect(screen.getByText('今日总工时：0 小时')).toBeVisible();
-    expect(screen.queryByRole('button', { name: '添加另一组 Daily OKR' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加另一组 Daily OKR' })).toBeDisabled();
   });
 
   it('submits a complete entry with objective, KR, work description, result and hours', async () => {
@@ -537,7 +573,7 @@ describe('DailyReportForm', () => {
     expect(screen.getByRole('button', { name: '添加另一组 Daily OKR' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: '添加另一组 Daily OKR' }));
     expect(screen.getByRole('heading', { name: 'Daily OKR #2' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: '添加另一组 Daily OKR' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加另一组 Daily OKR' })).toBeDisabled();
   });
 
   it('renders attachment controls inside the Daily OKR entry', () => {
@@ -586,7 +622,7 @@ describe('DailyReportForm', () => {
     await user.type(screen.getByLabelText(/记录工时/), '3.5');
     await user.upload(screen.getByLabelText('选择成果附件'), new File(['bad'], 'proof.pdf', { type: 'text/plain' }));
 
-    expect(screen.queryByRole('button', { name: '添加另一组 Daily OKR' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加另一组 Daily OKR' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '提交日报' })).toBeDisabled();
     expect(screen.getByText('附件不符合上传要求')).toBeVisible();
     expect(handleSubmit).not.toHaveBeenCalled();
@@ -619,7 +655,7 @@ describe('DailyReportForm', () => {
         initialDraft={{
           classification: 'internal',
           blocks: [{
-            id: 'block-1', dailyObjective: '完成实验采集第一阶段', linkedKeyResultId: 'kr-1',
+            id: 'block-1', dailyObjective: '完成实验采集第一阶段', linkedKeyResultId: 'kr-1', projectId: '',
             workDescription: '完成样本 A 测量与数据整理', hours: 3.5, result: '完成 5000 组光谱数据训练',
             evidence: [{ id: 'legacy-link', label: '历史设计文档', kind: 'link', classification: 'internal' }],
           }],

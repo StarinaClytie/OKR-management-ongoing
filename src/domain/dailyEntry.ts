@@ -14,7 +14,7 @@ export interface DailyOkrBlockDraft {
   dailyObjective: string;
   linkedKeyResultId: string;
   /** Explicit attribution for unlinked work; linked work derives this from its KR. */
-  projectId: string;
+  projectId?: string;
   workDescription: string;
   hours: number;
   result: string;

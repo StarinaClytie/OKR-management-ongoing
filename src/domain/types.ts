@@ -185,7 +185,7 @@ export interface DailyOkrBlock {
   id: string;
   dailyObjective: string;
   /** Project attribution for hours scoping; empty only on legacy unattributed rows. */
-  projectId: string;
+  projectId?: string;
   /** The linked quarterly Key Result (an assigned KR the author owns). */
   keyResultId: string;
   /**
