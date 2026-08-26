@@ -61,34 +61,26 @@ export function buildHourEntries(data: DashboardData): HourEntry[] {
     return entries;
   }
 
-  const ledObjectiveIds = new Set(
-    data.objectives.filter((objective) => objective.ownerId === currentUser.id).map((objective) => objective.id),
+  const ledProjectIds = new Set(
+    data.projects.filter((project) => project.leaderId === currentUser.id).map((project) => project.id),
   );
 
   for (const report of data.dailyReports) {
-    if (role === 'employee' && report.authorId !== currentUser.id) continue;
+    const isOwnReport = report.authorId === currentUser.id;
+    if (role === 'employee' && !isOwnReport) continue;
 
     const blocks = report.blocks ?? [];
-    if (role === 'project_leader') {
-      if (blocks.length > 0) {
-        const scoped = blocks.some((block) => {
-          const keyResult = keyResultById.get(block.keyResultId);
-          return keyResult !== undefined && ledObjectiveIds.has(keyResult.objectiveId);
-        });
-        if (!scoped) continue;
-      } else if (!ledObjectiveIds.has(report.objectiveId)) {
-        continue;
-      }
-    }
 
     if (blocks.length > 0) {
       for (const block of blocks) {
         const keyResult = keyResultById.get(block.keyResultId);
         const objective = keyResult ? objectiveById.get(keyResult.objectiveId) : undefined;
+        const projectId = block.projectId ?? objective?.projectId ?? '';
+        if (role === 'project_leader' && !isOwnReport && (!projectId || !ledProjectIds.has(projectId))) continue;
         entries.push({
           userId: report.authorId,
           date: report.date,
-          projectId: objective?.projectId ?? '',
+          projectId,
           objectiveId: keyResult?.objectiveId ?? '',
           keyResultId: block.keyResultId,
           quarter: objective?.quarter ?? '',
@@ -97,10 +89,12 @@ export function buildHourEntries(data: DashboardData): HourEntry[] {
       }
     } else {
       const objective = objectiveById.get(report.objectiveId);
+      const projectId = objective?.projectId ?? report.projectId;
+      if (role === 'project_leader' && !isOwnReport && (!projectId || !ledProjectIds.has(projectId))) continue;
       entries.push({
         userId: report.authorId,
         date: report.date,
-        projectId: objective?.projectId ?? report.projectId,
+        projectId,
         objectiveId: report.objectiveId,
         keyResultId: report.keyResultIds[0] ?? '',
         quarter: objective?.quarter ?? '',

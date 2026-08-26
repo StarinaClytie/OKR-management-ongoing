@@ -86,13 +86,15 @@ export function HoursWidget({ data }: HoursWidgetProps) {
           <span>{t('hours.to')}</span>
           <input type="date" value={filters.toDate ?? ''} onChange={(event) => setFilter({ toDate: event.target.value || undefined })} />
         </label>
-        <label>
-          <span>{t('hours.employee')}</span>
-          <select value={filters.employeeId ?? ''} onChange={(event) => setFilter({ employeeId: event.target.value || undefined })}>
-            <option value="">{t('okr.all')}</option>
-            {employeeOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-          </select>
-        </label>
+        {data.currentUser.role !== 'employee' ? (
+          <label>
+            <span>{t('hours.employee')}</span>
+            <select value={filters.employeeId ?? ''} onChange={(event) => setFilter({ employeeId: event.target.value || undefined })}>
+              <option value="">{t('okr.all')}</option>
+              {employeeOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+            </select>
+          </label>
+        ) : null}
         <label>
           <span>{t('hours.project')}</span>
           <select value={filters.projectId ?? ''} onChange={(event) => changeProject(event.target.value)}>
