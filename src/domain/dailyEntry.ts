@@ -111,7 +111,6 @@ export function validateDailyReportDraft(draft: DailyReportDraft, options: Daily
 
   draft.blocks.forEach((block, index) => {
     const field = `blocks.${index}`;
-    if (!block.linkedKeyResultId) issues.push({ field: `${field}.linkedKeyResultId`, message: '请选择关联的季度 KR' });
     if (!block.dailyObjective.trim()) issues.push({ field: `${field}.dailyObjective`, message: '请填写当日 O' });
     if (!block.workDescription.trim()) issues.push({ field: `${field}.workDescription`, message: '请填写工作描述' });
     if (!block.result.trim()) issues.push({ field: `${field}.result`, message: '请填写结果或数据' });
@@ -153,22 +152,25 @@ export function toLocalDailyReport(
   const keyResultById = new Map(context.keyResults.map((keyResult) => [keyResult.id, keyResult]));
   const objectiveById = new Map(context.objectives.map((objective) => [objective.id, objective]));
 
-  // Resolve every block's linked KR and the first block's header project/objective.
+  // Resolve every block's linked KR. A block with no linked KR is an unlinked
+  // work record; only an explicitly-linked-but-unresolvable KR is an error.
   const blocks = draft.blocks.map((block) => {
+    if (!block.linkedKeyResultId) return { block, linkedKeyResult: undefined, objective: undefined };
     const linkedKeyResult = keyResultById.get(block.linkedKeyResultId);
     if (!linkedKeyResult || !objectiveById.has(linkedKeyResult.objectiveId)) {
-      return { block, linkedKeyResult: undefined, objective: undefined };
+      return { block, linkedKeyResult: undefined, objective: undefined, invalid: true };
     }
     return { block, linkedKeyResult, objective: objectiveById.get(linkedKeyResult.objectiveId) };
   });
 
-  const firstResolved = blocks[0];
-  if (!firstResolved?.linkedKeyResult || !firstResolved.objective) {
+  const invalidEntry = blocks.find((entry) => entry.invalid);
+  if (invalidEntry) {
     return { ok: false, error: { code: 'KEY_RESULT_NOT_AVAILABLE', message: '所关联的季度 KR 不可用' } };
   }
 
-  const headerObjectiveId = firstResolved.objective.id;
-  const headerProjectId = firstResolved.objective.projectId;
+  const firstResolved = blocks.find((entry) => entry.linkedKeyResult && entry.objective);
+  const headerObjectiveId = firstResolved?.objective?.id ?? '';
+  const headerProjectId = firstResolved?.objective?.projectId ?? '';
 
   const reportBlocks = draft.blocks.map((block, index) => {
     return {
@@ -190,7 +192,7 @@ export function toLocalDailyReport(
       authorId: context.authorId,
       projectId: headerProjectId,
       objectiveId: headerObjectiveId,
-      keyResultIds: draft.blocks.map((block) => block.linkedKeyResultId),
+      keyResultIds: draft.blocks.map((block) => block.linkedKeyResultId).filter((id) => id !== ''),
       date: context.date,
       content: draft.blocks[0]!.dailyObjective,
       dailyObjective: draft.blocks[0]!.dailyObjective,

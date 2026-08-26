@@ -54,7 +54,7 @@ const danaReport = report(dana.id, projectB.id);
 function dashboard(): DashboardData {
   return {
     currentUser: alice, users: [alice, bob, dana, management], dailyReports: [bobReport, danaReport],
-    projects: [projectA, projectB], objectives: [], keyResults: [], krAssignments: [], krProgressUpdates: [],
+    projects: [projectA, projectB], objectives: [], keyResults: [], krAssignments: [], krProgressUpdates: [], objectiveOwners: [],
     milestones: [], risks: [], progressSnapshots: [], workloads: [], attachments: [],
     companyObjectives: [], projectTasks: [],
   };
@@ -136,6 +136,7 @@ describe('daily report visibility under a Supabase-derived permission source', (
     configurePermissionSource({
       projectMemberships: [], organizationRelations: [], activeShares: [],
       collaborationRelations: [], workloads: [], objectives: [],
+      krAssignments: [], objectiveOwners: [],
     });
 
     expect(can(alice, 'daily_report.read_body', getDailyReportBodyPermissionScope(bobReport)).allowed).toBe(false);

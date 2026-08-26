@@ -11,6 +11,8 @@ import type {
   KrProgressUpdate,
   Milestone,
   Objective,
+  ObjectiveOwner,
+  ObjectiveType,
   OkrPriority,
   ProgressSnapshot,
   Project,
@@ -46,6 +48,7 @@ export interface DashboardData {
   keyResults: KeyResult[];
   krAssignments: KrAssignment[];
   krProgressUpdates: KrProgressUpdate[];
+  objectiveOwners: ObjectiveOwner[];
   milestones: Milestone[];
   risks: Risk[];
   progressSnapshots: ProgressSnapshot[];
@@ -209,6 +212,29 @@ export interface OrganizationUser {
   approvalStatus: 'pending' | 'approved' | 'rejected';
   createdAt: string;
   projectIds: string[];
+}
+
+/** A single investment row in the HR work-hours overview (no report content). */
+export interface HrWorkHourRow {
+  date: string;
+  userId: string;
+  displayName: string;
+  role: Role | null;
+  projectLeaderName: string | null;
+  projectLeaderId: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  objectiveId: string | null;
+  objectiveTitle: string | null;
+  objectiveArchived: boolean;
+  krId: string | null;
+  krTitle: string | null;
+  hours: number;
+}
+
+export interface HrWorkHoursQuery {
+  from: string;
+  to: string;
 }
 
 export interface ProjectCreateInput {
@@ -400,6 +426,8 @@ export interface ObjectiveCreateInput {
   priority: OkrPriority;
   description: string;
   classification: Classification;
+  objectiveType?: ObjectiveType;
+  hrOwnerIds?: string[];
 }
 
 export interface ObjectiveUpdateInput extends ObjectiveCreateInput {
@@ -443,6 +471,7 @@ export interface OkrRepository {
   getDashboardData(userId?: string): Promise<RepositoryResult<DashboardData>>;
   listOrganizationUsers(): Promise<RepositoryResult<OrganizationUser[]>>;
   listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>>;
+  getHrWorkHours(query: HrWorkHoursQuery): Promise<RepositoryResult<HrWorkHourRow[]>>;
   listEligibleResourceOwners(): Promise<RepositoryResult<OrganizationUser[]>>;
   createProject(input: ProjectCreateInput): Promise<RepositoryResult<{ id: string }>>;
   updateProject(input: ProjectUpdateInput): Promise<RepositoryResult<void>>;

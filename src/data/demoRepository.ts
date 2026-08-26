@@ -8,6 +8,8 @@ import type {
   CreateResourceInput,
   DailyReportInput,
   DashboardData,
+  HrWorkHourRow,
+  HrWorkHoursQuery,
   KeyResultCreateInput,
   KeyResultUpdateInput,
   KrProgressInput,
@@ -39,6 +41,7 @@ import type {
   KrAssignment,
   KrProgressUpdate,
   Objective,
+  ObjectiveOwner,
   ProgressStatus,
   Project,
   ProjectStatus,
@@ -72,6 +75,7 @@ export class DemoOkrRepository implements OkrRepository {
   private lastUserId = 'user-employee';
   private projects: Project[] = [...mockData.projects];
   private objectives: Objective[] = [...mockData.objectives];
+  private objectiveOwners: ObjectiveOwner[] = [...mockData.objectiveOwners];
   private keyResults: KeyResult[] = [...mockData.keyResults];
   private krAssignments: KrAssignment[] = [...mockData.krAssignments];
   private krProgressUpdates: KrProgressUpdate[] = [...mockData.krProgressUpdates];
@@ -94,6 +98,7 @@ export class DemoOkrRepository implements OkrRepository {
       weeklyReports: mockData.weeklyReports,
       projects: this.projects,
       objectives: this.objectives,
+      objectiveOwners: this.objectiveOwners,
       keyResults: this.keyResults,
       krAssignments: this.krAssignments,
       krProgressUpdates: this.krProgressUpdates,
@@ -177,11 +182,13 @@ export class DemoOkrRepository implements OkrRepository {
     };
   }
 
-  async listEligibleKrOwners(_objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>> {
+  async listEligibleKrOwners(objectiveId: string): Promise<RepositoryResult<OrganizationUser[]>> {
+    const objective = this.objectives.find((candidate) => candidate.id === objectiveId);
+    const roles = objective?.objectiveType === 'hr' ? ['hr'] : ['project_leader', 'employee'];
     return {
       ok: true,
       data: mockData.users
-        .filter((user) => user.role === 'project_leader' || user.role === 'employee')
+        .filter((user) => roles.includes(user.role))
         .map((user) => ({
           id: user.id,
           displayName: user.name,
@@ -195,6 +202,10 @@ export class DemoOkrRepository implements OkrRepository {
           projectIds: user.projectIds,
         })),
     };
+  }
+
+  async getHrWorkHours(_query: HrWorkHoursQuery): Promise<RepositoryResult<HrWorkHourRow[]>> {
+    return { ok: true, data: [] };
   }
 
   async listEligibleResourceOwners(): Promise<RepositoryResult<OrganizationUser[]>> {
@@ -264,20 +275,31 @@ export class DemoOkrRepository implements OkrRepository {
       id: objectiveId, projectId, title: input.name, description: input.description, ownerId: input.leaderId,
       progress: 0, status: 'on_track', startDate: input.startDate, dueDate: input.dueDate,
       classification: input.classification, number, quarter: input.quarter, priority: input.priority, okrStatus: 'not_started',
+      objectiveType: input.objectiveType ?? 'business',
     }];
+    this.objectiveOwners = [
+      ...this.objectiveOwners,
+      { id: `${objectiveId}-owner-leader`, objectiveId, userId: input.leaderId, roleType: 'project_leader' as const },
+      ...(input.hrOwnerIds ?? []).map((userId, index) => ({ id: `${objectiveId}-owner-hr-${index}`, objectiveId, userId, roleType: 'hr' as const })),
+    ];
     return { ok: true, data: { id: objectiveId } };
   }
 
   async updateObjective(input: ObjectiveUpdateInput): Promise<RepositoryResult<void>> {
     const objective = this.objectives.find((candidate) => candidate.id === input.objectiveId);
     this.objectives = this.objectives.map((candidate) => candidate.id === input.objectiveId
-      ? { ...candidate, title: input.name, number: input.number, ownerId: input.leaderId, quarter: input.quarter, startDate: input.startDate, dueDate: input.dueDate, priority: input.priority, description: input.description, classification: input.classification }
+      ? { ...candidate, title: input.name, number: input.number, ownerId: input.leaderId, quarter: input.quarter, startDate: input.startDate, dueDate: input.dueDate, priority: input.priority, description: input.description, classification: input.classification, objectiveType: input.objectiveType ?? 'business' }
       : candidate);
     if (objective) {
       this.projects = this.projects.map((project) => project.id === objective.projectId
         ? { ...project, name: input.name, leaderId: input.leaderId, startDate: input.startDate, dueDate: input.dueDate, classification: input.classification }
         : project);
     }
+    this.objectiveOwners = [
+      ...this.objectiveOwners.filter((owner) => owner.objectiveId !== input.objectiveId),
+      { id: `${input.objectiveId}-owner-leader`, objectiveId: input.objectiveId, userId: input.leaderId, roleType: 'project_leader' as const },
+      ...(input.hrOwnerIds ?? []).map((userId, index) => ({ id: `${input.objectiveId}-owner-hr-${index}`, objectiveId: input.objectiveId, userId, roleType: 'hr' as const })),
+    ];
     return { ok: true, data: undefined };
   }
 

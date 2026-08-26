@@ -116,6 +116,19 @@ export interface Objective {
   priority?: OkrPriority;
   okrStatus?: OkrStatus;
   archivedAt?: string | null;
+  /** Whether this is a business or HR-specific Objective. */
+  objectiveType?: ObjectiveType;
+}
+
+export type ObjectiveType = 'business' | 'hr';
+export type ObjectiveOwnerRole = 'project_leader' | 'hr' | 'management';
+
+/** An owner in the multi-owner Objective relation (`objective_owners`). */
+export interface ObjectiveOwner {
+  id: string;
+  objectiveId: string;
+  userId: string;
+  roleType: ObjectiveOwnerRole;
 }
 
 export interface KeyResult {

@@ -1,4 +1,4 @@
-import type { KeyResult, KrAssignment, Objective, User } from './types';
+import type { KeyResult, KrAssignment, Objective, ObjectiveOwner, User } from './types';
 
 /**
  * Role-derived OKR permission helpers matching the layered business model:
@@ -22,6 +22,13 @@ export function leadsObjective(user: User, objective: Pick<Objective, 'ownerId'>
   return objective.ownerId === user.id;
 }
 
+/** Whether `userId` is an assigned HR owner of the given objective. */
+export function isHrObjectiveOwner(userId: string, objectiveId: string, objectiveOwners: readonly ObjectiveOwner[]): boolean {
+  return objectiveOwners.some(
+    (owner) => owner.objectiveId === objectiveId && owner.userId === userId && owner.roleType === 'hr',
+  );
+}
+
 /** Management edits an Objective's definition; a Project Leader never can. */
 export function canEditObjective(user: User, _objective: Pick<Objective, 'ownerId'>): boolean {
   return user.role === 'management';
@@ -32,14 +39,30 @@ export function canArchiveObjective(user: User): boolean {
   return user.role === 'management';
 }
 
-/** Decompose/edit KRs inside an objective: only that objective's project leader. */
-export function canManageKeyResults(user: User, objective: Pick<Objective, 'ownerId'>): boolean {
-  return user.role === 'project_leader' && leadsObjective(user, objective);
+/**
+ * Decompose/edit KRs inside an objective: the objective's project leader, or
+ * (for HR Objectives) an assigned HR owner. Business Objectives stay
+ * project-leader-only.
+ */
+export function canManageKeyResults(
+  user: User,
+  objective: Pick<Objective, 'id' | 'ownerId' | 'objectiveType'>,
+  objectiveOwners: readonly ObjectiveOwner[] = [],
+): boolean {
+  if (user.role === 'project_leader') return leadsObjective(user, objective);
+  if (user.role === 'hr' && objective.objectiveType === 'hr') {
+    return isHrObjectiveOwner(user.id, objective.id, objectiveOwners);
+  }
+  return false;
 }
 
 /** Assign KR owners (a structural change, not an employee action). */
-export function canAssignKeyResult(user: User, objective: Pick<Objective, 'ownerId'>): boolean {
-  return canManageKeyResults(user, objective);
+export function canAssignKeyResult(
+  user: User,
+  objective: Pick<Objective, 'id' | 'ownerId' | 'objectiveType'>,
+  objectiveOwners: readonly ObjectiveOwner[] = [],
+): boolean {
+  return canManageKeyResults(user, objective, objectiveOwners);
 }
 
 /**

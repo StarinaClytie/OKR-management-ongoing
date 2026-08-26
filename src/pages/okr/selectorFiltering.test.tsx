@@ -17,7 +17,7 @@ const eligibleUsers: OrganizationUser[] = [
   { id: 'u-pending', displayName: '待审批员工', email: '', department: '', jobTitle: '', role: 'employee', isActive: true, approvalStatus: 'pending', createdAt: '', projectIds: [] },
 ];
 
-const objectiveInitial: ObjectiveFormValues = { name: '', number: '', leaderId: '', quarter: '2026-Q3', startDate: '', dueDate: '', priority: 'medium' as OkrPriority, description: '' };
+const objectiveInitial: ObjectiveFormValues = { name: '', number: '', leaderId: '', quarter: '2026-Q3', startDate: '', dueDate: '', priority: 'medium' as OkrPriority, description: '', objectiveType: 'business', hrOwnerIds: [] };
 
 const keyResultInitial: KeyResultFormValues = { title: '', ownerIds: [], deadline: '', metricType: 'milestone', milestoneDefinition: '', unit: '', priority: 'medium', notes: '' };
 

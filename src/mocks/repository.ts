@@ -8,6 +8,7 @@ import type {
   KrProgressUpdate,
   Milestone,
   Objective,
+  ObjectiveOwner,
   OrganizationRelation,
   ProgressSnapshot,
   Project,
@@ -19,7 +20,7 @@ import type {
   WorkloadEntry,
 } from '../domain/types';
 import type { ActiveShare } from '../domain/permissions';
-import { companyObjectives, keyResults, milestones, objectives, progressSnapshots, projectTasks, projects, risks } from './okr';
+import { companyObjectives, keyResults, milestones, objectiveOwners, objectives, progressSnapshots, projectTasks, projects, risks } from './okr';
 import { dailyReports, weeklyReports, workloads } from './reports';
 import { krAssignments, krProgressUpdates } from './assignments';
 import { activeShares, attachments, collaborationRelations, documents } from './security';
@@ -34,6 +35,7 @@ export interface MockData {
   activeShares: ActiveShare[];
   projects: Project[];
   objectives: Objective[];
+  objectiveOwners: ObjectiveOwner[];
   keyResults: KeyResult[];
   krAssignments: KrAssignment[];
   krProgressUpdates: KrProgressUpdate[];
@@ -57,6 +59,7 @@ export const mockData: MockData = {
   activeShares,
   projects,
   objectives,
+  objectiveOwners,
   keyResults,
   krAssignments,
   krProgressUpdates,
@@ -227,6 +230,7 @@ export const mockRepository = {
       weeklyReports,
       projects,
       objectives,
+      objectiveOwners,
       keyResults,
       krAssignments,
       krProgressUpdates,

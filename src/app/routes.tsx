@@ -8,6 +8,7 @@ import { AccessDeniedPage } from '../pages/AccessDeniedPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { ObjectiveDetailPage } from '../pages/ObjectiveDetailPage';
 import { OkrManagementPage } from '../pages/OkrManagementPage';
+import { HrWorkHoursPage } from '../pages/hr/HrWorkHoursPage';
 import { ProfilePage } from '../pages/ProfilePage';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { ReportsPage } from '../pages/ReportsPage';
@@ -23,6 +24,7 @@ const pageByPath = {
   '/resources': ResourcesPage,
   '/reports': ReportsPage,
   '/team': TeamPage,
+  '/hr-hours': HrWorkHoursPage,
   '/users': UsersPage,
   '/settings': SettingsPage,
 } as const;

@@ -110,33 +110,16 @@ export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataReposit
   ].map((report) => confirmedReportIds.has(report.id) ? { ...report, status: 'confirmed' as const } : report)
     .filter((report) => can(currentUser, 'daily_report.read_body', getDailyReportBodyPermissionScope(report)).allowed);
 
-  if (currentUser.role === 'hr') {
-    const hoursRows = data.workloads.filter((workload) => can(currentUser, 'worklog.read_hours', workload).allowed);
-    return (
-      <section className="business-page" aria-labelledby="daily-reports-page-title">
-        <PageHeader title={t('daily.title')} description={t('daily.hrDescription')} />
-        <DataTable
-          ariaLabel={t('daily.authorizedHours')}
-          rows={hoursRows}
-          getRowKey={(workload) => workload.id}
-          emptyMessage={t('daily.noHours')}
-          columns={[
-            { key: 'member', label: t('table.member'), render: (workload) => authorName(workload.userId, data.users, t('daily.unknownMember')) },
-            { key: 'period', label: t('daily.period'), render: (workload) => t('hr.period', { start: workload.periodStart, end: workload.periodEnd }) },
-            { key: 'hours', label: t('daily.hours'), render: (workload) => t('common.hours', { count: workload.loggedHours }) },
-          ]}
-        />
-      </section>
-    );
-  }
-
   const ownReports = readableReports.filter((report) => report.authorId === currentUser.id);
-  const memberReports = readableReports.filter((report) => can(currentUser, 'daily_report.review', report).allowed);
+  const memberReports = readableReports.filter((report) => {
+    const author = data.users.find((candidate) => candidate.id === report.authorId);
+    return author?.role !== 'management' && can(currentUser, 'daily_report.review', report).allowed;
+  });
   const ownedKeyResults = data.keyResults.filter((keyResult) => isKrOwner(currentUser.id, keyResult.id, data.krAssignments) && can(currentUser, 'okr.read_summary', keyResult).allowed);
   const linkableObjectives = data.objectives.filter((objective) => can(currentUser, 'okr.read_summary', objective).allowed);
   const requestedKrId = searchParams.get('krId');
   const requestedKr = requestedKrId ? ownedKeyResults.find((keyResult) => keyResult.id === requestedKrId) : undefined;
-  const canAuthor = ownedKeyResults.length > 0;
+  const canAuthor = true;
 
   const prefillDraft: DailyReportDraft | undefined = requestedKr
     ? { blocks: [blankBlock(requestedKr.id)], classification: 'public' }
@@ -340,7 +323,6 @@ export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataReposit
         primaryAction={canAuthor ? { label: t('daily.fillToday'), buttonRef: authoringButtonRef, onClick: () => { void openTodayReport(); } } : undefined}
       />
       {notice && <p className="page-notice" role="status">{t(notice)}</p>}
-      {!canAuthor && <p className="data-table__empty">{t('daily.noOwnedKr')}</p>}
       {isAuthoring && canAuthor && (
         <section className="page-section" aria-labelledby="daily-report-authoring">
           <h2 id="daily-report-authoring" ref={authoringHeadingRef} tabIndex={-1}>{editingReport ? t('daily.editMine') : t('daily.fillToday')}</h2>

@@ -122,9 +122,9 @@ describe('DailyReportsPage', () => {
     expect(screen.getAllByText('1 条日报事项').length).toBeGreaterThan(0);
   });
 
-  it('keeps management out of daily report authoring', () => {
+  it('lets management author daily reports', () => {
     renderPageAs('user-management');
-    expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '填写今日日报' })).toBeVisible();
   });
 
   it('loads a member report on demand and confirms it through the detail review path', async () => {
@@ -278,11 +278,10 @@ describe('DailyReportsPage', () => {
     expect(screen.queryByText('当前工作')).not.toBeInTheDocument();
   });
 
-  it('keeps HR on an hours-only view without report bodies', () => {
+  it('lets HR author daily reports in the normal report view', () => {
     renderPageAs('user-hr');
-    expect(screen.getByRole('table', { name: '授权工时日报' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: '填写今日日报' })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/当日 O/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '填写今日日报' })).toBeVisible();
+    expect(screen.queryByRole('table', { name: '授权工时日报' })).not.toBeInTheDocument();
   });
 
   it('edits today\'s unconfirmed report through explicit attachment adoption and session submission', async () => {
@@ -558,7 +557,7 @@ describe('DailyReportsPage', () => {
           { id: 'project-a', name: 'Project A', description: '', leaderId: leader.id, memberIds: [leader.id, member.id], classification: 'internal', startDate: '2026-08-01', dueDate: '2026-09-30', status: 'on_track' },
           { id: 'project-b', name: 'Project B', description: '', leaderId: 'erin', memberIds: ['erin', outsider.id], classification: 'internal', startDate: '2026-08-01', dueDate: '2026-09-30', status: 'on_track' },
         ],
-        objectives: [], keyResults: [], krAssignments: [], krProgressUpdates: [], milestones: [], risks: [],
+        objectives: [], keyResults: [], krAssignments: [], krProgressUpdates: [], objectiveOwners: [], milestones: [], risks: [],
         progressSnapshots: [], workloads: [], attachments: [], companyObjectives: [], projectTasks: [],
       };
     }
@@ -591,7 +590,7 @@ describe('DailyReportsPage', () => {
     }
 
     beforeEach(() => {
-      configurePermissionSource({ projectMemberships: [], organizationRelations: [], activeShares: [], collaborationRelations: [], workloads: [], objectives: [] });
+      configurePermissionSource({ projectMemberships: [], organizationRelations: [], activeShares: [], collaborationRelations: [], workloads: [], objectives: [], krAssignments: [], objectiveOwners: [] });
     });
 
     it('shows a project leader their own report plus every member report in their project', async () => {

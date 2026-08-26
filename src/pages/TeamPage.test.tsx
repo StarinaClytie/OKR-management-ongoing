@@ -22,6 +22,7 @@ function emptyDashboard(currentUser: User): DashboardData {
     keyResults: [],
     krAssignments: [],
     krProgressUpdates: [],
+    objectiveOwners: [],
     milestones: [],
     risks: [],
     progressSnapshots: [],

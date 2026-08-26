@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { collaboratorsOfKr, isKrCollaborator, ownersOfKr } from './krAssignments';
 import { deriveKeyResultProgress, deriveObjectiveProgress } from './okrMetrics';
-import { canCreateObjective, canEditObjective, canManageKeyResults, canUpdateKeyResultProgress } from './okrPermissions';
+import { canCreateObjective, canEditObjective, canManageKeyResults, canUpdateKeyResultProgress, isHrObjectiveOwner } from './okrPermissions';
 import { deriveOkrStatus, resolveOkrStatus } from './okrStatus';
 import { filterObjectiveSummaries, summarizeObjective, type ObjectiveSummary } from './objectivePortfolio';
-import type { KeyResult, KrAssignment, Objective, User } from './types';
+import type { KeyResult, KrAssignment, Objective, ObjectiveOwner, User } from './types';
 
 const management: User = { id: 'mgr', name: '管理层', role: 'management', clearance: 'internal', title: '', department: '', projectIds: [] };
 const leader: User = { id: 'leader', name: '负责人', role: 'project_leader', clearance: 'internal', title: '', department: '', projectIds: [] };
@@ -122,5 +122,22 @@ describe('OKR permissions', () => {
     expect(canUpdateKeyResultProgress(leader, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }), assignments)).toBe(true);
     const other = { ...employee, id: 'other' };
     expect(canUpdateKeyResultProgress(other, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'emp' }), assignments)).toBe(false);
+  });
+  it('lets an HR owner manage KRs in an HR Objective only', () => {
+    const hr: User = { id: 'hr1', name: 'HR', role: 'hr', clearance: 'internal', title: '', department: '', projectIds: [] };
+    const otherHr: User = { id: 'hr2', name: 'HR2', role: 'hr', clearance: 'internal', title: '', department: '', projectIds: [] };
+    const owners: ObjectiveOwner[] = [{ id: 'oo1', objectiveId: 'o1', userId: 'hr1', roleType: 'hr' }];
+    const hrObjective = objective({ id: 'o1', objectiveType: 'hr', ownerId: 'leader' });
+
+    expect(canManageKeyResults(hr, hrObjective, owners)).toBe(true);
+    expect(canManageKeyResults(otherHr, hrObjective, owners)).toBe(false);
+    expect(canManageKeyResults(hr, objective({ id: 'o1', objectiveType: 'business', ownerId: 'leader' }), owners)).toBe(false);
+    expect(isHrObjectiveOwner('hr1', 'o1', owners)).toBe(true);
+    expect(isHrObjectiveOwner('hr2', 'o1', owners)).toBe(false);
+  });
+  it('lets an HR KR owner update progress via the assignment set', () => {
+    const hr: User = { id: 'hr1', name: 'HR', role: 'hr', clearance: 'internal', title: '', department: '', projectIds: [] };
+    const assignments: KrAssignment[] = [{ id: 'a1', krId: 'kr1', userId: 'hr1', assignmentRole: 'owner' }];
+    expect(canUpdateKeyResultProgress(hr, objective({ ownerId: 'leader' }), keyResult({ ownerId: 'hr1' }), assignments)).toBe(true);
   });
 });

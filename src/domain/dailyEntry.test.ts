@@ -39,16 +39,16 @@ function draft(overrides: Partial<DailyReportDraft> = {}): DailyReportDraft {
 }
 
 describe('daily OKR block validation', () => {
-  it('requires a Daily O, a linked quarterly KR, and finite non-negative hours per block', () => {
+  it('requires a Daily O and finite non-negative hours per block, but not a linked KR', () => {
     const issues = validateDailyReportDraft(draft({
       blocks: [block({ dailyObjective: ' ', linkedKeyResultId: '', hours: Number.NaN })],
     }));
 
     expect(issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ field: 'blocks.0.dailyObjective', message: '请填写当日 O' }),
-      expect.objectContaining({ field: 'blocks.0.linkedKeyResultId', message: '请选择关联的季度 KR' }),
       expect.objectContaining({ field: 'blocks.0.hours', message: '工时需填写有限且不小于 0 的数值' }),
     ]));
+    expect(issues.some((issue) => issue.field === 'blocks.0.linkedKeyResultId')).toBe(false);
   });
 
   it('requires a work description and result in every entry', () => {

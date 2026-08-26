@@ -1,7 +1,7 @@
 import type { DashboardData } from '../data/types';
 import type { Classification, DailyOkrBlock, DailyReport, DailyReportComment, DailyReportDetail, DailyReportKeyResultRef, NotificationPage, ProjectStatus, Role, User, UserNotification } from '../domain/types';
 import type { DailyEvidenceDraft } from '../domain/dailyEntry';
-import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceAttachmentUploadUpdate, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
+import type { ApprovePendingUserInput, AttachmentUploadTarget, AuthProfileState, ClassifiedAttachmentInput, CreateResourceInput, DailyReportAttachmentUploadInput, DailyReportInput, DailyReportUploadSession, HrWorkHourRow, HrWorkHoursQuery, KeyResultCreateInput, KeyResultUpdateInput, KrProgressInput, KrProgressUpdateInput, ObjectiveCreateInput, ObjectiveUpdateInput, OkrRepository, OrganizationUser, OwnedRiskInput, ProjectCreateInput, ProjectDetail, ProjectSummary, ProjectUpdateInput, ReportResourceProblemInput, ReportResourceProblemResult, RepositoryErrorCode, RepositoryResult, ResolveResourceProblemInput, Resource, ResourceAttachmentUploadUpdate, ResourceDetail, ResourceUploadTarget, RetryResourceProblemNotificationResult, SupabaseClientLike, UpdateUserInput, UpdateResourceInput } from './types';
 import { sanitizeFilename, validateAttachment } from '../services/attachmentService';
 import { createOssAttachmentTransport, type OssAttachmentTransport } from '../services/ossAttachmentTransport';
 import { configurePermissionSource } from '../auth/permissionService';
@@ -310,7 +310,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       this.callRpc<Record<string, unknown>[]>('list_organization_users', {}),
       this.selectRows('profiles', 'id,clearance'),
       this.selectRows('projects', 'id,name,description,leader_id,classification,start_date,due_date,status,project_members!project_members_project_id_fkey(profile_id)'),
-      this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date,number,quarter,priority,okr_status,archived_at'),
+      this.selectRows('objectives', 'id,project_id,owner_id,title,description,progress,classification,start_date,due_date,number,quarter,priority,okr_status,archived_at,objective_type'),
       this.selectRows('key_results', 'id,objective_id,project_id,owner_id,title,progress,classification,start_date,due_date,metric_type,current_value,target_value,unit,notes,confidence_index,priority,okr_status'),
       this.selectRows('progress_baselines', 'id,key_result_id,planned_for,planned_value'),
       this.selectRows('milestones', 'id,project_id,key_result_id,title,planned_date,is_complete'),
@@ -323,10 +323,11 @@ export class SupabaseOkrRepository implements OkrRepository {
       this.selectRows('daily_okr_blocks', 'id,report_id,revision_id,position,daily_objective,linked_key_result_id,work_description,hours,result,key_results,evidence_links'),
       this.selectRows('report_attachments', 'id,report_id,revision_id,daily_okr_block_id,original_name,display_name,classification,state'),
       this.selectRows('report_attachment_revisions', 'report_id,revision_id,daily_okr_block_id,attachment_id,display_name,classification'),
+      this.selectRows('objective_owners', 'id,objective_id,profile_id,role_type'),
     ]);
     const failed = results.find((result) => !result.ok);
     if (failed && !failed.ok) return failed;
-    const [profileResult, clearanceResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyRevisionResult, dailyBlockResult, attachmentResult, attachmentRevisionResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
+    const [profileResult, clearanceResult, projectResult, objectiveResult, keyResultResult, baselineResult, milestoneResult, riskResult, snapshotResult, krAssignmentResult, krProgressUpdateResult, dailyReportResult, dailyRevisionResult, dailyBlockResult, attachmentResult, attachmentRevisionResult, objectiveOwnerResult] = results as Array<{ ok: true; data: Record<string, unknown>[] }>;
 
     const clearancesByProfileId = new Map(
       clearanceResult.data
@@ -354,6 +355,7 @@ export class SupabaseOkrRepository implements OkrRepository {
           priority: row.priority as import('../domain/types').OkrPriority,
           okrStatus: row.okr_status as import('../domain/types').OkrStatus,
           archivedAt: typeof row.archived_at === 'string' ? row.archived_at : null,
+          objectiveType: (row.objective_type ?? 'business') as import('../domain/types').ObjectiveType,
         };
       });
     const keyResults = keyResultResult.data.map((row) => {
@@ -428,6 +430,12 @@ export class SupabaseOkrRepository implements OkrRepository {
       krId: String(row.kr_id),
       userId: String(row.profile_id),
       assignmentRole: row.assignment_role as import('../domain/types').KrAssignmentRole,
+    }));
+    const objectiveOwners = objectiveOwnerResult.data.map((row) => ({
+      id: String(row.id),
+      objectiveId: String(row.objective_id),
+      userId: String(row.profile_id),
+      roleType: row.role_type as import('../domain/types').ObjectiveOwnerRole,
     }));
     const krProgressUpdates = krProgressUpdateResult.data.map((row) => ({
       id: String(row.id),
@@ -546,7 +554,7 @@ export class SupabaseOkrRepository implements OkrRepository {
       };
     });
 
-    const dashboardData: DashboardData = { currentUser, users, dailyReports, projects, objectives, keyResults, krAssignments, krProgressUpdates, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] };
+    const dashboardData: DashboardData = { currentUser, users, dailyReports, projects, objectives, keyResults, krAssignments, krProgressUpdates, objectiveOwners, milestones, risks, progressSnapshots, workloads: [], attachments: [], companyObjectives, projectTasks: [] };
     // The client evaluator needs the project membership roles RLS just disclosed.
     // Without this a project leader reads as unaffiliated and every
     // project-scoped decision denies. See buildPermissionSource for the rationale.
@@ -847,6 +855,8 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_priority: input.priority,
       p_description: input.description,
       p_classification: input.classification,
+      p_objective_type: input.objectiveType ?? 'business',
+      p_hr_owner_ids: input.hrOwnerIds ?? [],
     });
     return result.ok ? { ok: true, data: { id: result.data } } : result;
   }
@@ -862,6 +872,8 @@ export class SupabaseOkrRepository implements OkrRepository {
       p_priority: input.priority,
       p_description: input.description,
       p_classification: input.classification,
+      p_objective_type: input.objectiveType ?? 'business',
+      p_hr_owner_ids: input.hrOwnerIds ?? [],
     });
     return result.ok ? { ok: true, data: undefined } : result;
   }
@@ -935,6 +947,27 @@ export class SupabaseOkrRepository implements OkrRepository {
     if (!result.ok) return result;
     const users = (result.data ?? []).map(mapOrganizationUser).filter((user): user is OrganizationUser => user !== null);
     return { ok: true, data: users };
+  }
+  async getHrWorkHours(query: HrWorkHoursQuery): Promise<RepositoryResult<HrWorkHourRow[]>> {
+    const result = await this.callRpc<Record<string, unknown>[]>('get_hr_work_hours', { p_from: query.from, p_to: query.to });
+    if (!result.ok) return result;
+    const rows = (result.data ?? []).map((row): HrWorkHourRow => ({
+      date: dateValue(row.date),
+      userId: String(row.userId ?? ''),
+      displayName: String(row.displayName ?? ''),
+      role: typeof row.role === 'string' ? (row.role as Role) : null,
+      projectLeaderName: typeof row.projectLeaderName === 'string' ? row.projectLeaderName : null,
+      projectLeaderId: typeof row.projectLeaderId === 'string' ? row.projectLeaderId : null,
+      projectId: typeof row.projectId === 'string' ? row.projectId : null,
+      projectName: typeof row.projectName === 'string' ? row.projectName : null,
+      objectiveId: typeof row.objectiveId === 'string' ? row.objectiveId : null,
+      objectiveTitle: typeof row.objectiveTitle === 'string' ? row.objectiveTitle : null,
+      objectiveArchived: row.objectiveArchived === true,
+      krId: typeof row.krId === 'string' ? row.krId : null,
+      krTitle: typeof row.krTitle === 'string' ? row.krTitle : null,
+      hours: numberValue(row.hours),
+    }));
+    return { ok: true, data: rows };
   }
   async listEligibleResourceOwners(): Promise<RepositoryResult<OrganizationUser[]>> {
     const result = await this.callRpc<Record<string, unknown>[]>('list_eligible_resource_owners', {});

@@ -26,7 +26,7 @@ function buildData(): DashboardData {
       { id: 'r1', authorId: 'u1', projectId: 'p1', objectiveId: 'o1', keyResultIds: ['k1'], date: '2026-08-19', content: '', classification: 'internal', hours: 3, evidence: [], evidenceClassification: 'internal', attachmentIds: [], status: 'submitted', blocks: [{ id: 'b1', dailyObjective: 'O', keyResultId: 'k1', hours: 3, result: '', keyResults: [{ id: 'kr1', title: 'KR' }] }] },
       { id: 'r2', authorId: 'u2', projectId: 'p2', objectiveId: 'o2', keyResultIds: ['k2'], date: '2026-08-19', content: '', classification: 'internal', hours: 5, evidence: [], evidenceClassification: 'internal', attachmentIds: [], status: 'submitted', blocks: [{ id: 'b2', dailyObjective: 'O', keyResultId: 'k2', hours: 5, result: '', keyResults: [{ id: 'kr2', title: 'KR' }] }] },
     ],
-    krAssignments: [], krProgressUpdates: [], milestones: [], risks: [], progressSnapshots: [], workloads: [], attachments: [], companyObjectives: [], projectTasks: [],
+    krAssignments: [], krProgressUpdates: [], objectiveOwners: [], milestones: [], risks: [], progressSnapshots: [], workloads: [], attachments: [], companyObjectives: [], projectTasks: [],
   };
 }
 

@@ -1,4 +1,5 @@
 import {
+  Clock,
   FileText,
   FolderKanban,
   LayoutDashboard,
@@ -38,16 +39,20 @@ const usersScope: SystemPermissionScope = {
 };
 
 const okrRoles: readonly Role[] = ['management', 'project_leader', 'employee'];
+const okrViewRoles: readonly Role[] = ['management', 'project_leader', 'employee', 'hr'];
+const hrHoursRoles: readonly Role[] = ['hr'];
+const teamRoles: readonly Role[] = ['management', 'project_leader', 'employee', 'administrator'];
 export const resourceRoles: readonly Role[] = ['management', 'project_leader', 'administrator', 'employee', 'hr'];
 const adminRoles: readonly Role[] = ['administrator'];
 
 export const navigationItems: readonly NavigationItem[] = [
   { path: '/dashboard', labelKey: 'navigation.dashboard', icon: LayoutDashboard, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/okrs', labelKey: 'navigation.okrs', icon: Target, action: 'dashboard.view', resource: dashboardScope, roles: okrRoles },
+  { path: '/okrs', labelKey: 'navigation.okrs', icon: Target, action: 'dashboard.view', resource: dashboardScope, roles: okrViewRoles },
   { path: '/projects', labelKey: 'navigation.projects', icon: FolderKanban, action: 'dashboard.view', resource: dashboardScope, roles: okrRoles },
   { path: '/resources', labelKey: 'navigation.resources', icon: Package, action: 'dashboard.view', resource: dashboardScope },
   { path: '/reports', labelKey: 'navigation.reports', icon: FileText, action: 'dashboard.view', resource: dashboardScope },
-  { path: '/team', labelKey: 'navigation.team', icon: Users, action: 'dashboard.view', resource: dashboardScope },
+  { path: '/team', labelKey: 'navigation.team', icon: Users, action: 'dashboard.view', resource: dashboardScope, roles: teamRoles },
+  { path: '/hr-hours', labelKey: 'navigation.hrHours', icon: Clock, action: 'dashboard.view', resource: dashboardScope, roles: hrHoursRoles },
   { path: '/users', labelKey: 'navigation.users', icon: UserCog, action: 'user.manage', resource: usersScope, roles: adminRoles },
   { path: '/settings', labelKey: 'navigation.settings', icon: Settings, action: 'dashboard.view', resource: dashboardScope },
 ];

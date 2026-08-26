@@ -157,6 +157,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
       name: values.name, number, leaderId: values.leaderId, quarter: values.quarter,
       startDate: values.startDate, dueDate: values.dueDate, priority: values.priority,
       description: values.description, classification: 'internal',
+      objectiveType: values.objectiveType, hrOwnerIds: values.hrOwnerIds,
     });
     setSubmitting(false);
     if (result.ok) {
@@ -220,7 +221,7 @@ export function OkrManagementPage({ dataRepository = repository }: { dataReposit
         <ObjectiveFormModal
           title={t('objective.createTitle')}
           mode="create"
-          initial={{ name: '', number: '', leaderId: '', quarter: '2026-Q3', startDate: '', dueDate: '', priority: 'medium', description: '' }}
+          initial={{ name: '', number: '', leaderId: '', quarter: '2026-Q3', startDate: '', dueDate: '', priority: 'medium', description: '', objectiveType: 'business', hrOwnerIds: [] }}
           eligibleUsers={eligibleUsers}
           submitting={submitting}
           error={formError}

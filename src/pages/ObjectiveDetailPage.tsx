@@ -90,7 +90,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
   const signedInUser = currentUser;
   const overallProgress = deriveObjectiveProgress(objectiveKrs);
   const okrStatus = resolveOkrStatus(objectiveData.okrStatus, overallProgress, objectiveData.startDate, objectiveData.dueDate, evaluationDate);
-  const canManage = canManageKeyResults(signedInUser, objectiveData);
+  const canManage = canManageKeyResults(signedInUser, objectiveData, dashboardData.objectiveOwners);
   const isArchived = objectiveData.archivedAt != null;
   const objectiveUpdates = dashboardData.krProgressUpdates.filter((update) => objectiveKrs.some((keyResult) => keyResult.id === update.krId));
   const projectReports = dashboardData.dailyReports.filter((report) => report.objectiveId === objectiveData.id);
@@ -186,6 +186,8 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
       priority: values.priority,
       description: values.description,
       classification: objectiveData.classification,
+      objectiveType: values.objectiveType,
+      hrOwnerIds: values.hrOwnerIds,
     });
     setSubmitting(false);
     if (result.ok) {
@@ -343,6 +345,7 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
           title={t('kr.createTitle')}
           initial={{ ...emptyKrForm, deadline: objectiveData.dueDate }}
           ownerCandidates={krOwnerCandidates}
+          objectiveType={objectiveData.objectiveType}
           submitting={submitting}
           error={krOwnerLoadError ?? formError}
           onSubmit={(values) => void handleSaveKeyResult(values)}
@@ -363,6 +366,10 @@ export function ObjectiveDetailPage({ dataRepository = repository }: { dataRepos
             dueDate: objectiveData.dueDate,
             priority: objectiveData.priority ?? 'medium',
             description: objectiveData.description,
+            objectiveType: objectiveData.objectiveType ?? 'business',
+            hrOwnerIds: dashboardData.objectiveOwners
+              .filter((owner) => owner.objectiveId === objectiveData.id && owner.roleType === 'hr')
+              .map((owner) => owner.userId),
           }}
           eligibleUsers={objectiveLeaderCandidates}
           submitting={submitting}

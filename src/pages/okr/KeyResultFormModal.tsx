@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { OrganizationUser } from '../../data/types';
-import type { KrMetricType, OkrPriority, Role } from '../../domain/types';
+import type { KrMetricType, ObjectiveType, OkrPriority, Role } from '../../domain/types';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { MessageKey } from '../../i18n/messages';
 
@@ -13,8 +13,10 @@ const metricTypeKeys: Record<KrMetricType, MessageKey> = {
 const priorities: readonly OkrPriority[] = ['high', 'medium', 'low'];
 const priorityKeys: Record<OkrPriority, MessageKey> = { high: 'priority.high', medium: 'priority.medium', low: 'priority.low' };
 
-/** KR owners may only be project leaders or employees. */
-const ownerRoles: readonly Role[] = ['project_leader', 'employee'];
+/** KR owners: HR objectives admit HR only; business objectives stay PL/employee. */
+function ownerRolesFor(objectiveType: ObjectiveType | undefined): readonly Role[] {
+  return objectiveType === 'hr' ? ['hr'] : ['project_leader', 'employee'];
+}
 
 export interface KeyResultFormValues {
   title: string;
@@ -36,6 +38,7 @@ export interface KeyResultFormModalProps {
   title: string;
   initial: KeyResultFormValues;
   ownerCandidates: readonly OrganizationUser[];
+  objectiveType?: ObjectiveType;
   submitting?: boolean;
   error?: string;
   onSubmit: (values: KeyResultFormValues) => void;
@@ -44,7 +47,7 @@ export interface KeyResultFormModalProps {
 
 const numberValue = (value: string): number | undefined => (value === '' ? undefined : Number(value));
 
-export function KeyResultFormModal({ title, initial, ownerCandidates, submitting = false, error, onSubmit, onClose }: KeyResultFormModalProps) {
+export function KeyResultFormModal({ title, initial, ownerCandidates, objectiveType, submitting = false, error, onSubmit, onClose }: KeyResultFormModalProps) {
   const { t } = useLocale();
   const [values, setValues] = useState<KeyResultFormValues>(initial);
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
@@ -68,6 +71,7 @@ export function KeyResultFormModal({ title, initial, ownerCandidates, submitting
     setFieldError(undefined);
   }
 
+  const ownerRoles = ownerRolesFor(objectiveType);
   const eligibleOwnerCandidates = ownerCandidates.filter((candidate) => (
     candidate.isActive
     && candidate.approvalStatus === 'approved'

@@ -71,7 +71,7 @@ const dashboardData: DashboardData = {
     periodStart: '2026-08-10', periodEnd: '2026-08-14', plannedHours: 8, loggedHours: 9, capacityHours: 10, hrVisibility: 'hours_only',
   }],
   milestones: [], risks: [], progressSnapshots: [], attachments: [], companyObjectives: [], projectTasks: [],
-  krAssignments: [], krProgressUpdates: [],
+  krAssignments: [], krProgressUpdates: [], objectiveOwners: [],
 };
 
 const authValue: AuthContextValue = {

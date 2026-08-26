@@ -53,5 +53,7 @@ export function buildPermissionSource(data: DashboardData): PermissionDataSource
     collaborationRelations: [],
     workloads: data.workloads,
     objectives: data.objectives,
+    krAssignments: data.krAssignments,
+    objectiveOwners: data.objectiveOwners,
   };
 }

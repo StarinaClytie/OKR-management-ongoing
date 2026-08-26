@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { roleLabels } from '../../auth/roleLabels';
 import type { OrganizationUser } from '../../data/types';
-import type { OkrPriority } from '../../domain/types';
+import type { ObjectiveType, OkrPriority } from '../../domain/types';
 import { useLocale } from '../../i18n/LocaleProvider';
 import type { MessageKey } from '../../i18n/messages';
 
 const priorities: readonly OkrPriority[] = ['high', 'medium', 'low'];
 const priorityKeys: Record<OkrPriority, MessageKey> = { high: 'priority.high', medium: 'priority.medium', low: 'priority.low' };
+const objectiveTypes: readonly ObjectiveType[] = ['business', 'hr'];
+const objectiveTypeKeys: Record<ObjectiveType, MessageKey> = { business: 'objective.type.business', hr: 'objective.type.hr' };
 
 export interface ObjectiveFormValues {
   name: string;
@@ -17,6 +19,8 @@ export interface ObjectiveFormValues {
   dueDate: string;
   priority: OkrPriority;
   description: string;
+  objectiveType: ObjectiveType;
+  hrOwnerIds: string[];
 }
 
 export interface ObjectiveFormModalProps {
@@ -48,6 +52,7 @@ export function ObjectiveFormModal({
   const isCreate = mode === 'create';
   // Only project leaders are eligible to lead an Objective (business role).
   const leaderCandidates = eligibleUsers.filter((user) => user.role === 'project_leader');
+  const hrCandidates = eligibleUsers.filter((user) => user.role === 'hr');
 
   useEffect(() => {
     firstFieldRef.current?.focus();
@@ -66,10 +71,21 @@ export function ObjectiveFormModal({
     setFieldError(undefined);
   }
 
+  function toggleHrOwner(userId: string) {
+    setValues((current) => ({
+      ...current,
+      hrOwnerIds: current.hrOwnerIds.includes(userId)
+        ? current.hrOwnerIds.filter((id) => id !== userId)
+        : [...current.hrOwnerIds, userId],
+    }));
+    setFieldError(undefined);
+  }
+
   const nameValid = values.name.trim() !== '';
   const leaderValid = values.leaderId !== '';
   const dateValid = values.startDate === '' || values.dueDate === '' || values.dueDate >= values.startDate;
   const quarterValid = values.quarter.trim() !== '';
+  const hrOwnersValid = values.objectiveType !== 'hr' || values.hrOwnerIds.length > 0;
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -78,6 +94,7 @@ export function ObjectiveFormModal({
     if (!leaderValid) return setFieldError(t('objective.validation.leaderRequired'));
     if (!quarterValid) return setFieldError(t('objective.validation.nameRequired'));
     if (!dateValid) return setFieldError(t('objective.validation.dateRange'));
+    if (!hrOwnersValid) return setFieldError(t('objective.validation.hrOwnerRequired'));
     setFieldError(undefined);
     onSubmit({ ...values, name: values.name.trim(), quarter: values.quarter.trim(), description: values.description.trim() });
   }
@@ -105,6 +122,33 @@ export function ObjectiveFormModal({
             </select>
           )}
         </label>
+
+        <label className="modal-field">
+          <span>{t('objective.field.type')}</span>
+          <select value={values.objectiveType} onChange={(event) => set('objectiveType', event.target.value as ObjectiveType)}>
+            {objectiveTypes.map((objectiveType) => (
+              <option key={objectiveType} value={objectiveType}>{t(objectiveTypeKeys[objectiveType])}</option>
+            ))}
+          </select>
+        </label>
+
+        {values.objectiveType === 'hr' ? (
+          <div className="modal-field">
+            <span>{t('objective.field.hrOwners')} *</span>
+            {hrCandidates.length === 0 ? (
+              <p role="status">{t('objective.noHrMembers')}</p>
+            ) : (
+              <div className="member-picker">
+                {hrCandidates.map((user) => (
+                  <label key={user.id} className="member-picker__option">
+                    <input type="checkbox" checked={values.hrOwnerIds.includes(user.id)} onChange={() => toggleHrOwner(user.id)} />
+                    <span>{user.displayName}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
 
         <label className="modal-field">
           <span>{t('objective.field.quarter')} *</span>
@@ -148,7 +192,7 @@ export function ObjectiveFormModal({
 
         <div className="modal-actions">
           <button type="button" className="button button--secondary" onClick={onClose}>{t('common.cancel')}</button>
-          <button type="submit" className="button button--primary" disabled={submitting || !nameValid || !leaderValid || !dateValid || !quarterValid}>
+          <button type="submit" className="button button--primary" disabled={submitting || !nameValid || !leaderValid || !dateValid || !quarterValid || !hrOwnersValid}>
             {submitting ? t('common.saving') : t('objective.save')}
           </button>
         </div>

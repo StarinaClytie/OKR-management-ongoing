@@ -54,6 +54,24 @@ describe('DailyReportForm', () => {
     expect(screen.getByRole('button', { name: '提交日报' })).toBeEnabled();
   });
 
+  it('reminds but does not block submission when no KR is linked', async () => {
+    const user = userEvent.setup();
+    const handleSubmit = vi.fn().mockReturnValue({ ok: true });
+    const draft: DailyReportDraft = {
+      classification: 'internal',
+      blocks: [{ id: 'block-1', dailyObjective: '目标', linkedKeyResultId: '', workDescription: '执行', hours: 2, result: '完成', evidence: [] }],
+    };
+    render(<DailyReportForm initialDraft={draft} ownedKeyResults={[]} objectives={objectives} onCancel={vi.fn()} onSubmit={handleSubmit} />);
+
+    await user.click(screen.getByRole('button', { name: '提交日报' }));
+
+    expect(await screen.findByRole('dialog', { name: '未关联任何 KR' })).toBeVisible();
+    expect(handleSubmit).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '确认提交' }));
+    expect(handleSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps submission disabled and names every incomplete attachment when an uploaded state has no attachment id', () => {
     const draft = completeDraft('uploaded');
     draft.blocks[0]!.evidence[0]!.attachmentId = undefined;

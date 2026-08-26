@@ -1,5 +1,5 @@
 import type { Action, ActiveShare, PermissionDecision, PermissionResource, ResourceType, UserPermissionScope } from '../domain/permissions';
-import type { Classification, CollaborationRelation, Objective, OrganizationRelation, ProjectMembership, Role, User, WorkloadEntry } from '../domain/types';
+import type { Classification, CollaborationRelation, KrAssignment, Objective, ObjectiveOwner, OrganizationRelation, ProjectMembership, Role, User, WorkloadEntry } from '../domain/types';
 import { canEditDailyReport } from '../domain/dailyReportPolicy';
 import { currentBusinessDate } from '../domain/progressStatus';
 
@@ -25,6 +25,8 @@ export interface PermissionDataSource {
   collaborationRelations: readonly CollaborationRelation[];
   workloads: readonly WorkloadEntry[];
   objectives: readonly Objective[];
+  krAssignments: readonly KrAssignment[];
+  objectiveOwners: readonly ObjectiveOwner[];
 }
 
 const emptyPermissionSource: PermissionDataSource = {
@@ -34,6 +36,8 @@ const emptyPermissionSource: PermissionDataSource = {
   collaborationRelations: [],
   workloads: [],
   objectives: [],
+  krAssignments: [],
+  objectiveOwners: [],
 };
 
 let permissionSource: PermissionDataSource = emptyPermissionSource;
@@ -57,6 +61,8 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'task.read',
     'daily_report.read',
     'daily_report.read_body',
+    'daily_report.create',
+    'daily_report.edit',
     'evidence.read',
     'weekly_report.read',
     'weekly_report.read_body',
@@ -84,6 +90,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'project.manage',
     'daily_report.read',
     'daily_report.read_body',
+    'daily_report.create',
     'daily_report.edit',
     'daily_report.review',
     'weekly_report.read',
@@ -150,7 +157,7 @@ const roleActions: Record<Role, ReadonlySet<Action>> = {
     'resource.create',
     'resource.update',
   ]),
-  hr: new Set(['dashboard.view', 'okr.read_summary', 'company_objective.read', 'daily_report.read', 'weekly_report.read', 'worklog.read_hours', 'user.read', 'resource.create', 'resource.update']),
+  hr: new Set(['dashboard.view', 'okr.read_summary', 'okr.read_detail', 'company_objective.read', 'daily_report.read', 'daily_report.read_body', 'daily_report.create', 'daily_report.edit', 'weekly_report.read', 'worklog.read_hours', 'user.read', 'resource.create', 'resource.update']),
 };
 
 const systemActions = new Set<Action>(['dashboard.view', 'user.manage', 'permission.manage', 'audit.read']);
@@ -422,6 +429,13 @@ function isIndependentFile(context: ResourceContext): boolean {
   return context.type === 'attachment' || context.type === 'document';
 }
 
+/** Whether `userId` owns `krId` via the multi-owner assignment set. */
+function isKrOwnerForUser(userId: string, krId: string): boolean {
+  return permissionSource.krAssignments.some(
+    (assignment) => assignment.krId === krId && assignment.userId === userId && assignment.assignmentRole === 'owner',
+  );
+}
+
 export function can(user: User | undefined, action: Action, resource?: PermissionResource): PermissionDecision {
   if (!user) return deny('需要登录');
 
@@ -499,19 +513,35 @@ export function can(user: User | undefined, action: Action, resource?: Permissio
     return context.ownerId === user.id ? allow('可更新本人负责的 OKR') : deny();
   }
 
+  // HR OKR read: only HR Objectives (or a KR the caller owns). This must run
+  // before the same-project / owner fall-through, otherwise an HR who is a
+  // member of a business project would read its Objectives — RLS forbids that.
+  if (user.role === 'hr' && (action === 'okr.read_summary' || action === 'okr.read_detail')) {
+    if (context.type === 'objective') {
+      const objectiveType = 'objectiveType' in resource ? resource.objectiveType : undefined;
+      return objectiveType === 'hr' ? allow('可查看 HR 专属 Objective') : deny();
+    }
+    if (context.type === 'key_result') {
+      const objectiveId = 'objectiveId' in resource ? resource.objectiveId : undefined;
+      const objective = permissionSource.objectives.find((candidate) => candidate.id === objectiveId);
+      if (objective?.objectiveType === 'hr' || isKrOwnerForUser(user.id, context.id)) {
+        return allow('可查看 HR KR');
+      }
+      return deny();
+    }
+    return deny();
+  }
+
   if (action === 'daily_report.create') {
-    if (user.role !== 'employee' && user.role !== 'project_leader') return deny();
-    return context.ownerId === user.id && hasProjectRole(user.id, context.projectId)
-      ? allow('可创建本人日报')
-      : deny();
+    // Any organization member may author their own work record; OKR/KR linkage
+    // and project membership are optional, never a prerequisite.
+    return context.ownerId === user.id ? allow('可创建本人日报') : deny();
   }
 
   if (action === 'daily_report.edit') {
     const editable = 'date' in resource && 'status' in resource && 'authorId' in resource
       && canEditDailyReport(user.id, resource, currentBusinessDate());
-    return editable && hasProjectRole(user.id, context.projectId)
-      ? allow('可管理本人日报')
-      : deny();
+    return editable && context.ownerId === user.id ? allow('可管理本人日报') : deny();
   }
 
   if (action === 'daily_report.review') {

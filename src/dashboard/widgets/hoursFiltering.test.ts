@@ -72,6 +72,7 @@ describe('buildHourEntries scoping', () => {
       ],
       krAssignments: [],
       krProgressUpdates: [],
+      objectiveOwners: [],
       milestones: [],
       risks: [],
       progressSnapshots: [],

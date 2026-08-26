@@ -1,6 +1,8 @@
-import type { CompanyObjective, KeyResult, Milestone, Objective, ProgressSnapshot, Project, ProjectTask, Risk } from '../domain/types';
+import type { CompanyObjective, KeyResult, Milestone, Objective, ObjectiveOwner, ProgressSnapshot, Project, ProjectTask, Risk } from '../domain/types';
 
 export const companyObjectives: CompanyObjective[] = [{ id: 'company-growth', level: 'company', title: '提升客户价值与可持续增长', progress: 60, status: 'on_track', classification: 'public' }];
+
+export const objectiveOwners: ObjectiveOwner[] = [];
 
 export const projects: Project[] = [
   {

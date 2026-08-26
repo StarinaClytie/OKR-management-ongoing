@@ -89,6 +89,7 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
   const [status, setStatus] = useState<LocalizedMessage | null>(null);
   const [activeMutations, setActiveMutations] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showKrReminder, setShowKrReminder] = useState(false);
   const nextBlockId = useRef(initialDraft?.blocks.length ?? 1);
   const fieldRefs = useRef(new Map<string, HTMLElement>());
   const uploadSessionRef = useRef<DailyReportUploadSession | undefined>(uploadSession);
@@ -190,6 +191,21 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
 
   const lastBlockComplete = validateDailyReportDraft({ blocks: [draft.blocks[draft.blocks.length - 1]!], classification: draft.classification }, validationOptions).length === 0;
 
+  const hasNoLinkedKr = draft.blocks.every((block) => !block.linkedKeyResultId);
+
+  const performSubmit = async () => {
+    setIsSubmitting(true);
+    const session = uploadRepository && reportDate ? await ensureUploadSession() : uploadSessionRef.current;
+    if (uploadRepository && reportDate && !session) {
+      setIsSubmitting(false);
+      setStatus({ key: repositoryErrorKey(uploadSessionErrorRef.current ?? 'unknown') });
+      return;
+    }
+    const result = session ? await onSubmit(draft, session) : await onSubmit(draft);
+    setIsSubmitting(false);
+    setStatus(result.ok ? { key: mode === 'edit' ? 'daily.editSaved' : 'daily.submitted' } : result.error);
+  };
+
   const submit = async () => {
     if (isSubmitting || activeMutations > 0 || !uploadsComplete || !evidenceWithinClearance) return;
     setShowSubmitErrors(true);
@@ -202,16 +218,12 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
       control?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
       return;
     }
-    setIsSubmitting(true);
-    const session = uploadRepository && reportDate ? await ensureUploadSession() : uploadSessionRef.current;
-    if (uploadRepository && reportDate && !session) {
-      setIsSubmitting(false);
-      setStatus({ key: repositoryErrorKey(uploadSessionErrorRef.current ?? 'unknown') });
+    // Non-blocking reminder only: submitting without any linked KR still works.
+    if (hasNoLinkedKr) {
+      setShowKrReminder(true);
       return;
     }
-    const result = session ? await onSubmit(draft, session) : await onSubmit(draft);
-    setIsSubmitting(false);
-    setStatus(result.ok ? { key: mode === 'edit' ? 'daily.editSaved' : 'daily.submitted' } : result.error);
+    await performSubmit();
   };
 
   const cancel = async () => {
@@ -331,16 +343,14 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
               </div>
 
               <label className="modal-field">
-                <span>{t('daily.linkedQuarterlyKr')} *</span>
+                <span>{t('daily.linkedQuarterlyKr')}</span>
                 <select
                   id={`${block.id}-linked-key-result`}
                   ref={(element) => registerField(`${prefix}.linkedKeyResultId`, element)}
                   value={block.linkedKeyResultId}
-                  aria-invalid={Boolean(errorFor('linkedKeyResultId'))}
-                  aria-describedby={errorFor('linkedKeyResultId') ? errorId('linkedKeyResultId') : undefined}
                   onChange={(event) => updateBlock(block.id, { linkedKeyResultId: event.target.value })}
                 >
-                  <option value="">{t('daily.select')}</option>
+                  <option value="">{t('daily.unlinked')}</option>
                   {ownedKeyResults.map((keyResult) => {
                     const objective = objectiveById.get(keyResult.objectiveId);
                     return (
@@ -438,6 +448,19 @@ export function DailyReportForm({ mode = 'create', initialDraft, ownedKeyResults
         {!evidenceWithinClearance && <p id="daily-clearance-changed" className="daily-form-actions__hint">{t('daily.clearanceChanged')}</p>}
         {status && <p className="page-notice" role="status">{t(status.key, status.values)}</p>}
       </div>
+
+      {showKrReminder ? (
+        <div className="modal-scrim" onClick={(event) => { if (event.target === event.currentTarget) setShowKrReminder(false); }}>
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-label={t('daily.noKrReminderTitle')}>
+            <h2>{t('daily.noKrReminderTitle')}</h2>
+            <p>{t('daily.noKrReminderBody')}</p>
+            <div className="modal-actions">
+              <button type="button" className="button button--secondary" onClick={() => setShowKrReminder(false)}>{t('daily.continueEditing')}</button>
+              <button type="button" className="button button--primary" onClick={() => { setShowKrReminder(false); void performSubmit(); }}>{t('daily.confirmSubmit')}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }
