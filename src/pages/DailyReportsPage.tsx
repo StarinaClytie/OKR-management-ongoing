@@ -33,6 +33,7 @@ function blankBlock(linkedKeyResultId = ''): DailyReportDraft['blocks'][number] 
     id: 'block-1',
     dailyObjective: '',
     linkedKeyResultId,
+    projectId: '',
     workDescription: '',
     hours: 0,
     result: '',
@@ -115,8 +116,16 @@ export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataReposit
     const author = data.users.find((candidate) => candidate.id === report.authorId);
     return author?.role !== 'management' && can(currentUser, 'daily_report.review', report).allowed;
   });
-  const ownedKeyResults = data.keyResults.filter((keyResult) => isKrOwner(currentUser.id, keyResult.id, data.krAssignments) && can(currentUser, 'okr.read_summary', keyResult).allowed);
-  const linkableObjectives = data.objectives.filter((objective) => can(currentUser, 'okr.read_summary', objective).allowed);
+  const editingKeyResultIds = new Set(editingReport?.blocks?.map((block) => block.keyResultId).filter(Boolean) ?? []);
+  const objectiveById = new Map(data.objectives.map((objective) => [objective.id, objective]));
+  const ownedKeyResults = data.keyResults.filter((keyResult) => {
+    if (editingKeyResultIds.has(keyResult.id)) return true;
+    const objective = objectiveById.get(keyResult.objectiveId);
+    return isKrOwner(currentUser.id, keyResult.id, data.krAssignments) && !objective?.archivedAt;
+  });
+  const linkableObjectiveIds = new Set(ownedKeyResults.map((keyResult) => keyResult.objectiveId));
+  const linkableObjectives = data.objectives.filter((objective) => linkableObjectiveIds.has(objective.id));
+  const eligibleProjects = data.projects.filter((project) => project.leaderId === currentUser.id || project.memberIds.includes(currentUser.id));
   const requestedKrId = searchParams.get('krId');
   const requestedKr = requestedKrId ? ownedKeyResults.find((keyResult) => keyResult.id === requestedKrId) : undefined;
   const canAuthor = true;
@@ -166,6 +175,7 @@ export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataReposit
         blocks: draft.blocks.map((block) => ({
           dailyObjective: block.dailyObjective,
           linkedKeyResultId: block.linkedKeyResultId,
+          projectId: block.linkedKeyResultId ? '' : block.projectId,
           workDescription: block.workDescription,
           hours: block.hours,
           result: block.result,
@@ -331,6 +341,7 @@ export const DailyReportsPage = forwardRef<DailyReportsPageHandle, { dataReposit
             initialDraft={editingReport ? dailyReportToDraft(editingReport) : prefillDraft}
             ownedKeyResults={ownedKeyResults}
             objectives={linkableObjectives}
+            projects={eligibleProjects}
             onCancel={() => { restoreAuthoringFocus.current = true; setEditingReport(undefined); setIsAuthoring(false); }}
             onSubmit={handleSubmit}
             onDownloadAttachment={downloadPersistedAttachment}

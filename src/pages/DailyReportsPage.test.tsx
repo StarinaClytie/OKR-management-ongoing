@@ -32,7 +32,7 @@ function editableReport(authorId: string, withRetainedAttachment = false): Daily
     id: 'report-server-authority', authorId, projectId: 'project-orion', objectiveId: 'objective-orion-activation', keyResultIds: ['kr-orion-onboarding'],
     date: currentBusinessDate(), content: '当前目标', dailyObjective: '当前目标', classification: 'internal', hours: 2,
     evidence: attachment.map((item) => item.label), evidenceClassification: 'internal', attachmentIds: attachment.flatMap((item) => item.attachmentId ? [item.attachmentId] : []), status: 'submitted', currentRevision: 1,
-    blocks: [{ id: 'block-current', dailyObjective: '当前目标', keyResultId: 'kr-orion-onboarding', workDescription: '当前工作', hours: 2, result: '当前结果', keyResults: [], evidenceItems: attachment }],
+    blocks: [{ id: 'block-current', dailyObjective: '当前目标', projectId: 'project-orion', keyResultId: 'kr-orion-onboarding', workDescription: '当前工作', hours: 2, result: '当前结果', keyResults: [], evidenceItems: attachment }],
   };
 }
 
@@ -57,6 +57,47 @@ describe('DailyReportsPage', () => {
   it('shows a clear fill-today CTA when the employee owns assigned KRs', () => {
     renderPageAs('user-employee');
     expect(screen.getByRole('button', { name: '填写今日日报' })).toBeEnabled();
+  });
+
+  it('offers a KR assigned through kr_assignments even when its legacy owner is another user', async () => {
+    const data = mockRepository.getDashboardData('user-employee');
+    const assignedObjective = {
+      ...data.objectives[0]!,
+      id: 'objective-multi-owner',
+      projectId: 'project-nova',
+      title: '跨项目分配目标',
+      ownerId: 'user-project-peer',
+      classification: 'internal' as const,
+    };
+    const assignedKr = {
+      ...data.keyResults[0]!,
+      id: 'kr-multi-owner',
+      objectiveId: assignedObjective.id,
+      title: '多人负责的测试 KR',
+      ownerId: 'user-project-peer',
+      classification: 'internal' as const,
+    };
+    const dataRepository = {
+      mode: 'mock',
+      getDashboardData: vi.fn(async () => ({ ok: true as const, data: {
+        ...data,
+        objectives: [...data.objectives, assignedObjective],
+        keyResults: [...data.keyResults, assignedKr],
+        krAssignments: [...data.krAssignments, { id: 'assignment-worker', krId: assignedKr.id, userId: data.currentUser.id, assignmentRole: 'owner' as const }],
+      } })),
+    } as unknown as OkrRepository;
+    const auth: AuthContextValue = { status: 'ready', mode: 'supabase', currentUser: data.currentUser, selectableUsers: [], selectUser: vi.fn(), signOut: vi.fn() };
+    render(
+      <AuthContext.Provider value={auth}>
+        <LocaleProvider repository={dataRepository}>
+          <MemoryRouter><DailyReportsPage dataRepository={dataRepository} /></MemoryRouter>
+        </LocaleProvider>
+      </AuthContext.Provider>,
+    );
+
+    await userEvent.setup().click(await screen.findByRole('button', { name: '填写今日日报' }));
+
+    expect(screen.getByRole('option', { name: /多人负责的测试 KR/ })).toBeInTheDocument();
   });
 
   it('opens today\'s existing unconfirmed report from the fill-today CTA instead of a blank duplicate', async () => {
