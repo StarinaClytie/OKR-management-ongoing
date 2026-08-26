@@ -180,7 +180,7 @@ describe('SupabaseOkrRepository', () => {
       data: {
         id: 'report-1', authorId: 'author-1', authorName: '日报作者', date: '2026-08-24', status: 'submitted', hours: 8, currentRevision: 2,
         blocks: [{
-          id: 'block-1', dailyObjective: '完成光学测试', keyResultId: 'kr-1', workDescription: '完成测试和记录', hours: 8, result: '通过',
+          id: 'block-1', dailyObjective: '完成光学测试', projectId: '', keyResultId: 'kr-1', workDescription: '完成测试和记录', hours: 8, result: '通过',
           keyResult: { id: 'kr-1', title: '提升产品交付效率', description: '交付周期缩短 20%', ownerId: 'leader-1', ownerName: '直属负责人' },
           keyResults: [{ id: 'daily-kr-1', title: '记录测试结果' }],
           evidenceItems: [{ id: 'attachment-attachment-1', attachmentId: 'attachment-1', label: 'test-results.pdf', kind: 'file', classification: 'internal', uploadState: 'uploaded', uploadProgress: 100 }],
@@ -875,13 +875,14 @@ describe('SupabaseOkrRepository', () => {
       progress_baselines: [], milestones: [], risks: [], progress_snapshots: [],
       daily_reports: [{ id: 'report-1', author_id: 'profile-1', project_id: null, objective_id: null, report_date: '2026-08-24', status: 'submitted', classification: 'internal', total_hours: 8, current_revision: 1, updated_at: '2026-08-24T09:00:00.000Z' }],
       daily_report_revisions: [{ id: 'revision-1', report_id: 'report-1', revision_number: 1 }],
-      daily_okr_blocks: [{ id: 'block-1', report_id: 'report-1', revision_id: 'revision-1', position: 1, daily_objective: '今日目标', linked_key_result_id: 'kr-1', work_description: '工作', hours: 8, result: '完成', key_results: [], evidence_links: [] }],
+      daily_okr_blocks: [{ id: 'block-1', report_id: 'report-1', revision_id: 'revision-1', position: 1, daily_objective: '今日目标', project_id: 'project-1', linked_key_result_id: 'kr-1', work_description: '工作', hours: 8, result: '完成', key_results: [], evidence_links: [] }],
     });
 
     const result = await new SupabaseOkrRepository(client).getDashboardData('profile-1');
 
     if (!result.ok) throw new Error('Expected dashboard data');
     expect(result.data.dailyReports[0].projectId).toBe('project-1');
+    expect(result.data.dailyReports[0].blocks?.[0]?.projectId).toBe('project-1');
   });
 
   it('joins administrator-assigned clearance from profiles when directory rows omit it', async () => {

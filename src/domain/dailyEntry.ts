@@ -13,6 +13,8 @@ export interface DailyOkrBlockDraft {
   id: string;
   dailyObjective: string;
   linkedKeyResultId: string;
+  /** Explicit attribution for unlinked work; linked work derives this from its KR. */
+  projectId?: string;
   workDescription: string;
   hours: number;
   result: string;
@@ -112,6 +114,7 @@ export function validateDailyReportDraft(draft: DailyReportDraft, options: Daily
   draft.blocks.forEach((block, index) => {
     const field = `blocks.${index}`;
     if (!block.dailyObjective.trim()) issues.push({ field: `${field}.dailyObjective`, message: '请填写当日 O' });
+    if (!block.linkedKeyResultId && !block.projectId) issues.push({ field: `${field}.projectId`, message: '请选择所属项目' });
     if (!block.workDescription.trim()) issues.push({ field: `${field}.workDescription`, message: '请填写工作描述' });
     if (!block.result.trim()) issues.push({ field: `${field}.result`, message: '请填写结果或数据' });
     block.evidence.forEach((item, evidenceIndex) => {
@@ -173,10 +176,12 @@ export function toLocalDailyReport(
   const headerProjectId = firstResolved?.objective?.projectId ?? '';
 
   const reportBlocks = draft.blocks.map((block, index) => {
+    const resolved = blocks[index];
     return {
       id: `block-${context.authorId}-${context.date}-${index + 1}`,
       dailyObjective: block.dailyObjective,
       keyResultId: block.linkedKeyResultId,
+      projectId: resolved?.objective?.projectId ?? block.projectId,
       workDescription: block.workDescription,
       hours: block.hours,
       result: block.result,

@@ -126,14 +126,14 @@ revoke all on function private.can_hr_read_objective(uuid) from public, anon;
 
 create policy objective_owners_read on public.objective_owners for select to authenticated
 using (
-  organization_id = private.current_organization_id()
+  objective_owners.organization_id = private.current_organization_id()
   and (
-    private.can_hr_read_objective(objective_id)
+    private.can_hr_read_objective(objective_owners.objective_id)
     or exists (
       select 1
       from public.objectives o
-      where o.id = objective_id
-        and o.organization_id = organization_id
+      where o.id = objective_owners.objective_id
+        and o.organization_id = objective_owners.organization_id
         and private.can_read_business_subject(o.owner_id, o.project_id, o.organization_id)
     )
   )
@@ -651,6 +651,31 @@ execute function private.ensure_kr_owner_project_membership();
 
 -- 7. RLS: HR reads HR Objectives (and only those) ----------------------------
 
+create or replace function private.is_objective_kr_assignee(
+  p_objective_id uuid,
+  p_profile_id uuid default auth.uid()
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.key_results key_result
+    join public.kr_assignments assignment
+      on assignment.organization_id = key_result.organization_id
+     and assignment.kr_id = key_result.id
+    where key_result.organization_id = private.current_organization_id()
+      and key_result.objective_id = p_objective_id
+      and assignment.profile_id = p_profile_id
+  )
+$$;
+
+revoke all on function private.is_objective_kr_assignee(uuid, uuid)
+  from public, anon, authenticated;
+
 drop policy if exists objectives_read on public.objectives;
 create policy objectives_read on public.objectives for select to authenticated
 using (
@@ -658,17 +683,10 @@ using (
   and private.has_clearance(classification)
   and (
     private.can_read_business_subject(owner_id, project_id, organization_id)
-    or exists (
-      select 1
-      from public.key_results kr
-      join public.kr_assignments ka on ka.kr_id = kr.id
-      where kr.objective_id = objectives.id
-        and ka.organization_id = objectives.organization_id
-        and ka.profile_id = auth.uid()
-    )
+    or private.is_objective_kr_assignee(objectives.id)
     or exists (
       select 1 from public.reporting_lines rl
-      where rl.manager_id = owner_id and rl.subordinate_id = auth.uid() and rl.organization_id = organization_id
+      where rl.manager_id = objectives.owner_id and rl.subordinate_id = auth.uid() and rl.organization_id = objectives.organization_id
     )
     or private.can_hr_read_objective(objectives.id)
   )
@@ -677,26 +695,26 @@ using (
 drop policy if exists key_results_read on public.key_results;
 create policy key_results_read on public.key_results for select to authenticated
 using (
-  organization_id = private.current_organization_id()
-  and private.has_clearance(classification)
+  key_results.organization_id = private.current_organization_id()
+  and private.has_clearance(key_results.classification)
   and (
-    private.can_read_business_subject(owner_id, project_id, organization_id)
-    or private.is_kr_assignee(id)
-    or private.can_hr_read_objective(objective_id)
+    private.can_read_business_subject(key_results.owner_id, key_results.project_id, key_results.organization_id)
+    or private.is_kr_assignee(key_results.id)
+    or private.can_hr_read_objective(key_results.objective_id)
   )
 );
 
 drop policy if exists kr_assignments_read on public.kr_assignments;
 create policy kr_assignments_read on public.kr_assignments for select to authenticated
 using (
-  organization_id = private.current_organization_id()
+  kr_assignments.organization_id = private.current_organization_id()
   and (
-    profile_id = auth.uid()
+    kr_assignments.profile_id = auth.uid()
     or exists (
       select 1
       from public.key_results kr
-      where kr.id = kr_id
-        and kr.organization_id = organization_id
+      where kr.id = kr_assignments.kr_id
+        and kr.organization_id = kr_assignments.organization_id
         and private.has_clearance(kr.classification)
         and private.can_read_business_subject(kr.owner_id, kr.project_id, kr.organization_id)
     )
@@ -704,8 +722,8 @@ using (
       select 1
       from public.key_results kr
       join public.objectives o on o.id = kr.objective_id and o.organization_id = kr.organization_id
-      where kr.id = kr_id
-        and kr.organization_id = organization_id
+      where kr.id = kr_assignments.kr_id
+        and kr.organization_id = kr_assignments.organization_id
         and o.objective_type = 'hr'
         and private.has_role('hr')
     )
@@ -718,8 +736,8 @@ using (
   exists (
     select 1
     from public.key_results kr
-    where kr.id = kr_id
-      and kr.organization_id = organization_id
+    where kr.id = kr_progress_updates.kr_id
+      and kr.organization_id = kr_progress_updates.organization_id
       and private.has_clearance(kr.classification)
       and (
         private.can_read_business_subject(kr.owner_id, kr.project_id, kr.organization_id)

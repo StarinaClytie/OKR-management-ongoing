@@ -31,6 +31,16 @@ function buildData(): DashboardData {
 }
 
 describe('HoursWidget filters', () => {
+  it('does not show the member filter to an employee viewing personal hours', () => {
+    const data = buildData();
+    data.currentUser = { ...data.users[0]!, projectIds: ['p1'] };
+
+    render(<HoursWidget data={data} />);
+
+    expect(screen.queryByLabelText('成员')).not.toBeInTheDocument();
+    expect(screen.getByText('共 3 小时 · 1 名成员 · 1 条记录')).toBeVisible();
+  });
+
   it('narrows objective options when a project is selected and resets filters', async () => {
     const user = userEvent.setup();
     render(<HoursWidget data={buildData()} />);

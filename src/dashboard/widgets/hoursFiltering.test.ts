@@ -67,8 +67,12 @@ describe('buildHourEntries scoping', () => {
         { id: 'k2', objectiveId: 'o2', title: 'K2', ownerId: 'other', progress: 0, status: 'on_track', startDate: '', dueDate: '', classification: 'internal' },
       ],
       dailyReports: [
-        { id: 'r1', authorId: 'other', projectId: 'p1', objectiveId: 'o1', keyResultIds: ['k1'], date: '2026-08-19', content: '', classification: 'internal', hours: 3, evidence: [], evidenceClassification: 'internal', attachmentIds: [], status: 'submitted', blocks: [{ id: 'b1', dailyObjective: 'O', keyResultId: 'k1', hours: 3, result: '', keyResults: [{ id: 'kr1', title: 'KR' }] }] },
-        { id: 'r2', authorId: 'other', projectId: 'p2', objectiveId: 'o2', keyResultIds: ['k2'], date: '2026-08-19', content: '', classification: 'internal', hours: 5, evidence: [], evidenceClassification: 'internal', attachmentIds: [], status: 'submitted', blocks: [{ id: 'b2', dailyObjective: 'O', keyResultId: 'k2', hours: 5, result: '', keyResults: [{ id: 'kr2', title: 'KR' }] }] },
+        { id: 'r1', authorId: 'other', projectId: 'p1', objectiveId: 'o1', keyResultIds: ['k1', 'k2'], date: '2026-08-19', content: '', classification: 'internal', hours: 7, evidence: [], evidenceClassification: 'internal', attachmentIds: [], status: 'submitted', blocks: [
+          { id: 'b1', dailyObjective: 'O', projectId: 'p1', keyResultId: 'k1', hours: 3, result: '', keyResults: [{ id: 'kr1', title: 'KR' }] },
+          { id: 'b1-other', dailyObjective: 'O2', projectId: 'p2', keyResultId: 'k2', hours: 4, result: '', keyResults: [{ id: 'kr2', title: 'KR2' }] },
+        ] },
+        { id: 'r2', authorId: 'other', projectId: 'p2', objectiveId: 'o2', keyResultIds: ['k2'], date: '2026-08-19', content: '', classification: 'internal', hours: 5, evidence: [], evidenceClassification: 'internal', attachmentIds: [], status: 'submitted', blocks: [{ id: 'b2', dailyObjective: 'O', projectId: 'p2', keyResultId: 'k2', hours: 5, result: '', keyResults: [{ id: 'kr2', title: 'KR' }] }] },
+        { id: 'r3', authorId: 'leader', projectId: 'p2', objectiveId: 'o2', keyResultIds: [], date: '2026-08-19', content: '', classification: 'internal', hours: 2, evidence: [], evidenceClassification: 'internal', attachmentIds: [], status: 'submitted', blocks: [{ id: 'b3', dailyObjective: 'Own', projectId: 'p2', keyResultId: '', hours: 2, result: '', keyResults: [{ id: 'kr3', title: 'Own work' }] }] },
       ],
       krAssignments: [],
       krProgressUpdates: [],
@@ -84,20 +88,23 @@ describe('buildHourEntries scoping', () => {
   }
 
   it('management sees all entries', () => {
-    expect(buildHourEntries(dataFor('management'))).toHaveLength(2);
+    expect(buildHourEntries(dataFor('management'))).toHaveLength(4);
   });
 
-  it('project leader sees only blocks under objectives they lead', () => {
+  it('project leader sees own work plus only member blocks attributed to projects they lead', () => {
     const entriesForLeader = buildHourEntries(dataFor('project_leader'));
-    expect(entriesForLeader).toHaveLength(1);
-    expect(entriesForLeader[0]).toMatchObject({ objectiveId: 'o1', keyResultId: 'k1' });
+    expect(entriesForLeader).toHaveLength(2);
+    expect(entriesForLeader).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: 'other', projectId: 'p1', keyResultId: 'k1', hours: 3 }),
+      expect.objectContaining({ userId: 'leader', projectId: 'p2', keyResultId: '', hours: 2 }),
+    ]));
   });
 
   it('employee sees only their own reports', () => {
     const data = dataFor('employee');
     data.currentUser.id = 'other';
     const entriesForEmployee = buildHourEntries(data);
-    expect(entriesForEmployee).toHaveLength(2);
+    expect(entriesForEmployee).toHaveLength(3);
     expect(entriesForEmployee.every((entry) => entry.userId === 'other')).toBe(true);
   });
 });
