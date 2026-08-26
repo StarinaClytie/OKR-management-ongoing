@@ -2,7 +2,12 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(19);
+select plan(20);
+
+select ok(
+  has_function_privilege('authenticated', 'private.can_hr_read_objective(uuid)', 'execute'),
+  'authenticated users can execute the HR Objective RLS helper'
+);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: one organization with management, a project leader, two HR users,
