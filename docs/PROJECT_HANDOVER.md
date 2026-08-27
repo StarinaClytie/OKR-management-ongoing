@@ -14,6 +14,36 @@
 
 ---
 
+## 目录
+
+| # | 章节 | # | 章节 |
+| --- | --- | --- | --- |
+| 1 | [Executive Summary](#1-executive-summary) | 22 | [Migration History](#22-migration-history最近重要迁移) |
+| 2 | [Current Status](#2-current-status) | 23 | [Migration Drift Risk](#23-migration-drift-risk本次实际发生过的事故) |
+| 3 | [系统架构](#3-系统架构) | 24 | [Known Issues](#24-known-issues) |
+| 4 | [Frontend Architecture](#4-frontend-architecture) | 25 | [RLS recursion 专项结论](#25-rls-recursion-专项结论) |
+| 5 | [Data Layer](#5-data-layer) | 26 | [Tests](#26-tests) |
+| 6 | [Authentication & Authorization](#6-authentication--authorization角色体系) | 27 | [本地开发](#27-本地开发) |
+| 7 | [前端权限 vs 数据库权限](#7-前端权限-vs-数据库权限双层权限) | 28 | [Production Deployment](#28-production-deployment) |
+| 8 | [OKR 数据模型](#8-okr-数据模型) | 29 | [Environment Variables](#29-environment-variables仅列名字不写值) |
+| 9 | [HR OKR](#9-hr-okr单独一节) | 30 | [Troubleshooting](#30-troubleshooting) |
+| 10 | [Daily Report 架构](#10-daily-report-架构重点) | 31 | [最近踩过的工程问题](#31-最近踩过的工程问题-problem--root-cause--fix--avoid) |
+| 11 | [Daily Report Block Model](#11-daily-report-block-modelblock-level-project-attribution) | 32 | [Read First](#32-what-the-next-developer-should-read-first) |
+| 12 | [KR Optional 设计](#12-kr-optional-设计) | 33 | [第一天接手 Checklist](#33-第一天接手-checklist) |
+| 13 | [Project Leader 日报权限](#13-project-leader-日报权限曾出过-bug-的区域) | 34 | [Do Not Do](#34-do-not-do) |
+| 14 | [Daily Report Review Flow](#14-daily-report-review-flow) | 35 | [Open Questions](#35-open-questions) |
+| 15 | [附件系统（OSS）](#15-附件系统oss) | **36** | **[生产基础设施拓扑（阿里云）](#36-生产基础设施拓扑阿里云)** |
+| 16 | [Work Hours](#16-work-hours) | **37** | **[邮件认证现状与 signup 504](#37-邮件认证现状与-signup-504-事故)** |
+| 17 | [HR Work Hours 页面](#17-hr-work-hours-页面) | **38** | **[Nginx 已知运维风险](#38-nginx-已知运维风险)** |
+| 18 | [Dashboard](#18-dashboard) | **39** | **[Secret 清单与交接方式](#39-secret-清单与交接方式)** |
+| 19 | [Database Architecture](#19-database-architecture核心表分类) | **40** | **[运维、监控与备份](#40-运维监控与备份)** |
+| 20 | [RLS](#20-rls最重要表的控制原则) | **41** | **[待办事项（Handover TODO）](#41-待办事项handover-todo)** |
+| 21 | [SECURITY DEFINER / RPC](#21-security-definer-functions--rpc) | 42 | [附录：源码与迁移对照](#42-附录关键源码与迁移对照) |
+
+> §1–§35 是**代码与数据库**层面的交接；§36–§41 是**生产环境与运维**层面的交接。接手生产的人请先读 §36 → §37 → §38 → §39 → §41。
+
+---
+
 ## 1. Executive Summary
 
 这是一个**面向公司内部的 OKR 管理系统**，不是 demo/原型，而是一个 production-oriented 系统：它同时承载
@@ -58,15 +88,15 @@
 - HR 工作工时总览 ✅（`get_hr_work_hours`，仅投资行、无正文/附件）
 
 #### Daily Report —— 已完成
-- 所有组织角色可填自己的日报 ✅（前端 `daily_report.create` 对 owner==self 放行；但见 §13/§17 的 DB 层 project 归属约束）
+- 所有组织角色可填自己的日报 ✅（前端 `daily_report.create` 对 owner==self 放行；但见 §11 的归属规则与 §24 Known Issue #4 的 DB 层 project 归属约束）
 - KR 关联 optional ✅
 - 不关联 KR 时提醒但允许提交 ✅（`showKrReminder` 非阻塞弹窗）
 - Daily block project attribution ✅（`daily_okr_blocks.project_id`）
 - 不同 block 可归属不同 project ✅
-- Project Leader 日报读取边界 ✅（**block-level**，见 §14）
+- Project Leader 日报读取边界 ✅（**block-level**，见 §13）
 - Management 日报无需审批 ✅（`can_review_daily_report` 排除 management 作者）
-- Admin 日报 ✅（前端任意角色可写；但见 §13 的 DB 约束缺口）
-- 日报附件 ✅（OSS，见 §16）
+- Admin 日报 ✅（前端任意角色可写；但见 §24 Known Issue #4 的 DB 约束缺口）
+- 日报附件 ✅（OSS，见 §15）
 - revision history ✅（`list_report_revisions`）
 - review / confirm ✅（`comment_daily_report` / `confirm_daily_report`）
 
@@ -75,6 +105,13 @@
 - Project Leader：本人 + 所负责项目的成员 block
 - Management：组织级
 - HR：`get_hr_work_hours`（结构化工时，无正文/附件）
+
+#### 认证 —— 部分受损
+- 邮箱认证：**是当前唯一的生产认证方式**，但存在 **signup `504 request_timeout` 生产故障**（新用户无法完成注册）。见 §37。
+- 手机 / 短信认证：**业务代码未实现**，阿里云侧已初步配置但 OTP 仍 `request_timeout`，**不能视为已完成功能**。见 §41 P2 #11。
+
+#### 生产运维 —— 未完成
+- 监控 / 告警：**无**。日志：分散未集中。备份：策略未记录、恢复未演练。见 §40.2、§41。
 
 ---
 
@@ -179,7 +216,7 @@ flowchart TB
 3. `currentUser = users.find(id == session.user.id)`
 4. map objectives / keyResults / projects / milestones / risks / progressSnapshots / krAssignments / objectiveOwners / krProgressUpdates
 5. 按 `daily_report_revisions` 解析**当前修订**的 blocks，并把附件归到对应 block（`attachmentsByBlockId`，兼容 legacy `legacyAttachmentsByReportId`）
-6. `dailyReports` 的 `projectId` 缺省时，从第一个已关联 KR 反推 `projectIdForKeyResult`（见 §12 的 report-level vs block-level）
+6. `dailyReports` 的 `projectId` 缺省时，从第一个已关联 KR 反推 `projectIdForKeyResult`（见 §11 的 report-level vs block-level）
 7. `configurePermissionSource(buildPermissionSource(dashboardData))` —— **这一步很关键**：把 RLS 已披露的项目成员关系喂给前端权限求值器，否则 `hasProjectRole` 匹配空数组，Project Leader 会失去成员日报/工时可见性。
 
 ### Repository pattern 作用 / demo vs production
@@ -263,7 +300,7 @@ PostgreSQL RLS / SECURITY DEFINER RPC —— 真正的权限，每次读写在 D
 - 判定"某人是否 KR owner"用 `isKrOwner(userId, krId, krAssignments)` / DB `private.is_kr_assignee`（走 `kr_assignments`），不是 `owner_id`。
 - `create_key_result`/`update_key_result` 会重建 `kr_assignments`；`kr_assignments` 上还有 `ensure_kr_owner_project_membership` trigger（business KR 自动把 owner 加进 project_members；HR KR 只校验 HR 资格、不加入 project）。
 
-> 前端还有一个**已知不一致**：`TodayFocusWidget` 用 `keyResult.ownerId === currentUser.id`（单 owner 字段）判断"可写日报"，而真正的多负责人判断是 `isKrOwner`（`kr_assignments`）。见 §26 Known Issues。
+> 前端还有一个**已知不一致**：`TodayFocusWidget` 用 `keyResult.ownerId === currentUser.id`（单 owner 字段）判断"可写日报"，而真正的多负责人判断是 `isKrOwner`（`kr_assignments`）。见 §24 Known Issues。
 
 ---
 
@@ -335,7 +372,7 @@ Block 2 → Project B（关联另一 KR）
 Block 3 → 无 KR，但显式归属 Project C
 ```
 
-`daily_reports.project_id` 只是"第一个已关联 KR 的 project"的 legacy 汇总，无法表达多个 block 归属不同 project。因此可见性/审阅/工时都改成 **block-level**（见 §14）。
+`daily_reports.project_id` 只是"第一个已关联 KR 的 project"的 legacy 汇总，无法表达多个 block 归属不同 project。因此可见性/审阅/工时都改成 **block-level**（见 §13）。
 
 归属规则（`private.resolve_daily_report_block_project`）：
 
@@ -352,7 +389,7 @@ Block 3 → 无 KR，但显式归属 Project C
 - 后端 `save_daily_report`：`linked_kr is not null` 时才校验 `is_kr_owner`；无 KR 时 resolve 到 null project（由 block 的 `resolve_daily_report_block_project` 补显式 project）。
 - 前端校验：无 KR 时必须选"所属项目"（`validateDailyReportDraft`：`!linkedKeyResultId && !projectId` → 报"请选择所属项目"）。
 - 项目选择：无 KR 时，`eligibleProjects = projects.filter(leaderId==me || memberIds.includes(me))`（前端）；后端 `resolve_daily_report_block_project` 再次校验 leader/member。
-- 任何角色前端都能点"填写日报"（`canAuthor = true`），但**能否真正提交受 DB 的 project 归属约束**（见 §13/§17 的缺口）。
+- 任何角色前端都能点"填写日报"（`canAuthor = true`），但**能否真正提交受 DB 的 project 归属约束**（见 §11 归属规则与 §24 Known Issue #4 的缺口）。
 
 ---
 
@@ -406,7 +443,7 @@ Block 3 → 无 KR，但显式归属 Project C
 - 服务端：`server/app.ts`、`server/auth.ts`、`server/oss.ts`、`server/config.ts`
 - DB 契约：`authorize_attachment_object_upload/download`、`request_attachment_object_deletion`、`confirm_attachment_object_upload/deletion`（daily）；资源附件对应 `*_resource_attachment_*`。
 
-> 不要在这里写真实 AccessKey/Secret/Bucket/密码。环境变量名见 §31。资源附件走 `/api/resource-attachments`，同一套机制。
+> 不要在这里写真实 AccessKey/Secret/密码。环境变量名见 §29，OSS bucket 与 CORS 的生产事实见 §36，密钥存放与交接见 §39。资源附件走 `/api/resource-attachments`，同一套机制。
 
 ---
 
@@ -438,7 +475,7 @@ HR 能看结构化工时，但 **RLS 不让 HR 读日报正文/附件/evidence**
 - **aggregation**：`hrHourStats`（总工时 / 成员数 / KR 数）。
 - 数据源：`repository.getHrWorkHours({from,to})` → `get_hr_work_hours` RPC。
 
-> ⚠️ 当前真实状态的一个**不一致**：`get_hr_work_hours` 里的 `projectId`/`projectName` 是从 `kr.project_id`（linked KR 的 project）解析的，**不是 `b.project_id`**。这意味着"无 KR 但有 block-level project"的记录在 HR 工时里 project 列为空。这是 block attribution 落地后 HR 工时 RPC 未同步改动的遗留（见 §26 Known Issues）。
+> ⚠️ 当前真实状态的一个**不一致**：`get_hr_work_hours` 里的 `projectId`/`projectName` 是从 `kr.project_id`（linked KR 的 project）解析的，**不是 `b.project_id`**。这意味着"无 KR 但有 block-level project"的记录在 HR 工时里 project 列为空。这是 block attribution 落地后 HR 工时 RPC 未同步改动的遗留（见 §24 Known Issues）。
 
 ---
 
@@ -500,7 +537,7 @@ widget 列表（`DashboardGrid`）：today-focus / my-key-results / company-heal
 | `daily_reports` | `reports_read` → `can_read_report_detail`（author/management/至少一个可读 block） |
 | `daily_okr_blocks` | `daily_okr_blocks_read` → `can_read_daily_report_block` |
 
-**写**几乎全部走 SECURITY DEFINER RPC，表级 write policy 多数是**死代码**（因为表级 `grant insert/update` 已撤回）。**例外且是已知风险**：`objectives`、`key_results` 仍对 `authenticated` 授予了 `INSERT/UPDATE`，且 `objectives_owner_write`/`key_results_owner_write` 是 `ALL` 策略——详见 §25 Critical #1。
+**写**几乎全部走 SECURITY DEFINER RPC，表级 write policy 多数是**死代码**（因为表级 `grant insert/update` 已撤回）。**例外且是已知风险**：`objectives`、`key_results` 仍对 `authenticated` 授予了 `INSERT/UPDATE`，且 `objectives_owner_write`/`key_results_owner_write` 是 `ALL` 策略——详见 §24 Known Issues 的 Critical #1。
 
 ---
 
@@ -597,7 +634,7 @@ widget 列表（`DashboardGrid`）：today-focus / my-key-results / company-heal
 
 ### 为什么不能再改已部署的 migration
 
-已应用进 `supabase_migrations` 历史表的 migration，`db push` 不会重跑；改它只会让"新库 vs 生产"继续分叉。
+已经应用过的 migration，生产不会再重跑（当前生产 migration 走 `psql` 手动执行 forward 文件；若该次执行已记录进 `supabase_migrations.schema_migrations`，它不会因编辑文件而重放）；改它只会让"新库 vs 生产"继续分叉。
 
 ### `202608270007_production_schema_convergence.sql` 如何解决
 
@@ -623,7 +660,9 @@ widget 列表（`DashboardGrid`）：today-focus / my-key-results / company-heal
 | L3 | L2 + 紧急 SQL（不同参数名 helper + `can_read_kr_assignment`） | 非 canonical | IDENTICAL（helper 被退休） |
 | L4 | L3 + 260001 第 8–11 节也没跑 | 非 canonical | IDENTICAL |
 
-四者都收敛到与 clean-reset **逐字节一致**。部署前务必先在生产跑 `npx supabase db push --dry-run` 并核对生产实际落在哪个变体。
+四者都收敛到与 clean-reset **逐字节一致**。
+
+**L1–L4 只是历史事故复现 / legacy-upgrade regression harness 的四种 legacy 起点，不是当前生产的未决状态。** `202608270007_production_schema_convergence.sql` **已经用 `psql + ON_ERROR_STOP + transaction` 成功执行到生产**，并已验证收敛到 canonical schema（`private.is_objective_kr_assignee(uuid,uuid)` exists、`private.can_read_kr_assignment(uuid,uuid)` absent、`get_hr_work_hours(date,date)` exists、canonical key RLS policies exist）。当前生产 schema 已等于 `main` 的 canonical schema，无需再判断"生产落在 L1–L4 哪个变体"。
 
 ### 后续开发铁律
 
@@ -661,7 +700,6 @@ widget 列表（`DashboardGrid`）：today-focus / my-key-results / company-heal
 
 11. **`list_organization_users` 的 HR 分支排除 admin**（Confirmed）：HR 目录只返回 PL/employee/HR，不含 admin——需确认这是否符合预期。
 12. **`daily_reports.status` 的 `returned` 无写路径**（Confirmed）：遗留状态。
-13. **生产实际落在 L1–L4 哪个变体需人工确认**（Needs production verification）。
 
 ---
 
@@ -712,7 +750,7 @@ cp .env.example .env.local      # demo 或 supabase，见下
 npm run dev
 ```
 
-环境变量见 §31。`demo` 模式无需 Supabase；`supabase` 模式需 `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`。
+环境变量见 §29。`demo` 模式无需 Supabase；`supabase` 模式需 `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`。
 
 验证：`npm run typecheck && npm run test:run && npm run build && npx supabase db reset && npx supabase test db`。
 
@@ -720,19 +758,157 @@ npm run dev
 
 ## 28. Production Deployment
 
-> 本节**只能描述代码仓库可确认的内容**；以下是仓库无法确定的，需由当前维护者补充：
+> 基础设施拓扑（ECS / RDS / OSS / Nginx / 域名 / 内外网）见 **§36**；密钥存放与交接见 **§39**。本节只讲**发布动作**。
 
-- production server / ECS 编排
-- domain（仅能从文档看到 `api.okr.trspectra.com` 与站点域名分开）
-- RDS host / 连接串
-- nginx 配置 / SSL
-- OSS Bucket / region / endpoint 的真实值
-- production passwords / secrets
-- RDS Supabase 实例的项目 ID、地域、外网/内网连接地址与生产迁移执行账号
+### 28.1 生产坐标
 
-已由当前维护者确认：生产身份认证与数据库服务使用**阿里云托管 RDS Supabase**，不是 ECS 上自行运行的 Supabase/GoTrue 容器。ECS 可能仍承载 Nginx、附件服务或其他应用组件，但不能据此假设可以通过 `docker logs` 查看 GoTrue；Auth/SMTP 配置、实例重启和相关诊断应从阿里云 RDS Supabase 控制台或工单渠道处理。
+| 项 | 值 |
+| --- | --- |
+| GitHub repo | `https://github.com/StarinaClytie/OKR-management-ongoing.git`（remote `origin`） |
+| 部署分支 | `main`（生产只发布 `main` 上已合并的 commit） |
+| ECS 服务器项目目录 | `/var/www/timetech-okr` |
+| 前端站点域名 | `https://okr.trspectra.com` |
+| Auth / PostgREST API 域名 | `https://api.okr.trspectra.com` |
+| 前端构建产物 | `dist/`（由 Nginx 作为 SPA 静态站点托管，需 `try_files $uri $uri/ /index.html`） |
+| 附件服务构建产物 | `dist-server/`（Node/Express，监听 `127.0.0.1:3001`） |
+| 附件服务 systemd 单元 | `timetech-attachment-api`（`/etc/systemd/system/timetech-attachment-api.service`，`User=ecs-user`） |
+| 附件服务密钥文件 | `/var/www/timetech-okr/.env.production.local`（systemd `EnvironmentFile`） |
 
-**Infra details must be completed by the current maintainer.** 相关的参考文档：`docs/supabase-setup.md`、`docs/alibaba-rds-supabase-init.md`、`docs/alibaba-oss-daily-attachments.md`、`docs/gotrue-email-templates.md`、`docs/admin-invite-deploy.md`、`docs/admin-users-deploy.md`。
+### 28.2 `.env.production` 与 `.env.production.local` 的职责划分
+
+两个文件**职责完全不同，不要互相复制内容**：
+
+| 文件 | 谁读它 | 放什么 | 是否进 Git |
+| --- | --- | --- | --- |
+| `.env.production` | **Vite 构建期**（`build:production`），值会被编译进浏览器 bundle | 只放浏览器公开变量：`VITE_APP_MODE`、`VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY` | 否（`.gitignore` 已忽略）。模板是仓库里的 `.env.production.example` |
+| `.env.production.local` | **运行时**：systemd 通过 `EnvironmentFile` 注入给 Node 附件服务；同时也会被 Vite 生产构建读取并覆盖前者 | 服务端专用密钥：`OSS_*`、`SUPABASE_SERVICE_ROLE_KEY`、`SUPABASE_URL`、`SUPABASE_ANON_KEY`、`ATTACHMENT_API_HOST/PORT` | 否（`.gitignore` 忽略 `.env.*.local`） |
+
+- Vite 生产模式的读取顺序是 `.env` → `.env.local` → `.env.production` → `.env.production.local`，**后者覆盖前者**；由 CI/服务器进程注入的同名环境变量优先级最高。
+- ⚠️ 因为 `.env.production.local` 也在 Vite 的读取链里，**放进去的任何 `VITE_` 前缀变量都会进浏览器 bundle**。服务端密钥必须保持无 `VITE_` 前缀（`OSS_ACCESS_KEY_SECRET`、`SUPABASE_SERVICE_ROLE_KEY` 等无前缀变量 Vite 不会注入前端）。**永远不要把密钥改成 `VITE_` 变量。**
+- 附件服务在未单独配置 `SUPABASE_URL`/`SUPABASE_ANON_KEY` 时，会兼容读取进程环境里已有的 `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`。这只是服务端的向后兼容读取，不是"密钥可以用 `VITE_`"的许可。
+- 文件权限：`.env.production.local` 应为 `chmod 600`，属主与 systemd `User=` 一致。
+
+### 28.3 标准发布顺序（需事先批准）
+
+每一步失败即停止。**不要执行脱离 Git 的临时手工 SQL，也不要用 `migration repair` 绕过失败**。生产只执行仓库中已经 review / 批准的 forward migration SQL，当前执行工具是 `psql`。
+
+**0) 本地验证（Supabase CLI 只在这一步使用，用于本地 db reset / pgTAP / migration validation）**
+
+```bash
+npm run typecheck && npm run test:run && npm run build
+npx supabase db reset && npx supabase test db && npx supabase db lint
+scripts/legacy-upgrade/run.sh all          # 迁移收敛回归，见 §23
+```
+
+**1) 生产数据库 migration —— 当前真实流程是 `psql` 直连 Alibaba RDS PostgreSQL，不是 `supabase db push`**
+
+> 生产 migration 通过 `psql` 直连阿里云 RDS PostgreSQL 执行 SQL migration 文件；`202608270007_production_schema_convergence.sql` 就是用 `psql + ON_ERROR_STOP + transaction` 成功执行到生产的（见 §23）。Supabase CLI 的 `db push` 已**不是**当前生产 migration 机制，不要在生产上用。
+
+```bash
+# 密码从受保护环境注入，禁止把密码直接写进命令（会进 shell history）。
+# 交互式输入示例：
+read -s PGPASSWORD          # 不回显输入，也不写入 shell history
+export PGPASSWORD
+echo
+
+# 以 libpq 连接串引用（psql 与 pg_dump 同一套 URI 语法）。
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+  -f supabase/migrations/<最新迁移>.sql    # 只执行本次审批的 forward migration
+
+# 建议：把多个 forward migration 包进一个显式事务，失败整体回滚
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction \
+  -f supabase/migrations/<迁移A>.sql \
+  -f supabase/migrations/<迁移B>.sql
+
+unset PGPASSWORD
+```
+
+> 更稳妥的方式是从受保护环境注入 `PGPASSWORD` / `DATABASE_URL`（例如从密码库拉取到临时变量、或由 CI secret 注入），全程**不把明文密码写进命令或文件**。
+
+- 生产库 host 用 `<RDS_HOST>` 占位；**不要在本文件或任何仓库文件里写真实 host / password**。真实值只存在于受保护的运维密码库 / 受保护的 `DATABASE_URL`。
+- **不要无条件把 `supabase_migrations.schema_migrations` 当成 production source of truth**：裸 `psql -f` 并不会天然写入该表。是否同步写入 `supabase_migrations.schema_migrations` 必须在生产**实测确认**。未确认前，判断"某个 migration 是否已部署"要结合 **Git 历史 + 运维执行记录 + 数据库目标对象状态**（见 §28.4 第 5 条）综合判断。
+- **不允许因为 `schema_migrations` 缺一条就盲目重放生产 SQL**——那会造成重复执行 / drift。执行后再次用只读查询核对目标对象状态。不要用 `migration repair` 或 `db push` 去"对齐"生产。
+
+**2) 服务器构建（CURRENT PRODUCTION DEPLOYMENT，见 §28.6）**
+
+```bash
+cd /var/www/timetech-okr
+git fetch origin && git checkout main && git pull --ff-only
+npm ci
+npm run build:production   # 先跑 verify-supabase-config.mjs --production，再 vite build → dist/
+npm run server:build       # tsc -p tsconfig.server.json → dist-server/
+```
+
+**3) 重启附件服务（只有这一个服务，不要新建第二个）**
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable timetech-attachment-api
+sudo systemctl restart timetech-attachment-api
+curl -fsS http://127.0.0.1:3001/api/health
+```
+
+**4) Nginx**
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+curl -fsS https://okr.trspectra.com/api/health
+```
+
+### 28.4 发布后门禁
+
+- `rg -a 'https://api\.okr\.trspectra\.com' dist` → 必须命中（公开 API 域名已入包）。
+- `rg -a -i '\.rds\.apsaradb\.com|rds\.aliyuncs\.com|rm-[a-z0-9-]+\..*aliyuncs\.com' dist` → **必须零命中**（内部 RDS 主机名不得入包）。任何命中立即停止发布。
+- 复核 `dist/`、Git、Nginx 配置、日志中均无 OSS AccessKey、service-role key、数据库密码、JWT secret。
+- 用隔离的已批准 QA 账号跑一次日报与资源附件的上传 / HEAD 校验 / 下载 / 删除。
+- 只读聚合校验（不含凭据）：`daily_report_upload_sessions` 按 status 计数、`invalid_session_attachment_links` 必须为 0。
+- **007 收敛结果只读校验**（生产已执行 `202608270007` 并验证收敛到 canonical，见 §23；每次发布后可用只读查询复核）：
+
+  ```sql
+  select to_regprocedure('private.is_objective_kr_assignee(uuid,uuid)') is not null;  -- true
+  select to_regprocedure('private.can_read_kr_assignment(uuid,uuid)') is null;        -- true（已被退休）
+  select to_regprocedure('public.get_hr_work_hours(date,date)') is not null;          -- true
+  -- canonical key RLS policies 存在（objectives_read / key_results_read /
+  -- kr_assignments_read / kr_progress_updates_read / objective_owners_read）
+  select policyname from pg_policies where schemaname='public' and tablename in
+    ('objectives','key_results','kr_assignments','kr_progress_updates','objective_owners');
+  ```
+
+### 28.5 回滚
+
+- 迁移是 **forward-only**。不要 drop 新表/列、不要删 migration history、不要为回滚前端重新开放旧 RPC（会恢复残留 pending、绕过锁定、重新暴露 Storage 传输）。
+- **CURRENT PRODUCTION DEPLOYMENT**（当前部署方式，见 §28.6）：前端回滚 = `git checkout <上一个 commit>` + 重新构建 + `nginx reload`，且目标构建必须与当前 RPC 签名兼容。
+- **RECOMMENDED IMPROVEMENT**（若已采用 §28.6 的 release/symlink 架构）：前端回滚 = symlink 切回上一 release + `reload nginx`。
+- 数据层出问题时：先关闭写入口 / 回滚前端，再用演练过的备份恢复或补丁 forward migration。
+
+### 28.6 当前部署方式 vs 建议加固
+
+> 下面是**当前事实**与**未来建议**的明确区分，避免下一任把建议误认为已经部署。
+
+**CURRENT PRODUCTION DEPLOYMENT（当前实际）**：
+
+- 项目目录 `/var/www/timetech-okr`
+- `git fetch origin && git checkout main && git pull --ff-only`
+- `npm ci`
+- `npm run build:production`
+- 附件服务构建 + 重启（`npm run server:build` → `systemctl restart timetech-attachment-api`，**该服务当前确实存在**）
+- `sudo nginx -t && sudo systemctl reload nginx`
+
+**RECOMMENDED HARDENING（建议，尚未确认已部署）**：
+
+- release 目录（每版本一个目录）+ 原子 symlink 切换，保留上一 release 与其 commit SHA
+- 失败时把 symlink 切回上一版本 + `reload nginx`，实现快速回滚
+- **不要把 symlink/release 架构写成"当前已经是这样"**——除非服务器证据明确证明它已存在
+
+### 28.7 相关部署文档（注意其中的过时信息）
+
+`docs/alibaba-rds-supabase-init.md`、`docs/alibaba-oss-daily-attachments.md`、`docs/gotrue-email-templates.md`、`docs/admin-invite-deploy.md`、`docs/admin-users-deploy.md`、`docs/supabase-setup.md`。
+
+> ⚠️ 这些文档存在**已知过时/矛盾**，接手时以本文 §36/§37 为准：
+> - `docs/supabase-setup.md` 仍描述 **Supabase Cloud**（project ref `eomesxviqudmowgwftnn`）、用 `supabase db push` 迁移、且迁移闸门只列到 `202608170001`。生产早已迁到阿里云 RDS Supabase 且迁移改用 `psql`，该文的 project ref 与迁移机制**不再适用**。
+> - `docs/alibaba-rds-supabase-init.md` 第 4、6 节残留旧域名 `https://okr.groupmeeting.xyz`。现行域名是 `okr.trspectra.com` / `api.okr.trspectra.com`。
+> - `docs/gotrue-email-templates.md` 与 `supabase/config.toml` 的注释描述的是"**ECS 上自托管 GoTrue、直接设置 `GOTRUE_*` 环境变量**"。生产实际是**阿里云托管 RDS Supabase**，Auth/SMTP/模板只能在控制台配置，**没有可以 `docker logs` 或改环境变量的 GoTrue 容器**。见 §37。
 
 ---
 
@@ -744,11 +920,11 @@ npm run dev
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-### Database / Supabase（服务端/CLI，绝不进前端）
+### Database / Supabase（服务端，绝不进前端）
 
 - `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_DB_PASSWORD`
-- `DATABASE_URL`（CLI 迁移用）
+- `DATABASE_URL`（生产 migration 用 `psql` 直连 RDS PostgreSQL 的连接串，见 §28.3；本地 validation 仍可用 Supabase CLI）
 
 ### Attachments（OSS 签名服务 `server/`）
 
@@ -758,9 +934,21 @@ npm run dev
 
 ### Email（阿里云托管 RDS Supabase Auth + DirectMail SMTP）
 
-- 生产 SMTP 参数由 RDS Supabase 控制台的 **Auth配置 → 邮箱** 管理，不应假设维护者可以直接设置或读取 GoTrue 容器环境变量。
-- 仓库 `supabase/config.toml` 仅用于本地 Supabase；其中的 Auth 设置不是托管生产实例的配置来源。
-- 自定义模板源文件位于 `public/email/`。生产模板 URL 和托管 Auth 的可达性需在 RDS Supabase 控制台单独配置与验证。
+- 生产 SMTP 参数由 RDS Supabase 控制台的 **Auth 配置 → 邮箱** 管理，不应假设维护者可以直接设置或读取 GoTrue 容器环境变量。
+- 仓库 `supabase/config.toml` 仅用于本地 Supabase；其中的 Auth 设置**不是**托管生产实例的配置来源，其注释里的 `GOTRUE_*` 写法是历史自托管方案的遗留。
+- 自定义模板源文件位于 `public/email/`，构建后由前端站点提供为 `https://okr.trspectra.com/email/<flow>.html`。生产模板 URL 和托管 Auth 的可达性需在 RDS Supabase 控制台单独配置与验证。
+- 生产 SMTP 通道为**阿里云 DirectMail**：主机 `smtpdm.aliyun.com`，端口 `465`（SMTPS/隐式 TLS）。**SMTP 账号与密码不写入本文档、仓库或任何配置示例**，见 §39。
+- ⚠️ 当前邮箱 signup 存在生产故障（`504 request_timeout`），完整现状、已完成排查与下一步见 **§37**。
+
+### Phone / SMS（业务代码未实现，阿里云侧已初步配置）
+
+> **CURRENT STATE**：手机号认证**业务代码仍未实现**——frontend phone auth 未实现、DB phone-auth migration 未实现、production login flow 未启用 phone auth。**不能视为已上线功能。**
+
+- 设计：`docs/superpowers/specs/2026-08-27-phone-sms-auth-design.md`；计划：`docs/superpowers/plans/2026-08-27-phone-sms-auth.md`。
+- 计划中的功能开关 `VITE_PHONE_AUTH_ENABLED` / `VITE_PHONE_REGISTRATION_ENABLED` **尚不存在于代码中**。
+- **阿里云侧不是"完全未配置"**：已创建**专用 Alibaba Cloud RAM user** 用于 Supabase SMS，并已授予对应 SMS / PNVS 权限；RDS Supabase 的 Alibaba Cloud SMS Provider **已做过初步配置**；已用系统签名/模板做过 OTP 测试。
+- **KNOWN ISSUE**：OTP 请求目前仍出现 `request_timeout`。手机认证**不能视为可用**。
+- 不在本文档写 SMS RAM AccessKey ID/Secret。详见 §41 待办 P2 #11。
 
 ### Other external services
 
@@ -783,7 +971,7 @@ npm run dev
 检查：`objective_type`、`objective_owners`、`can_hr_read_objective` 的 execute grant、`objective_owners` 的 select grant、`objectives_read` 是否仍是旧版（inline 子查询）。
 
 ### Migration clean reset 通过但生产失败
-见 §23：历史 migration 被编辑后生产不会重跑；用 `npx supabase db push --dry-run --db-url "$DATABASE_URL"` 核对待执行集合，并运行 `scripts/legacy-upgrade/run.sh` 复现。
+见 §23：历史 migration 被编辑后生产不会重跑；生产 migration 走 `psql` 手动执行 forward 文件。判断"是否已部署"不能只依赖 `supabase_migrations.schema_migrations`（裸 `psql -f` 不天然写入它，见 §28.3），要结合 Git 历史、运维执行记录、目标对象状态综合判断；**不要因为缺一条 history 就盲目重放**。并运行 `scripts/legacy-upgrade/run.sh` 复现。
 
 ---
 
@@ -877,8 +1065,17 @@ npm run dev
 - [ ] 跑 `scripts/legacy-upgrade/run.sh all` 理解迁移收敛
 - [ ] 理解角色矩阵（§6）与双层权限（§7）
 - [ ] 理解日报 block model（§11/§12/§13）
-- [ ] 读 §28 并向维护者确认 production 拓扑
-- [ ] 用只读查询核对 production schema 落在 L1–L4 哪个变体（§23）
+
+生产环境交接（第一天必须走一遍）：
+
+- [ ] 读 §36 生产基础设施拓扑，确认 ECS / RDS Supabase / RDS PostgreSQL / OSS / Nginx / 两个域名的对应关系
+- [ ] 读 §28 发布流程，特别是 `.env.production` 与 `.env.production.local` 的职责差异（§28.2）
+- [ ] 读 §37，了解邮箱 signup 504 的现状与已排除项——**不要重复已经做过的排查**
+- [ ] 读 §38 Nginx 风险，并牢记"先 `getent hosts` → 再 `nginx -t` → 最后才 `restart`"
+- [ ] 取得 ECS 登录权限、RDS Supabase 控制台权限、OSS/RAM 控制台权限、阿里云工单权限
+- [ ] 按 §39 从密码库接收密钥清单，并规划交接后的 secret rotation
+- [ ] 确认 §36.4 的备份现状：RDS 备份/PITR、OSS 版本控制，**两者是分开的**
+- [ ] 通读 §41 待办，与维护者确认 P0 两项的当前进展
 
 ---
 
@@ -899,7 +1096,6 @@ npm run dev
 
 ## 35. Open Questions
 
-- **OPEN QUESTION**：production 当前实际落在 §23 的 L1/L2/L3/L4 哪个状态？（仓库无法判定，需维护者在生产 `pg_policies`/`to_regprocedure` 确认）
 - **OPEN QUESTION**：Admin / Management / HR 在没有项目成员/KR owner 关系时，应如何归属"无 KR 日报"的 project？（当前 DB 会拒绝，与"所有角色可写日报"的产品意图冲突）
 - **OPEN QUESTION**：HR 工时是否应包含 `draft` 状态？（当前包含）
 - **OPEN QUESTION**：`list_organization_users` 的 HR 分支排除 admin 是否符合预期？
@@ -907,7 +1103,298 @@ npm run dev
 
 ---
 
-## 36. 附录：关键源码与迁移对照
+## 36. 生产基础设施拓扑（阿里云）
+
+> **CURRENT STATE**（当前生产拓扑）。本节是**生产环境交接的起点**。所有真实密钥/AccessKey/密码/内部主机名一律不写入本文档，只写"是什么、在哪、怎么交接"（见 §39）。
+
+### 36.1 组件清单
+
+| 组件 | 承载什么 | 说明 |
+| --- | --- | --- |
+| **阿里云 ECS** | Nginx + 前端静态站点（`dist/`）+ Node 附件签名服务（`dist-server/`） | 项目目录 `/var/www/timetech-okr`；附件服务由 systemd 单元 `timetech-attachment-api` 管理，仅监听 `127.0.0.1:3001`，**不直接对公网暴露** |
+| **阿里云 RDS Supabase（托管）** | Auth（GoTrue）+ PostgREST + Kong 网关 | **托管服务，不是 ECS 上自建的 Supabase 容器**。没有可 `docker logs` 的 GoTrue 容器，Auth/SMTP/模板配置只能在控制台改。响应头出现 `x-kong-upstream-latency` 即证明请求经过其 Kong 网关 |
+| **阿里云 RDS PostgreSQL** | 全部业务数据 + RLS + SECURITY DEFINER 函数 | RDS Supabase 实例的底层数据库。生产 migration 通过 `psql` 直连它执行 forward SQL（见 §28.3，需 IP 白名单）；Supabase CLI 仅用于本地 db reset / pgTAP / validation。**内部 RDS 主机名（`rm-*.pg.rds.aliyuncs.com` 等）属于敏感信息**：禁止进入 Git、前端 bundle、浏览器 env、公开文档或日志；**但受保护的生产 Nginx server 配置里出现 upstream hostname 是允许的**（`proxy_pass` 需要它），见 §38 |
+| **阿里云 OSS** | 所有业务附件的**字节** | 私有 bucket `timetech-okr-files`。日报前缀 `organization/{organizationId}/reports/...`，资源前缀 `organization/{organizationId}/resources/...` |
+| **Nginx（ECS 上）** | 站点静态托管 + `/api/` 反代 + Auth/API 域名反代 | 见 §36.3、§38 |
+| **阿里云 DirectMail** | 事务邮件 SMTP 出口 | `smtpdm.aliyun.com:465`，由 RDS Supabase Auth 调用。见 §37 |
+
+### 36.2 CURRENT STATE：域名
+
+| 域名 | 指向 | 作用 |
+| --- | --- | --- |
+| `https://okr.trspectra.com` | ECS Nginx | 前端 SPA 站点；同时提供 `/email/*.html` 邮件模板静态文件，并把 `/api/` 反代到本机附件服务。也是 Auth 的 **Site URL** 与 OSS CORS 的**唯一允许来源** |
+| `https://api.okr.trspectra.com` | ECS Nginx → RDS Supabase 实例端点 | 浏览器访问 Auth（`/auth/v1/*`）与 PostgREST（`/rest/v1/*`）的公开入口，即前端 `VITE_SUPABASE_URL` 的值 |
+
+- 两个域名**不同源**。这是有意的：邮件模板必须放在站点域（`okr.trspectra.com`）上，因为只有它通过 Nginx 提供 `dist/email/*.html`；而 Auth API 在 `api.okr.trspectra.com`。
+- Auth Redirect URL 至少需包含 `https://okr.trspectra.com/auth/invite`；开发环境另加 `http://localhost:5173/auth/invite`、`http://127.0.0.1:5173/auth/invite`。**不要用通配符。**
+- ⚠️ 旧文档里出现的 `okr.groupmeeting.xyz` 是**历史遗留域名，已废弃**。
+
+### 36.3 CURRENT STATE：内外网访问关系
+
+```
+浏览器 ──公网 HTTPS──> okr.trspectra.com (ECS Nginx)
+                          ├─ /                 → dist/ 静态 SPA（try_files $uri $uri/ /index.html）
+                          ├─ /email/*.html     → dist/email/ 邮件模板静态文件
+                          └─ /api/             → proxy_pass http://127.0.0.1:3001（Node 附件服务）
+
+浏览器 ──公网 HTTPS──> api.okr.trspectra.com (ECS Nginx)
+                          └─ proxy_pass → RDS Supabase 实例端点（Kong → GoTrue / PostgREST）
+
+浏览器 ──公网 HTTPS──> OSS 短时签名 URL（PUT/GET 直传，**字节不经过 ECS**）
+
+Node 附件服务(127.0.0.1:3001) ──> RDS Supabase（校验用户 token、调用授权 RPC）
+                              └─> OSS（ali-oss 签名 / HEAD 校验 / 删除）
+
+RDS Supabase Auth ──出网──> smtpdm.aliyun.com:465（DirectMail SMTP）
+RDS Supabase Auth ──出网──> https://okr.trspectra.com/email/*.html（发信时拉取模板）
+
+运维 ──> psql + DATABASE_URL ──> RDS PostgreSQL（生产 migration，需 IP 白名单，见 §28.3）
+本地开发 ──> Supabase CLI ──> 本地 db reset / pgTAP / validation（非生产机制）
+```
+
+关键约束：
+
+- 附件服务**只监听回环地址**，公网只能经 Nginx 的 `/api/` 到达。不要把它改成 `0.0.0.0`。
+- 文件字节**从不经过 ECS**：浏览器拿短时签名 URL 直连 OSS。上传签名有效期约 5 分钟，下载签名约 60 秒。
+- **RDS Supabase Auth 需要具备必要的外部网络访问能力**：当前邮件流程涉及 DirectMail SMTP，邮件模板 URL 是否由托管 Auth 在请求过程中同步获取尚未完全确认。相关 outbound 可达性异常可能导致邮件流程失败或超时，具体行为以阿里云托管实现和 Auth 日志为准。
+- OSS bucket 保持 private，**不绑定自定义 OSS 域名**，CORS 来源只允许 `https://okr.trspectra.com`（方法 `PUT`/`GET`/`HEAD`，暴露 `ETag`），**不得用 `*`**。
+
+### 36.4 CURRENT STATE + 待补录：备份（数据库与 OSS 必须分别处理）
+
+**这是最容易被漏掉的一点。** 数据库备份和 OSS 文件备份是两套完全独立的机制，任何一方的恢复都不会带回另一方：
+
+| 对象 | 备份方式 | 恢复后果 |
+| --- | --- | --- |
+| 业务数据 + **附件元数据**（`report_attachments` 等） | 阿里云 RDS 备份 / PITR（控制台配置） | 只恢复数据库。**OSS 里的对象不会跟着回退** |
+| 附件**字节** | OSS 侧独立配置（版本控制 / 跨区域复制 / 生命周期规则） | 只恢复对象。**数据库里的元数据不会跟着回退** |
+
+因此：
+
+- 单独把数据库回滚到较早时间点 → 会出现**元数据指向已被删除的 OSS 对象**（下载 404）。
+- 单独恢复 OSS → 会出现**没有元数据引用的孤儿对象**（占用空间、且不受 RLS 保护路径管理）。
+- 任何恢复演练必须**同时**规划两侧的时间点对齐，并在恢复后跑 §28.4 的只读对账查询。
+- 交接时必须确认（当前**未在仓库中记录**，属待办，见 §41）：RDS 备份策略与保留期、是否开启 PITR、OSS 是否开启版本控制/跨区域复制、是否做过**实际恢复演练**。
+
+---
+
+## 37. 邮件认证现状与 signup 504 事故
+
+### 37.1 CURRENT STATE：邮箱认证是当前唯一的生产认证方式
+
+- 生产认证流程仍**以邮箱为主**：用户自助注册（`auth.users`）→ 前端调 `public.create_pending_profile()` 建 `approval_status='pending'` 且无角色的 profile → 管理员调 `public.approve_pending_user()` 原子写入角色并置 `approved`。
+- 角色绑定完全由 `user_roles` + RPC 完成，与 Auth provider 解耦。
+- **手机号 / 短信认证业务代码尚未实现**（阿里云侧已初步配置，见 §29 与 §41 P2 #11）。
+
+### 37.2 SMTP 通道
+
+| 项 | 值 |
+| --- | --- |
+| 服务商 | 阿里云 DirectMail |
+| SMTP 主机 | `smtpdm.aliyun.com` |
+| 端口 | `465`（SMTPS / 隐式 TLS） |
+| 配置位置 | **RDS Supabase 控制台 → Auth 配置 → 邮箱**（托管实例，无法直接设 `GOTRUE_SMTP_*` 环境变量） |
+| 账号 / 密码 | **不写入本文档、仓库或任何示例**。交接方式见 §39 |
+
+### 37.3 KNOWN ISSUE：邮箱 signup 返回 504 `request_timeout`
+
+**症状**：调用 `/auth/v1/signup` 时返回 `504`，body 为 `request_timeout`。用户无法完成邮箱注册。
+
+**已完成排查与结论（按时间顺序）**：
+
+| # | 已验证的事实 | 结论 |
+| --- | --- | --- |
+| 1 | **从 ECS 到 `smtpdm.aliyun.com:465`**：TLS handshake success → SMTP AUTH success → MAIL FROM success → RCPT TO success → DATA success → **实际测试邮件成功投递并由收件邮箱收到** | DirectMail **SMTP 服务、host/port、credentials 与基本投递能力正常**。不要扩大结论到"所有模板/额度问题都已完全排除" |
+| 2 | **绕过 `api.okr.trspectra.com` 与自建 Nginx**，直接 POST 到 RDS Supabase **官方外网 endpoint** 的 `/auth/v1/signup`，**仍然返回 504** | **自建 Nginx 不是根因**。响应头：`HTTP 504`、`x-sb-error-code: request_timeout`、`x-kong-upstream-latency: 10002`、`x-kong-proxy-latency: 2` |
+| 3 | 按阿里云 support 建议，`smtpdm.aliyun.com` 当前解析为 `106.11.232.40` / `106.11.232.30`，已尝试把这两个 IP 加入实例 whitelist，**signup 仍然 504** | **这个尝试没有解决问题** |
+| 4 | Auth 邮箱配置的 **API External URL** 此前为 `http://8.164.208.35:80`，保存时报 `ModifyInstanceAuthConfig InternalError`；改为 `https://api.okr.trspectra.com` 后 **Auth 配置可成功保存，实例恢复 Running** | 这个修复解决的是 **Auth config 保存问题**，**不是** signup timeout 的根因——signup 504 仍然存在 |
+
+**当前状态**：已进入 **Alibaba Cloud artificial support / ticket investigation**。
+
+**下一步（由阿里云侧主导）**：根据 **Kong request id / error id** 查询托管 Auth/GoTrue 内部日志，确认 **DNS / TCP / TLS / SMTP send** 哪一步发生约 10 秒 timeout。
+
+> 说明（区分两条路径）：事实 1（从 ECS 出发 SMTP 全链路成功）证明的是"从 ECS 这台机器出发可以走通"；事实 2/3 证明的是"从 RDS Supabase 托管实例内部到 SMTP 的调用路径"仍超时。两条路径的出网环境不同，这正是当前怀疑点——**优先怀疑 RDS Supabase Auth/GoTrue 内部到 SMTP 的调用**，而不是 DirectMail 或自建 Nginx。
+
+**尚未完全排除**：
+
+- 托管 Auth 内部到 `smtpdm.aliyun.com:465` 的 DNS / TCP / TLS / SMTP send 具体断在哪一步（等阿里云日志结论）。
+- **邮件模板 URL 可达性尚未验证**：RDS Supabase Auth 从托管环境访问 `https://okr.trspectra.com/email/*.html` 是否可达**尚未验证**。如果托管实现会在 signup 请求内**同步拉取模板**，这一步也可能贡献当前约 10 秒 timeout。因此**不要预设 template fetch 失败一定只会 fallback 默认英文模板**——阿里云应同时检查 **template URL fetch / DNS / TCP / TLS / SMTP connection+send** 全链路。
+- 控制台 Auth 邮箱配置中的加密方式是否与端口 465 匹配（465 需要隐式 TLS/SSL，而非 STARTTLS）。
+
+**影响范围**：所有依赖 GoTrue 发信的流程都可能受同一根因影响——邮箱注册确认（`CONFIRMATION`）、管理员邀请（`INVITE`）、找回密码（`RECOVERY`）。排查时应一并验证这三个流程，不要只测注册。
+
+**临时缓解选项（需产品 + 安全批准后才可执行，当前未采用）**：在 RDS Supabase Auth 配置中关闭 email confirmation，可让 signup 不再阻塞在 SMTP 调用上从而立即返回。**代价**是新账号不再验证邮箱真实性。由于本系统在 Auth 之后还有"管理员审批（`approval_status`）"这一道关卡，风险可控但确实降低了安全强度。**这是一个需要明确决策的取舍，不是默认建议。**
+
+### 37.4 incident history：Auth 配置 `ModifyInstanceAuthConfig InternalError`
+
+> 这是一条已解决但与 37.3 不同的独立事故，记录在此以免误判为 signup 根因。
+
+- **现象**：修改/保存 RDS Supabase Auth 邮箱配置时，控制台报 `ModifyInstanceAuthConfig InternalError`。
+- **关联配置 / 观察到的触发条件**：当 API External URL 为 `http://8.164.208.35:80` 时保存出现 `ModifyInstanceAuthConfig InternalError`；改为 `https://api.okr.trspectra.com` 后保存成功且实例恢复 Running。
+- **结论**：修复的是 **Auth config 保存问题**；signup 504 仍然存在，二者**不是同一个根因**。由于**没有平台后台日志**，**不把旧 URL 绝对定性为 InternalError 的唯一根因**——它只是观察到的触发条件。
+
+---
+
+## 38. Nginx 已知运维风险
+
+### 38.1 KNOWN ISSUE：上游 DNS 解析失败会导致 Nginx 启动失败
+
+Nginx 在**启动 / `reload` 时**会对配置中 `proxy_pass` 使用的域名做一次性解析，并把结果固化。因此：
+
+- **RDS Supabase 实例重启期间**（例如修改 Auth 配置触发的托管实例重启），其上游域名可能**暂时无法解析**。
+- 此时若 Nginx 恰好被启动或重载，会因 `host not found in upstream` 而**启动失败**——不仅 `api.okr.trspectra.com` 的反代挂掉，**整个 Nginx 起不来**，前端站点和 `/api/` 附件服务也一起不可用。
+- 这是一个**故障放大**：一个本应只影响 Auth 的上游抖动，变成了全站不可用。
+
+### 38.2 DNS 恢复后的恢复步骤
+
+```bash
+# 1) 先确认上游域名已经能解析（解析不出来就不要急着重启 nginx）
+getent hosts <upstream-host>
+
+# 2) 校验配置语法与上游可解析性
+sudo nginx -t
+
+# 3) 只有在 1、2 都通过后才重启
+sudo systemctl restart nginx
+
+# 4) 验证
+curl -fsS https://okr.trspectra.com/api/health
+curl -fsS -o /dev/null -w '%{http_code}\n' https://api.okr.trspectra.com/auth/v1/health
+```
+
+> `<upstream-host>` 是 RDS Supabase 实例端点主机名，属敏感内部信息。它可以存在于**受保护的生产 Nginx server 配置**中（`proxy_pass` 需要它），但**禁止进入 Git、前端 bundle、浏览器 env、公开文档或日志**，也**不写入本文档**；从 Nginx 站点配置或 §39 的密钥保管渠道获取。
+
+⚠️ 注意 `reload` 同样会重新解析上游：**上游解析不了时 `reload` 也会失败**，且失败的 `reload` 不会影响已在运行的 worker。所以顺序永远是"先 `getent` 确认解析 → 再 `nginx -t` → 最后才 `restart`"。**不要在没确认解析的情况下 `restart`**，那会把一个还在服务的 Nginx 直接打死。
+
+### 38.3 KNOWN ISSUE：触发场景
+
+- RDS Supabase 实例重启（**修改 Auth / SMS / SMTP 配置就可能触发托管实例重启**——这与 §37 的排查工作直接相关：改 Auth 配置去排查 504，本身就可能触发这个 Nginx 风险）。
+- 阿里云侧维护窗口、实例迁移、endpoint 变更。
+- ECS 的 DNS 解析临时故障。
+
+因此：**任何 Auth 配置变更都应安排在维护窗口**，等控制台恢复"运行中"、`getent hosts` 能解析之后，再做 Nginx 相关操作。
+
+### 38.4 RECOMMENDED IMPROVEMENT：加固（尚未实施，见 §41）
+
+1. **动态 resolver**：在 Nginx 里配置 `resolver`（例如阿里云内网 DNS `100.100.2.136`/`100.100.2.138`）并把上游写成变量，让解析在**运行时**而非启动时进行：
+
+   ```nginx
+   resolver 100.100.2.136 100.100.2.138 valid=30s ipv6=off;
+   set $supabase_upstream "<upstream-host>";
+   proxy_pass https://$supabase_upstream;
+   ```
+
+   这样上游暂时解析不出来只会让该 `location` 返回 502，**不会导致整个 Nginx 起不来**。注意：使用变量形式的 `proxy_pass` 时，需要显式处理 URI 部分与 `proxy_ssl_server_name on;` / `proxy_set_header Host`。
+
+2. **拆分 server 块**：让站点静态托管与 `api.` 反代位于**独立配置文件**，缩小单点故障影响面。
+3. **监控告警**：对 `https://okr.trspectra.com/api/health`、`api.okr.trspectra.com` 的 Auth 健康端点和 `systemctl is-active nginx` 做外部拨测，异常时告警。
+
+---
+
+## 39. Secret 清单与交接方式
+
+> **绝对红线**：数据库密码、JWT secret、`service_role` key、SMTP 账号密码、阿里云 AccessKey Secret **一律不得出现在 Git、本文档、前端 bundle、构建产物、日志或任何截图中**。Nginx 配置里允许出现的唯一"敏感值"是内部 upstream hostname（`proxy_pass` 需要它），其余密钥不进 Nginx 配置。本节只登记"有哪些密钥、存在哪里、怎么交接、怎么轮换"。
+
+### 39.1 CURRENT STATE：密钥清单（只记名称与位置，不记值）
+
+| 密钥 | 存放位置 | 谁需要 | 轮换方式 |
+| --- | --- | --- | --- |
+| `SUPABASE_DB_PASSWORD` / `DATABASE_URL` | 受保护的运维密码库 / CI 秘密变量。使用时从环境注入，**不进 shell history** | 执行生产 migration（`psql` 直连 RDS，见 §28.3）的运维 | RDS Supabase 控制台重置数据库密码，同步更新密码库 |
+| `SUPABASE_SERVICE_ROLE_KEY` | ECS `/var/www/timetech-okr/.env.production.local`（`chmod 600`） | 仅 Node 附件服务 | RDS Supabase 控制台轮换 → 更新 env 文件 → `systemctl restart timetech-attachment-api` |
+| JWT secret | RDS Supabase 实例内部（托管） | GoTrue 与 PostgREST 必须一致 | 托管侧操作；**轮换会使所有现存 session 失效**，必须安排维护窗口 |
+| `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | 同 `.env.production.local` | 仅 Node 附件服务 | 阿里云 RAM 控制台新建 AccessKey → 更新 env → 重启服务 → 确认无误后**禁用并删除旧 key** |
+| DirectMail SMTP 账号 / 密码 | RDS Supabase 控制台 Auth 邮箱配置 + 运维密码库副本 | RDS Supabase Auth | DirectMail 控制台重置发信地址密码 → 更新控制台 Auth 配置（**注意会触发实例重启，见 §38.3**） |
+| `VITE_SUPABASE_ANON_KEY` | `.env.production`（构建期） | 前端 bundle | **这是公开 key，不是 secret**，但仍不提交 Git |
+| 内部 RDS 主机名 | 运维文档/密码库 + 受保护的生产 Nginx server 配置（`proxy_pass` 需要它） | 运维 / Nginx | 视为敏感信息；**禁止进入 Git、前端 bundle、浏览器 env、公开文档、日志**。发布门禁会扫描 `dist/` 确保零命中（§28.4） |
+| SMS RAM AccessKey（Supabase SMS 专用 RAM user） | 阿里云 RAM / 密码库（**已创建**，见 §29、§41） | RDS Supabase Auth SMS Provider | 不写 AccessKey ID/Secret；轮换在阿里云 RAM 控制台完成 |
+
+### 39.2 RECOMMENDED IMPROVEMENT：交接方式
+
+- 通过**组织的密码库 / 保险箱**（1Password、Vault、阿里云 KMS 等）转交，**不要**用邮件、IM、工单、截图或明文文件传递。
+- 交接完成后应做一次 **secret rotation**：所有可自助轮换的密钥（`service_role` key、OSS AccessKey、DB 密码、SMTP 密码）在离职/交接后轮换一遍，确保前任持有的旧值失效。轮换顺序：新值生效并验证 → 再禁用旧值 → 最后删除旧值。
+- 记录**谁在什么时间拿到了哪些密钥**（只记密钥名称与时间，不记值）。
+
+### 39.3 自检命令
+
+```bash
+# 仓库历史中不应出现任何真实密钥形态的字符串
+git grep -nIE 'LTAI[0-9A-Za-z]{12,}|service_role|BEGIN [A-Z ]*PRIVATE KEY' -- . ':!docs/PROJECT_HANDOVER.md'
+
+# 构建产物中不得出现内部 RDS 主机名
+rg -a -i '\.rds\.apsaradb\.com|rds\.aliyuncs\.com|rm-[a-z0-9-]+\..*aliyuncs\.com' dist
+```
+
+---
+
+## 40. 运维、监控与备份
+
+### 40.1 CURRENT STATE：当前实际具备的
+
+| 能力 | 现状 |
+| --- | --- |
+| 健康检查端点 | `http://127.0.0.1:3001/api/health`（本机）、`https://okr.trspectra.com/api/health`（公网） |
+| 附件服务进程守护 | systemd `Restart=on-failure`、`RestartSec=3` |
+| 附件服务日志 | `journalctl -u timetech-attachment-api`。**服务被要求不记录密钥、JWT、Authorization header、签名 URL 查询串或文件内容** |
+| Nginx 日志 | ECS 上标准 access/error log |
+| Auth 日志 | 只能从 **RDS Supabase 控制台**取（托管，无本地容器日志） |
+| 数据库对账查询 | §28.4 的只读聚合（upload session 状态分布、`invalid_session_attachment_links`、`associated_deleted_attachments`） |
+| 迁移收敛回归 | `scripts/legacy-upgrade/run.sh all`（见 §23） |
+
+### 40.2 KNOWN ISSUE + RECOMMENDED IMPROVEMENT：缺失的（全部计入 §41 待办）
+
+- **没有集中监控/告警**：Nginx 存活、附件服务存活、health 端点、Auth 可用性、证书到期，目前都**没有外部拨测与告警**。§38 的 Nginx 风险正是因为缺少告警才容易演变成长时间全站不可用。
+- **没有集中日志**：ECS 上的 journald/Nginx 日志与 RDS Supabase 控制台的 Auth 日志分离，故障时需要人工两边翻。
+- **备份策略未在仓库中记录**：RDS 备份保留期、是否开 PITR、OSS 是否开版本控制/跨区域复制，均需当前维护者确认并补录（见 §36.4）。
+- **恢复演练未记录**：没有证据表明做过实际恢复演练。**未演练的备份不能视为可用的备份。**
+- **附件对象清理**：失败/废弃/长期 pending 的 OSS 对象需要定期按 metadata 对账清理。**禁止仅按路径批量删除**——必须先与 `report_attachments` 元数据对账（见 §31 第 8 条与 §34）。
+- **依赖版本漂移**：`package.json` 里 react / react-dom / react-router-dom / typescript / vite / vitest 等写的是 `latest`，重装会漂移（见 §24 Known Issue #10）。
+
+### 40.3 RECOMMENDED IMPROVEMENT：日常巡检建议
+
+- 每日：health 端点、`systemctl is-active nginx timetech-attachment-api`、数据库与 OSS 用量。
+- 每周：upload session 状态分布对账、pending/failed 附件清理评估。
+- 每次发布：§28.4 全套发布后门禁。
+- 每次 Auth 配置变更后：按 §38.2 顺序确认 Nginx，并验证注册/邀请/找回密码三条邮件流程。
+
+---
+
+## 41. 待办事项（Handover TODO）
+
+按优先级排列。P0 = 影响生产可用性或安全；P1 = 应尽快；P2 = 计划内改进。
+
+### P0
+
+| # | 事项 | 说明 | 参考 |
+| --- | --- | --- | --- |
+| 1 | **修复邮箱 signup 504 `request_timeout`** | 当前新用户无法完成邮箱注册。已验证 DirectMail SMTP host/port、凭据和基础实际投递能力正常，并已排除自建 Nginx；将 `smtpdm.aliyun.com` 当前解析 IP 加入 whitelist 的尝试也未解决问题。主要怀疑托管 Auth/GoTrue 内部到 SMTP 的调用。当前已进入阿里云工单排查，由阿里云按 Kong request id / error id 查内部日志 | §37 |
+| 2 | **修复 `objectives` / `key_results` 可被 `authenticated` 直写** | 表级 grant 含 `INSERT/UPDATE` 且 owner_write 是 `ALL` 策略，可绕过 management-only 的 RPC 校验。已本地实测复现。需新增 forward migration 撤回表级写权限 | §24 Critical #1 |
+
+### P1
+
+| # | 事项 | 说明 | 参考 |
+| --- | --- | --- | --- |
+| 3 | **建立监控与告警** | 至少：Nginx 存活、附件服务 health、Auth 可用性、TLS 证书到期。缺告警是 §38 风险放大的直接原因 | §38.4、§40.2 |
+| 4 | **确认并补录备份策略，做一次恢复演练** | RDS 备份保留期 / PITR、OSS 版本控制 / 跨区域复制。**数据库与 OSS 必须分别处理且时间点对齐** | §36.4 |
+| 5 | **Nginx 动态 resolver 加固** | 让上游 DNS 在运行时解析，避免 RDS Supabase 重启期间 Nginx 整体起不来 | §38.4 |
+| 6 | **交接后 secret rotation** | 轮换 `service_role` key、OSS AccessKey、DB 密码、SMTP 密码；先启用新值验证，再禁用删除旧值 | §39.2 |
+| 7 | **集中日志** | 打通 ECS journald/Nginx 日志与 RDS Supabase Auth 日志的检索路径 | §40.2 |
+| 8 | **修复 HR 工时 RPC 的 project 归属** | `get_hr_work_hours` 用 `kr.project_id` 而非 `b.project_id`，导致"无 KR 但有 block project"的工时 project 列为空 | §24 High #2 |
+| 9 | **前端 review/待审列表改为 block-level** | `permissionService.ts` 与 `ReportReviewWidget` 仍按 report-level `projectId` 过滤，与已 block-level 的后端不一致 | §24 High #3、Medium #7 |
+| 10 | **明确 Admin/Management/HR 无项目时的日报归属规则** | 当前 DB 会拒绝其提交"无 KR 日报"，与"所有角色可写日报"的产品意图冲突。需产品决策 | §24 High #4、§35 |
+
+### P2
+
+| # | 事项 | 说明 | 参考 |
+| --- | --- | --- | --- |
+| 11 | **手机 / SMS 认证（业务代码）** | **业务代码仍未实现**：frontend phone auth、DB phone-auth migration、production login flow 均未落地，**不能视为已上线功能**。阿里云侧**已初步配置**：已建专用 SMS RAM user、已授予 SMS/PNVS 权限、RDS Supabase Alibaba Cloud SMS Provider 已初配、已用系统签名/模板做 OTP 测试——但 **OTP 请求仍 `request_timeout`**。落地前还需：数据库 forward migration、认证抽象、前端三模式登录、两个功能开关默认关闭的灰度上线。注意：配置 SMS 会触发托管实例重启，须走维护窗口并注意 §38 的 Nginx 风险 | `docs/superpowers/specs/2026-08-27-phone-sms-auth-design.md`、`docs/superpowers/plans/2026-08-27-phone-sms-auth.md`、§38.3 |
+| 12 | **固定依赖版本** | 把 `package.json` 里的 `latest` 改成锁文件里的精确版本 | §24 Medium #10 |
+| 13 | **附件对象定期清理** | 按 metadata 对账清理失败/废弃/长期 pending 的 OSS 对象。禁止仅按路径批量删除 | §40.2 |
+| 14 | **清理过时部署文档** | `docs/supabase-setup.md`（仍写 Supabase Cloud project ref 与 `db push` 迁移机制）、`docs/alibaba-rds-supabase-init.md`（残留 `okr.groupmeeting.xyz`）、`docs/gotrue-email-templates.md` 与 `supabase/config.toml` 注释（仍描述自托管 GoTrue 环境变量） | §28.7 |
+| 15 | **HR 工时是否应包含 draft** | 当前 `get_hr_work_hours` 不过滤 status，draft 工时也被计入。需产品决策 | §24 Medium #5、§35 |
+| 16 | **`TodayFocusWidget` 改用 `isKrOwner`** | 当前用单 owner 字段 `keyResult.ownerId` 判"可写日报" | §24 Medium #6 |
+
+---
+
+## 42. 附录：关键源码与迁移对照
 
 | 主题 | 前端 | 后端迁移 |
 | --- | --- | --- |
