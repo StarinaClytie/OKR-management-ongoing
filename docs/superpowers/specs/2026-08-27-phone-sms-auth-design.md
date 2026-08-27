@@ -70,10 +70,11 @@ AK/SK 仅填写在 `RDS Supabase → Auth配置 → 手机号 → 阿里云 SMS 
 
 - `phone text`：已验证手机号的业务侧镜像，可空。
 - `phone_verified_at timestamptz`：手机号最近一次确认时间，可空。
+- `pending_phone text`：管理员录入、等待员工本人验证的候选联系号码，可空；不能用于登录或显示为“已验证”。
 
 手机号唯一性由 Auth 层首先保证，业务表同时建立只针对非空手机号的唯一约束或唯一索引，阻止漂移。`profiles.email` 暂时继续使用现有的非空空字符串兼容模型；手机号用户没有邮箱时保存 `''`，避免破坏既有查询和 RPC。
 
-管理员可以录入一个待验证的联系号码，但不能直接将其标记为登录身份。只有用户本人完成 Supabase Auth 的短信验证后，才能同步为已验证的 `profiles.phone`。
+管理员可以把号码写入 `pending_phone`，但不能直接将其标记为登录身份。只有用户本人完成 Supabase Auth 的短信验证后，才能把 Auth 中的号码同步为已验证的 `profiles.phone` 并清空匹配的 `pending_phone`。
 
 ## 5. 登录与注册界面
 
@@ -193,8 +194,9 @@ supabase.auth.signInWithOtp({
 2. 若姓名为空且存在 email，使用现有邮箱 local-part 回退。
 3. 若只有 phone，使用脱敏号码回退，例如 `138****5678`。
 4. `profiles.email` 使用 Auth email 或 `''`。
-5. `profiles.phone` 只能使用当前 Auth 用户已经确认的 phone。
-6. 审批、更新、停用和删除继续使用 UUID，不使用 email 或 phone 作为业务主键。
+5. `profiles.phone` 只能使用当前 Auth 用户已经确认的 phone；`pending_phone` 永远不能作为认证依据。
+6. 同步已验证 phone 后清空匹配的 `pending_phone`。
+7. 审批、更新、停用和删除继续使用 UUID，不使用 email 或 phone 作为业务主键。
 
 待审批用户和组织用户的数据契约扩展为同时返回：
 
