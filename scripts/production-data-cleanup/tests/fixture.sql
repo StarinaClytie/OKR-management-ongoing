@@ -10,9 +10,11 @@ insert into auth.users (
 insert into public.organizations (id, name)
 values ('d2000000-0000-0000-0000-000000000001', 'Cleanup Test Organization');
 
-insert into public.profiles (id, organization_id, display_name) values
-  ('d1000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'Cleanup Admin'),
-  ('d1000000-0000-0000-0000-000000000002', 'd2000000-0000-0000-0000-000000000001', 'Cleanup Worker');
+insert into public.profiles (
+  id, organization_id, display_name, approval_status, onboarding_completed
+) values
+  ('d1000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'Cleanup Admin', 'approved', true),
+  ('d1000000-0000-0000-0000-000000000002', 'd2000000-0000-0000-0000-000000000001', 'Cleanup Worker', 'approved', true);
 
 insert into public.user_roles (organization_id, profile_id, role) values
   ('d2000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000001', 'administrator'),
@@ -48,11 +50,16 @@ values ('d2000000-0000-0000-0000-000000000001', 'd5000000-0000-0000-0000-0000000
 insert into public.milestones (organization_id, project_id, key_result_id, title, planned_date)
 values ('d2000000-0000-0000-0000-000000000001', 'd3000000-0000-0000-0000-000000000001', 'd5000000-0000-0000-0000-000000000001', 'Cleanup milestone', current_date + 1);
 
-insert into public.risks (organization_id, project_id, owner_id, title, reason, mitigation, probability, impact, level)
-values ('d2000000-0000-0000-0000-000000000001', 'd3000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000001', 'Cleanup risk', 'Test', 'Delete', 1, 1, 'low');
+insert into public.risks (
+  organization_id, project_id, owner_id, title, reason, mitigation,
+  probability, impact, level, key_result_id
+)
+values ('d2000000-0000-0000-0000-000000000001', 'd3000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000001', 'Cleanup risk', 'Test', 'Delete', 1, 1, 'low', 'd5000000-0000-0000-0000-000000000001');
 
-insert into public.daily_reports (id, organization_id, author_id, report_date, total_hours)
-values ('d6000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000002', current_date, 1);
+set session_replication_role = replica;
+
+insert into public.daily_reports (id, organization_id, author_id, report_date, total_hours, current_revision)
+values ('d6000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000002', current_date, 1, 1);
 
 insert into public.daily_report_revisions (id, organization_id, report_id, revision_number, editor_id, daily_objective, objective_progress, classification)
 values ('d7000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'd6000000-0000-0000-0000-000000000001', 1, 'd1000000-0000-0000-0000-000000000002', 'Cleanup report', 10, 'internal');
@@ -62,6 +69,8 @@ values ('d2000000-0000-0000-0000-000000000001', 'd6000000-0000-0000-0000-0000000
 
 insert into public.report_attachments (id, organization_id, report_id, revision_id, uploader_id, original_name, storage_path, mime_type, byte_size, classification, state)
 values ('d8000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'd6000000-0000-0000-0000-000000000001', 'd7000000-0000-0000-0000-000000000001', 'd1000000-0000-0000-0000-000000000002', 'daily.txt', 'organization/d2/reports/d6/d8/daily.txt', 'text/plain', 10, 'internal', 'uploaded');
+
+set session_replication_role = origin;
 
 insert into public.resources (id, organization_id, name, owner_id, location, created_by)
 values ('d9000000-0000-0000-0000-000000000001', 'd2000000-0000-0000-0000-000000000001', 'Cleanup resource', 'd1000000-0000-0000-0000-000000000001', 'Test shelf', 'd1000000-0000-0000-0000-000000000001');
